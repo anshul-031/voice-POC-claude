@@ -1,24 +1,38 @@
-# GitHub Copilot Instructions — Responsiveness
+# VoiceForge — GitHub Copilot Custom Instructions
 
-To maintain a high standard of responsiveness across the VoiceForge platform, please follow these guidelines when generating UI/CSS code:
+To maintain high code quality and consistency across the VoiceForge platform, please follow these rules:
 
-## Mobile-First Development
-- Always prioritize a mobile-first approach. Define base styles for small screens and use min-width media queries for larger displays.
+## 1. Quality Check Rule
+After every change to the codebase, the following command MUST be run to ensure no regressions:
 
-## Responsive Design Principles
-- **Flexible Layouts**: Use Flexbox and CSS Grid for layout management. Avoid fixed widths (px) for containers; use percentages, `vw`, `vh`, `rem`, or `em` instead.
-- **Viewport Meta Tag**: Ensure every HTML page includes the `<meta name="viewport" content="width=device-width, initial-scale=1.0">` tag.
-- **Responsive Media**: Use `max-width: 100%` and `height: auto` for images and videos to prevent overflow.
-- **Typography**: Use relative units like `rem` or `em` for font sizes to ensure they scale correctly with user settings and screen sizes.
+```bash
+npm run pr
+```
 
-## Breakpoints
-- **Mobile**: < 640px
-- **Tablet**: 640px - 1024px
-- **Desktop**: > 1024px
+This command performs:
+- **Linting**: ESLint checks.
+- **Typechecking**: TypeScript (`tsc`) validation.
+- **Testing**: Vitest with coverage (90% threshold).
+- **Database**: Prisma migration deployment.
 
-## Interactive Elements
-- Ensure buttons and links are at least 44x44px for touch targets on mobile devices.
-- Provide clear visual feedback for hover, active, and focus states.
+## 2. Logging Standards
+- **Centralized Logger Only**: NEVER use `console.log/error/warn`. Use the logger from `src/utils/logger.js`.
+- **Structured Logging**: Provide metadata as the second argument: `logger.info('msg', { key: value });`.
+- **Log Levels**: Use `error`, `warn`, `info`, or `debug` appropriately.
 
-## Testing
-- Always verify that new components look consistent and functional at widths ranging from 320px to 1920px.
+## 3. Internationalization (i18n)
+- **No Hardcoded Strings**: DO NOT hardcode user-facing literal strings, prompts, labels, or error messages.
+- **Centralized UI_STRINGS**: Use the `UI_STRINGS` object from `src/constants/uiStrings.js`.
+- **Template Placeholders**: Use functions in `UI_STRINGS` for runtime substitution: `UI_STRINGS.toasts.callStarted(agentName)`.
+- **Tests**: Assert against these constants instead of hardcoded strings.
+
+## 4. Responsiveness Guidelines
+Ensure full responsiveness across web and mobile platforms:
+- **Mobile-First**: Base styles for small screens, media queries for larger displays.
+- **Flexible Layouts**: Use Flexbox/Grid. Avoid fixed widths; use relative units (`rem`, `%`, `vw`, `vh`).
+- **Touch Targets**: Interactive elements must be at least 44x44px on mobile.
+- **Breakpoints**: 
+    - Mobile: < 640px
+    - Tablet: 640px - 1024px
+    - Desktop: > 1024px
+- **Testing**: Verify at various sizes (320px to 1920px) to ensure no overflow or layout breakage.

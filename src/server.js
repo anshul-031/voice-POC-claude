@@ -7,6 +7,7 @@ import { dirname, join } from 'path';
 import agentRoutes from './routes/agents.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
+import { UI_STRINGS } from './constants/uiStrings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -35,6 +36,11 @@ app.use(express.static(join(__dirname, '..', 'public')));
 // API Routes
 app.use('/api', agentRoutes);
 
+// Global UI Strings for Frontend
+app.get('/constants/uiStrings.js', (req, res) => {
+  res.sendFile(join(__dirname, 'constants', 'uiStrings.js'));
+});
+
 // Health check
 /* istanbul ignore next */
 app.get('/api/health', (req, res) => {
@@ -54,7 +60,7 @@ signalingServer.attach(server);
 server.listen(PORT, /* istanbul ignore next */ () => {
   const startupMsg = `
 ${'━'.repeat(56)}
-🎙️  VoiceForge — AI Voice Agent Platform
+🎙️  ${UI_STRINGS.header.title} — AI Voice Agent Platform
 ${'━'.repeat(56)}
   🌐  Server:     http://localhost:${PORT}
   📡  WebSocket:  ws://localhost:${PORT}/ws

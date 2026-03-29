@@ -2,6 +2,23 @@
    VoiceForge — Frontend Application Logic
    Agent CRUD, WebSocket Audio, Waveform Viz
    ============================================ */
+import { UI_STRINGS } from '/constants/uiStrings.js';
+
+// ── i18n Helper ──
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    const text = key.split('.').reduce((obj, k) => obj[k], UI_STRINGS);
+    if (text) el.textContent = text;
+  });
+
+  document.querySelectorAll('[data-i18n-attr]').forEach(el => {
+    const attrMapping = el.getAttribute('data-i18n-attr');
+    const [attr, key] = attrMapping.split(':');
+    const text = key.split('.').reduce((obj, k) => obj[k], UI_STRINGS);
+    if (text) el.setAttribute(attr, text);
+  });
+}
 
 // ── State ──
 console.log('[VoiceForge] 🚀 App initializing...');
@@ -25,6 +42,7 @@ let animFrameId = null;
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
+  applyI18n();
   loadVoices();
   loadModels();
   loadAgents();
@@ -39,8 +57,8 @@ async function api(path, options = {}) {
     ...options,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || 'Request failed');
+    const err = await res.json().catch(() => ({ error: UI_STRINGS.api.errors.genericRequestFailed }));
+    throw new Error(err.error || UI_STRINGS.api.errors.genericRequestFailed);
   }
   return res.json();
 }
@@ -51,10 +69,10 @@ async function checkApiHealth() {
   try {
     await api('/health');
     dot.className = 'status-dot connected';
-    text.textContent = 'Connected';
+    text.textContent = UI_STRINGS.header.apiStatus.connected;
   } catch {
     dot.className = 'status-dot error';
-    text.textContent = 'Disconnected';
+    text.textContent = UI_STRINGS.header.apiStatus.disconnected;
   }
 }
 
@@ -112,7 +130,7 @@ async function loadAgents() {
     renderAgentList();
   } catch (err) {
     console.error('Failed to load agents:', err);
-    showToast('Failed to load agents — check database connection', 'error');
+    showToast(UI_STRINGS.toasts.loadAgentsFailed, 'error');
     agents = [];
     renderAgentList();
   }
@@ -124,7 +142,7 @@ function renderAgentList() {
   if (agents.length === 0) {
     list.innerHTML = `
       <div class="agent-list-empty">
-        <p>No agents yet. Click <strong>"New Agent"</strong> to create your first voice agent.</p>
+        <p>${UI_STRINGS.agentList.empty.title} Click <strong>"${UI_STRINGS.agentList.newAgent}"</strong> ${UI_STRINGS.agentList.empty.description.replace('Click "New Agent" to ', '')}</p>
       </div>
     `;
     return;
@@ -142,12 +160,12 @@ function renderAgentList() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
           </svg>
-          Test Call
+          ${UI_STRINGS.agentList.card.testCall}
         </button>
-        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); editAgent('${agent.id}')">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteAgent('${agent.id}')">Delete</button>
+        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); editAgent('${agent.id}')">${UI_STRINGS.common.edit}</button>
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteAgent('${agent.id}')">${UI_STRINGS.common.delete}</button>
       </div>
-      <div class="agent-card-date">${new Date(agent.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+      <div class="agent-card-date">${UI_STRINGS.agentList.card.createdAt(agent.createdAt)}</div>
     </div>
   `).join('');
 }
@@ -163,8 +181,8 @@ function showCreateForm() {
   document.getElementById('form-agent-id').value = '';
   document.getElementById('form-name').value = '';
   document.getElementById('form-prompt').value = '';
-  document.getElementById('form-title').textContent = 'Create New Agent';
-  document.getElementById('form-submit-text').textContent = 'Create Agent';
+  document.getElementById('form-title').textContent = UI_STRINGS.form.createTitle;
+  document.getElementById('form-submit-text').textContent = UI_STRINGS.common.create;
 
   // Reset voice selection to Puck
   const grid = document.getElementById('voice-grid');
@@ -192,8 +210,8 @@ function editAgent(id) {
   document.getElementById('form-agent-id').value = agent.id;
   document.getElementById('form-name').value = agent.name;
   document.getElementById('form-prompt').value = agent.systemPrompt;
-  document.getElementById('form-title').textContent = 'Edit Agent';
-  document.getElementById('form-submit-text').textContent = 'Save Changes';
+  document.getElementById('form-title').textContent = UI_STRINGS.form.editTitle;
+  document.getElementById('form-submit-text').textContent = UI_STRINGS.common.save;
 
   // Set voice selection
   const grid = document.getElementById('voice-grid');
@@ -225,7 +243,7 @@ async function handleSubmit(event) {
   const modelName = document.getElementById('form-model').value;
 
   if (!name || !systemPrompt) {
-    showToast('Please fill in all fields', 'error');
+    showToast(UI_STRINGS.form.validation.requiredFields, 'error');
     return;
   }
 
@@ -235,13 +253,13 @@ async function handleSubmit(event) {
         method: 'PUT',
         body: JSON.stringify({ name, systemPrompt, voiceName, modelName }),
       });
-      showToast('Agent updated successfully', 'success');
+      showToast(UI_STRINGS.toasts.agentUpdated, 'success');
     } else {
       await api('/agents', {
         method: 'POST',
         body: JSON.stringify({ name, systemPrompt, voiceName, modelName }),
       });
-      showToast('Agent created successfully', 'success');
+      showToast(UI_STRINGS.toasts.agentCreated, 'success');
     }
 
     await loadAgents();
@@ -255,11 +273,11 @@ async function deleteAgent(id) {
   const agent = agents.find(a => a.id === id);
   if (!agent) return;
 
-  if (!confirm(`Delete "${agent.name}"? This cannot be undone.`)) return;
+  if (!confirm(`${UI_STRINGS.common.delete} "${agent.name}"? This cannot be undone.`)) return;
 
   try {
     await api(`/agents/${id}`, { method: 'DELETE' });
-    showToast('Agent deleted', 'success');
+    showToast(UI_STRINGS.toasts.agentDeleted, 'success');
     if (selectedAgentId === id) {
       selectedAgentId = null;
       showPanel('empty');
@@ -309,7 +327,7 @@ function showCallPanel(agentId) {
   document.getElementById('call-agent-name').textContent = agent.name;
   document.getElementById('call-voice-name').textContent = agent.voiceName;
   document.getElementById('call-model-badge').textContent = agent.modelName || 'default';
-  document.getElementById('call-status').textContent = 'Ready to call';
+  document.getElementById('call-status').textContent = UI_STRINGS.callPanel.ready;
   document.getElementById('call-status').className = 'call-status';
   document.getElementById('call-timer').classList.add('hidden');
   clearTranscript();
@@ -335,7 +353,7 @@ async function startCall() {
   const timerEl = document.getElementById('call-timer');
   const btnCall = document.getElementById('btn-call');
 
-  statusEl.textContent = 'Connecting...';
+  statusEl.textContent = UI_STRINGS.callPanel.connecting;
   statusEl.className = 'call-status connecting';
   console.log('[VoiceForge] 🔌 Starting call...');
 
@@ -402,7 +420,7 @@ async function startCall() {
 
     ws.onerror = (err) => {
       console.error('WebSocket error:', err);
-      showToast('Connection error', 'error');
+      showToast(UI_STRINGS.toasts.connectionError, 'error');
       endCall();
     };
 
@@ -424,12 +442,12 @@ function handleWsMessage(message) {
     case 'call-started':
       isInCall = true;
       updateCallUI(true);
-      document.getElementById('call-status').textContent = 'Connected';
+      document.getElementById('call-status').textContent = UI_STRINGS.callPanel.connected;
       document.getElementById('call-status').className = 'call-status active';
       document.getElementById('call-timer').classList.remove('hidden');
       startTimer();
       console.log(`[VoiceForge] ✅ Call connected | session=${message.sessionId} | agent="${message.agentName}" | model=${message.modelName}`);
-      showToast(`Call started with ${message.agentName}`, 'success');
+      showToast(UI_STRINGS.toasts.callStarted(message.agentName), 'success');
       break;
 
     case 'audio-response':
@@ -447,7 +465,7 @@ function handleWsMessage(message) {
 
     case 'call-ended':
       console.log(`[VoiceForge] 📴 Call ended: ${message.reason}`);
-      showToast(message.reason || 'Call ended', 'success');
+      showToast(message.reason || UI_STRINGS.callPanel.ended, 'success');
       endCall();
       break;
 
@@ -554,7 +572,7 @@ function endCall() {
 
   // Update UI
   updateCallUI(false);
-  document.getElementById('call-status').textContent = 'Call ended';
+  document.getElementById('call-status').textContent = UI_STRINGS.callPanel.ended;
   document.getElementById('call-status').className = 'call-status';
 
   stopWaveformAnimation();
@@ -565,7 +583,7 @@ function endCall() {
 // ── Transcript ──
 function clearTranscript() {
   const body = document.getElementById('transcript-body');
-  body.innerHTML = '<div class="transcript-empty">Transcription will appear here during the call...</div>';
+  body.innerHTML = `<div class="transcript-empty">${UI_STRINGS.callPanel.transcriptEmpty}</div>`;
 }
 
 function addTranscript(role, text) {
@@ -583,7 +601,7 @@ function addTranscript(role, text) {
   const msgDiv = document.createElement('div');
   msgDiv.className = `transcript-msg ${role}`;
   msgDiv.innerHTML = `
-    <div class="transcript-role">${role === 'user' ? '🎤 You' : '🤖 Agent'}</div>
+    <div class="transcript-role">${role === 'user' ? UI_STRINGS.callPanel.roles.user : UI_STRINGS.callPanel.roles.agent}</div>
     <div class="transcript-bubble">${escapeHtml(text)}</div>
     <div class="transcript-time">${timeStr}</div>
   `;
@@ -798,3 +816,15 @@ function uint8ToBase64(uint8Array) {
   }
   return btoa(binary);
 }
+
+// ── Global Exports (for inline onclick compatibility) ──
+window.showCreateForm = showCreateForm;
+window.hideForm = hideForm;
+window.handleSubmit = handleSubmit;
+window.hideCallPanel = hideCallPanel;
+window.toggleMute = toggleMute;
+window.toggleCall = toggleCall;
+window.selectAgent = selectAgent;
+window.showCallPanel = showCallPanel;
+window.editAgent = editAgent;
+window.deleteAgent = deleteAgent;

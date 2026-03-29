@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
 import prisma from '../lib/prisma.js';
+import { UI_STRINGS } from '../constants/uiStrings.js';
 
 /**
  * WebSocket signaling server for audio relay between browser and Gemini Live API.
@@ -58,7 +59,7 @@ class SignalingServer {
         break;
       default:
         console.warn(`[Signaling] ⚠️  Unknown message type: ${message.type}`);
-        ws.send(JSON.stringify({ type: 'error', message: `Unknown message type: ${message.type}` }));
+        ws.send(JSON.stringify({ type: 'error', message: UI_STRINGS.signaling.errors.unknownMessageType(message.type) }));
     }
   }
 
@@ -68,7 +69,7 @@ class SignalingServer {
 
     if (!agentId) {
       console.warn(`[Signaling] ⚠️  No agent ID provided`);
-      ws.send(JSON.stringify({ type: 'error', message: 'Agent ID is required' }));
+      ws.send(JSON.stringify({ type: 'error', message: UI_STRINGS.signaling.errors.agentIdRequired }));
       return;
     }
 
@@ -77,7 +78,7 @@ class SignalingServer {
     const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } });
     if (!agent) {
       console.warn(`[Signaling] ⚠️  Agent not found: ${agentId}`);
-      ws.send(JSON.stringify({ type: 'error', message: 'Agent not found' }));
+      ws.send(JSON.stringify({ type: 'error', message: UI_STRINGS.signaling.errors.agentNotFound }));
       return;
     }
     console.log(`[Signaling] ✅ Agent found: "${agent.name}" | voice=${agent.voiceName} | model=${agent.modelName}`);
@@ -132,7 +133,7 @@ class SignalingServer {
         onClose: () => {
           console.log(`[Signaling] 🔌 Gemini session closed — notifying client`);
           if (ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ type: 'call-ended', reason: 'Gemini session closed' }));
+            ws.send(JSON.stringify({ type: 'call-ended', reason: UI_STRINGS.signaling.status.geminiClosed }));
           }
           this.clients.delete(ws);
         },
@@ -153,7 +154,7 @@ class SignalingServer {
       console.error(`[Signaling] ❌ Failed to start call:`, error.message || error);
       ws.send(JSON.stringify({
         type: 'error',
-        message: 'Failed to connect to Gemini Live API. Check your API key and model name.',
+        message: UI_STRINGS.signaling.errors.geminiConnectFailed,
       }));
     }
   }
@@ -177,7 +178,7 @@ class SignalingServer {
       console.log(`[Signaling] 📴 End call request | session=${client.sessionId} | duration=${duration}s | audio_chunks=${client.audioChunksRelayed}`);
       await geminiLiveService.closeSession(client.sessionId);
       this.clients.delete(ws);
-      ws.send(JSON.stringify({ type: 'call-ended', reason: 'User ended call' }));
+      ws.send(JSON.stringify({ type: 'call-ended', reason: UI_STRINGS.signaling.status.userEnded }));
     }
   }
 

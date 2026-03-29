@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import router from '../routes/agents.js';
 import prisma from '../lib/prisma.js';
+import { UI_STRINGS } from '../constants/uiStrings.js';
 
 vi.mock('../lib/prisma.js', () => ({
   default: {
@@ -52,6 +53,7 @@ describe('Agents Routes', () => {
     prisma.voiceAgent.findMany.mockRejectedValue(new Error('err'));
     await getRouteHandler('/agents', 'get')({}, res);
     expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.fetchAgents });
   });
 
   it('GET /agents/:id success, 404, error', async () => {
@@ -63,10 +65,12 @@ describe('Agents Routes', () => {
     prisma.voiceAgent.findUnique.mockResolvedValue(null);
     await getRouteHandler('/agents/:id', 'get')({ params: { id: '404' } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
 
     prisma.voiceAgent.findUnique.mockRejectedValue(new Error('err'));
     await getRouteHandler('/agents/:id', 'get')({ params: { id: '1' } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.fetchAgent });
   });
 
   it('POST /agents coverage', async () => {
@@ -76,6 +80,7 @@ describe('Agents Routes', () => {
     // 1. Missing fields
     await getRouteHandler('/agents', 'post')({ body: {} }, res);
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.requiredNamePrompt });
     res.status.mockClear();
 
     // 2. Valid voice
@@ -86,6 +91,7 @@ describe('Agents Routes', () => {
     // 3. Invalid voice
     await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'INV' } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidVoice });
     res.status.mockClear();
 
     // 4. Valid model
@@ -96,12 +102,14 @@ describe('Agents Routes', () => {
     // 5. Invalid model
     await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', modelName: 'INV' } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidModel });
     res.status.mockClear();
 
     // 6. Generic error
     prisma.voiceAgent.create.mockRejectedValue(new Error('FAIL'));
     await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S' } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.createAgent });
   });
 
   it('PUT /agents/:id coverage', async () => {
@@ -111,6 +119,7 @@ describe('Agents Routes', () => {
     // 1. Invalid voice
     await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { voiceName: 'INV' } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidVoice });
     res.status.mockClear();
 
     // 2. Valid voice
@@ -121,6 +130,7 @@ describe('Agents Routes', () => {
     // 3. Invalid model
     await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { modelName: 'INV' } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidModel });
     res.status.mockClear();
 
     // 4. Valid model
@@ -133,12 +143,14 @@ describe('Agents Routes', () => {
     prisma.voiceAgent.update.mockRejectedValue(err);
     await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { name: 'N' } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
     res.status.mockClear();
 
     // 6. Generic Error
     prisma.voiceAgent.update.mockRejectedValue(new Error('FAIL'));
     await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { name: 'N' } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.updateAgent });
   });
 
   it('DELETE /agents/:id coverage', async () => {
@@ -151,9 +163,11 @@ describe('Agents Routes', () => {
     prisma.voiceAgent.delete.mockRejectedValue(err);
     await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
 
     prisma.voiceAgent.delete.mockRejectedValue(new Error('FAIL'));
     await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.deleteAgent });
   });
 });

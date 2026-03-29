@@ -28,8 +28,14 @@ If any of these checks fail, you MUST fix the issues before proceeding or inform
   - `info`: For significant application milestones (e.g., server start, session created).
   - `debug`: For detailed internal state or frequent events (e.g., individual message processing).
 31: 
-32: ## Responsiveness Rule
-33: When developing UI components or modifying styles, you MUST ensure full responsiveness across web and mobile platforms:
+32: ## Internationalization (i18n)
+33: - **No Hardcoded Strings**: DO NOT hardcode user-facing literal strings, prompts, labels, or error messages directly in components, routes, or services.
+34: - **Centralized UI_STRINGS**: Always use the centralized `UI_STRINGS` object from `src/constants/uiStrings.js` for all user-facing text.
+35: - **Template Placeholders**: For strings that require runtime substitution, use functions within the `UI_STRINGS` object (e.g., `UI_STRINGS.toasts.callStarted(agentName)`).
+36: - **Tests**: All tests must assert against these constants instead of hardcoded strings to ensure consistency and prevent brittle matches.
+37: 
+38: ## Responsiveness Rule
+39: When developing UI components or modifying styles, you MUST ensure full responsiveness across web and mobile platforms:
 34: - **Mobile-First**: Base styles should target mobile devices, with media queries for larger screens.
 35: - **Flexible Layouts**: Use relative units (`rem`, `%`, `vw`, `vh`) and layout systems (Flexbox, Grid) instead of fixed widths.
 36: - **Touch Targets**: Ensure interactive elements are at least 44x44px on mobile.

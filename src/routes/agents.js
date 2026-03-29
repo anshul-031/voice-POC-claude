@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import logger from '../utils/logger.js';
+import { UI_STRINGS } from '../constants/uiStrings.js';
 
 const router = Router();
 
@@ -59,7 +60,7 @@ router.get('/agents', async (req, res) => {
     res.json(agents);
   } catch (error) {
     logger.error('Error fetching agents', { error: error.message });
-    res.status(500).json({ error: 'Failed to fetch agents' });
+    res.status(500).json({ error: UI_STRINGS.api.errors.fetchAgents });
   }
 });
 
@@ -70,12 +71,12 @@ router.get('/agents/:id', async (req, res) => {
       where: { id: req.params.id },
     });
     if (!agent) {
-      return res.status(404).json({ error: 'Agent not found' });
+      return res.status(404).json({ error: UI_STRINGS.api.errors.agentNotFound });
     }
     res.json(agent);
   } catch (error) {
     logger.error('Error fetching agent', { id: req.params.id, error: error.message });
-    res.status(500).json({ error: 'Failed to fetch agent' });
+    res.status(500).json({ error: UI_STRINGS.api.errors.fetchAgent });
   }
 });
 
@@ -85,20 +86,20 @@ router.post('/agents', async (req, res) => {
     const { name, systemPrompt, voiceName, modelName } = req.body;
 
     if (!name || !systemPrompt) {
-      return res.status(400).json({ error: 'Name and system prompt are required' });
+      return res.status(400).json({ error: UI_STRINGS.api.errors.requiredNamePrompt });
     }
 
     if (voiceName) {
       const validVoice = AVAILABLE_VOICES.find(v => v.id === voiceName);
       if (!validVoice) {
-        return res.status(400).json({ error: 'Invalid voice name' });
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidVoice });
       }
     }
 
     if (modelName) {
       const validModel = AVAILABLE_MODELS.find(m => m.id === modelName);
       if (!validModel) {
-        return res.status(400).json({ error: 'Invalid model name' });
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidModel });
       }
     }
 
@@ -114,7 +115,7 @@ router.post('/agents', async (req, res) => {
     res.status(201).json(agent);
   } catch (error) {
     logger.error('Error creating agent', { error: error.message });
-    res.status(500).json({ error: 'Failed to create agent' });
+    res.status(500).json({ error: UI_STRINGS.api.errors.createAgent });
   }
 });
 
@@ -126,14 +127,14 @@ router.put('/agents/:id', async (req, res) => {
     if (voiceName) {
       const validVoice = AVAILABLE_VOICES.find(v => v.id === voiceName);
       if (!validVoice) {
-        return res.status(400).json({ error: 'Invalid voice name' });
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidVoice });
       }
     }
 
     if (modelName) {
       const validModel = AVAILABLE_MODELS.find(m => m.id === modelName);
       if (!validModel) {
-        return res.status(400).json({ error: 'Invalid model name' });
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidModel });
       }
     }
 
@@ -151,9 +152,9 @@ router.put('/agents/:id', async (req, res) => {
   } catch (error) {
     logger.error('Error updating agent', { id: req.params.id, error: error.message });
     if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Agent not found' });
+      return res.status(404).json({ error: UI_STRINGS.api.errors.agentNotFound });
     }
-    res.status(500).json({ error: 'Failed to update agent' });
+    res.status(500).json({ error: UI_STRINGS.api.errors.updateAgent });
   }
 });
 
@@ -164,13 +165,13 @@ router.delete('/agents/:id', async (req, res) => {
       where: { id: req.params.id },
     });
     logger.info('Agent deleted', { id: req.params.id });
-    res.json({ message: 'Agent deleted successfully' });
+    res.json({ message: UI_STRINGS.api.success.deleteAgent });
   } catch (error) {
     logger.error('Error deleting agent', { id: req.params.id, error: error.message });
     if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Agent not found' });
+      return res.status(404).json({ error: UI_STRINGS.api.errors.agentNotFound });
     }
-    res.status(500).json({ error: 'Failed to delete agent' });
+    res.status(500).json({ error: UI_STRINGS.api.errors.deleteAgent });
   }
 });
 
