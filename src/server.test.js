@@ -41,6 +41,8 @@ vi.mock('./routes/agents.js', () => ({
   default: vi.fn(),
 }));
 
+import { ROUTES } from './constants/index.js';
+
 const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
 describe('Server Routes', () => {
@@ -59,9 +61,19 @@ describe('Server Routes', () => {
     const res = { json: vi.fn(), sendFile: vi.fn(), status: vi.fn().mockReturnThis() };
     
     // Test Health Check
-    if (routes['/api/health']) {
-      routes['/api/health']({}, res);
+    if (routes[ROUTES.HEALTH_CHECK]) {
+      routes[ROUTES.HEALTH_CHECK]({}, res);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }));
+    }
+
+    // Test Constants Routes
+    if (routes[ROUTES.CONSTANTS_UI_STRINGS]) {
+      routes[ROUTES.CONSTANTS_UI_STRINGS]({}, res);
+      expect(res.sendFile).toHaveBeenCalled();
+    }
+    if (routes[ROUTES.CONSTANTS_CONFIG]) {
+      routes[ROUTES.CONSTANTS_CONFIG]({}, res);
+      expect(res.sendFile).toHaveBeenCalled();
     }
 
     // Test Fallback (path '*')

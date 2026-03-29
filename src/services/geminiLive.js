@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 import logger from '../utils/logger.js';
+import { AUDIO_CONFIG, TIME } from '../constants/index.js';
 
 /**
  * Manages Gemini Live API sessions for real-time voice interaction.
@@ -17,7 +18,7 @@ class GeminiLiveService {
    */
   async createSession(sessionId, { systemPrompt, voiceName, modelName, onAudio, onTranscript, onInterrupted, onError, onClose }) {
     try {
-      const model = modelName || 'gemini-2.5-flash-native-audio-latest';
+      const model = modelName || AUDIO_CONFIG.DEFAULT_MODEL;
       
       logger.info('Creating Gemini Live session', {
         sessionId,
@@ -209,7 +210,7 @@ class GeminiLiveService {
       await entry.session.sendRealtimeInput({
         audio: {
           data: audioBase64,
-          mimeType: 'audio/pcm;rate=16000',
+          mimeType: AUDIO_CONFIG.MIME_TYPE,
         },
       });
     } catch (error) {
@@ -247,7 +248,7 @@ class GeminiLiveService {
   async closeSession(sessionId) {
     const entry = this.sessions.get(sessionId);
     if (entry) {
-      const duration = Math.round((Date.now() - entry.startTime) / 1000);
+      const duration = Math.round((Date.now() - entry.startTime) / TIME.MS_TO_SEC);
       logger.info('Closing Gemini session', {
         sessionId,
         durationSeconds: duration,

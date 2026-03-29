@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
 import prisma from '../lib/prisma.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
+import { ROUTES, TIME } from '../constants/index.js';
 
 /**
  * WebSocket signaling server for audio relay between browser and Gemini Live API.
@@ -15,7 +16,7 @@ class SignalingServer {
   }
 
   attach(httpServer) {
-    this.wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+    this.wss = new WebSocketServer({ server: httpServer, path: ROUTES.WS_PATH });
 
     this.wss.on('connection', (ws, req) => {
       const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -43,7 +44,7 @@ class SignalingServer {
       });
     });
 
-    console.log('[Signaling] ✅ WebSocket server attached at /ws');
+    console.log(`[Signaling] ✅ WebSocket server attached at ${ROUTES.WS_PATH}`);
   }
 
   async _handleMessage(ws, message) {
@@ -174,7 +175,7 @@ class SignalingServer {
   async _handleEndCall(ws) {
     const client = this.clients.get(ws);
     if (client) {
-      const duration = Math.round((Date.now() - client.startTime) / 1000);
+      const duration = Math.round((Date.now() - client.startTime) / TIME.MS_TO_SEC);
       console.log(`[Signaling] 📴 End call request | session=${client.sessionId} | duration=${duration}s | audio_chunks=${client.audioChunksRelayed}`);
       await geminiLiveService.closeSession(client.sessionId);
       this.clients.delete(ws);

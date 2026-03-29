@@ -3,6 +3,7 @@
    Agent CRUD, WebSocket Audio, Waveform Viz
    ============================================ */
 import { UI_STRINGS } from '/constants/uiStrings.js';
+import { CONFIG } from '/constants/config.js';
 
 // ── i18n Helper ──
 function applyI18n() {
@@ -52,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── API Helpers ──
 async function api(path, options = {}) {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${CONFIG.API_PREFIX}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
@@ -89,8 +90,8 @@ async function loadVoices() {
 function renderVoiceGrid() {
   const grid = document.getElementById('voice-grid');
   grid.innerHTML = voices.map(v => `
-    <label class="voice-option${v.id === 'Puck' ? ' selected' : ''}" data-voice="${v.id}">
-      <input type="radio" name="voiceName" value="${v.id}" ${v.id === 'Puck' ? 'checked' : ''}>
+    <label class="voice-option${v.id === CONFIG.DEFAULT_VOICE ? ' selected' : ''}" data-voice="${v.id}">
+      <input type="radio" name="voiceName" value="${v.id}" ${v.id === CONFIG.DEFAULT_VOICE ? 'checked' : ''}>
       <div class="voice-option-name">${v.name}</div>
       <div class="voice-option-desc">${v.description}</div>
     </label>
@@ -188,7 +189,7 @@ function showCreateForm() {
   const grid = document.getElementById('voice-grid');
   grid.querySelectorAll('.voice-option').forEach(o => {
     o.classList.remove('selected');
-    if (o.dataset.voice === 'Puck') {
+    if (o.dataset.voice === CONFIG.DEFAULT_VOICE) {
       o.classList.add('selected');
       o.querySelector('input').checked = true;
     }
@@ -239,7 +240,7 @@ async function handleSubmit(event) {
   const name = document.getElementById('form-name').value.trim();
   const systemPrompt = document.getElementById('form-prompt').value.trim();
   const voiceRadio = document.querySelector('input[name="voiceName"]:checked');
-  const voiceName = voiceRadio ? voiceRadio.value : 'Puck';
+  const voiceName = voiceRadio ? voiceRadio.value : CONFIG.DEFAULT_VOICE;
   const modelName = document.getElementById('form-model').value;
 
   if (!name || !systemPrompt) {
@@ -359,10 +360,10 @@ async function startCall() {
 
   try {
     // 1. Get microphone access
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: CONFIG.SAMPLE_RATE_INPUT });
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        sampleRate: 16000,
+        sampleRate: CONFIG.SAMPLE_RATE_INPUT,
         channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
@@ -406,7 +407,7 @@ async function startCall() {
 
     // 4. Connect WebSocket
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
+    ws = new WebSocket(`${wsProtocol}//${window.location.host}${CONFIG.WS_PATH}`);
 
     ws.onopen = () => {
       // Start call
@@ -515,7 +516,7 @@ async function processAudioQueue() {
     }
 
     // Create audio buffer at 24kHz
-    const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
+    const audioBuffer = audioContext.createBuffer(1, float32.length, CONFIG.SAMPLE_RATE_OUTPUT);
     audioBuffer.getChannelData(0).set(float32);
 
     const bufferSource = audioContext.createBufferSource();

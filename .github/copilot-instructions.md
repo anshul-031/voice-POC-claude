@@ -36,3 +36,8 @@ Ensure full responsiveness across web and mobile platforms:
     - Tablet: 640px - 1024px
     - Desktop: > 1024px
 - **Testing**: Verify at various sizes (320px to 1920px) to ensure no overflow or layout breakage.
+
+## 5. Constants Management
+- **Centralized Constants**: All non-user-facing configuration constants, API URLs, timeouts, port numbers, and magic strings/numbers MUST be stored in `src/constants/index.js` (or specific modules within `src/constants/`).
+- **No Hardcoded Values**: DO NOT hardcode configuration values directly in logic. Import them from the constants module.
+- **Naming Convention**: Use `UPPER_SNAKE_CASE` for all constant names.

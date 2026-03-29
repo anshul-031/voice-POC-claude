@@ -8,13 +8,14 @@ import agentRoutes from './routes/agents.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
 import { UI_STRINGS } from './constants/uiStrings.js';
+import { DEFAULT_PORT, ROUTES } from './constants/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
 const server = createServer(app);
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || DEFAULT_PORT;
 
 // Middleware
 app.use(cors());
@@ -34,16 +35,20 @@ app.use((req, res, next) => {
 app.use(express.static(join(__dirname, '..', 'public')));
 
 // API Routes
-app.use('/api', agentRoutes);
+app.use(ROUTES.API_PREFIX, agentRoutes);
 
-// Global UI Strings for Frontend
-app.get('/constants/uiStrings.js', (req, res) => {
+// Static Constants for Frontend
+app.get(ROUTES.CONSTANTS_UI_STRINGS, (req, res) => {
   res.sendFile(join(__dirname, 'constants', 'uiStrings.js'));
+});
+
+app.get(ROUTES.CONSTANTS_CONFIG, (req, res) => {
+  res.sendFile(join(__dirname, 'constants', 'config.js'));
 });
 
 // Health check
 /* istanbul ignore next */
-app.get('/api/health', (req, res) => {
+app.get(ROUTES.HEALTH_CHECK, (req, res) => {
   logger.debug('Health check requested');
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -63,8 +68,8 @@ ${'━'.repeat(56)}
 🎙️  ${UI_STRINGS.header.title} — AI Voice Agent Platform
 ${'━'.repeat(56)}
   🌐  Server:     http://localhost:${PORT}
-  📡  WebSocket:  ws://localhost:${PORT}/ws
-  📊  API:        http://localhost:${PORT}/api
+  📡  WebSocket:  ws://localhost:${PORT}${ROUTES.WS_PATH}
+  📊  API:        http://localhost:${PORT}${ROUTES.API_PREFIX}
 ${'─'.repeat(56)}
   🔑  API Key:    ${process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ MISSING'}
   🗄️   Database:   ${process.env.DATABASE_URL ? '✅ Configured' : '❌ MISSING'}

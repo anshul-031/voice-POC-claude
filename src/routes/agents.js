@@ -2,44 +2,10 @@ import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import logger from '../utils/logger.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
+import { PRISMA_ERRORS, AUDIO_CONFIG } from '../constants/index.js';
+import { AVAILABLE_VOICES, AVAILABLE_MODELS } from '../constants/agents.js';
 
 const router = Router();
-
-// Available Gemini voices
-const AVAILABLE_VOICES = [
-  { id: 'Puck', name: 'Puck', description: 'Warm & friendly — great all-rounder (default)' },
-  { id: 'Charon', name: 'Charon', description: 'Deep & authoritative — ideal for formal agents' },
-  { id: 'Kore', name: 'Kore', description: 'Bright & engaging — perfect for customer support' },
-  { id: 'Fenrir', name: 'Fenrir', description: 'Strong & bold — suited for assertive personas' },
-  { id: 'Aoede', name: 'Aoede', description: 'Melodic & clear — excellent for narration' },
-  { id: 'Zephyr', name: 'Zephyr', description: 'Light & breezy — casual conversational tone' },
-  { id: 'Leda', name: 'Leda', description: 'Calm & composed — great for professional settings' },
-  { id: 'Orus', name: 'Orus', description: 'Rich & resonant — powerful presence' },
-];
-
-// Available Gemini Live models (verified via API — bidiGenerateContent support)
-const AVAILABLE_MODELS = [
-  {
-    id: 'gemini-2.5-flash-native-audio-latest',
-    name: 'Gemini 2.5 Flash Native Audio (Latest)',
-    description: 'Latest stable native audio model',
-  },
-  {
-    id: 'gemini-3.1-flash-live-preview',
-    name: 'Gemini 3.1 Flash Live (Preview)',
-    description: 'Newest real-time model with advanced capabilities',
-  },
-  {
-    id: 'gemini-2.5-flash-native-audio-preview-12-2025',
-    name: 'Gemini 2.5 Flash Native Audio (Dec 2025)',
-    description: 'Native audio preview from December 2025',
-  },
-  {
-    id: 'gemini-2.5-flash-native-audio-preview-09-2025',
-    name: 'Gemini 2.5 Flash Native Audio (Sep 2025)',
-    description: 'Native audio preview from September 2025',
-  },
-];
 
 // GET /api/voices — list available voices
 router.get('/voices', (req, res) => {
@@ -107,8 +73,8 @@ router.post('/agents', async (req, res) => {
       data: {
         name,
         systemPrompt,
-        voiceName: voiceName || 'Puck',
-        modelName: modelName || 'gemini-2.5-flash-native-audio-latest',
+        voiceName: voiceName || AUDIO_CONFIG.DEFAULT_VOICE,
+        modelName: modelName || AUDIO_CONFIG.DEFAULT_MODEL,
       },
     });
     logger.info('Agent created', { id: agent.id, name: agent.name });
@@ -151,7 +117,7 @@ router.put('/agents/:id', async (req, res) => {
     res.json(agent);
   } catch (error) {
     logger.error('Error updating agent', { id: req.params.id, error: error.message });
-    if (error.code === 'P2025') {
+    if (error.code === PRISMA_ERRORS.NOT_FOUND) {
       return res.status(404).json({ error: UI_STRINGS.api.errors.agentNotFound });
     }
     res.status(500).json({ error: UI_STRINGS.api.errors.updateAgent });
@@ -168,7 +134,7 @@ router.delete('/agents/:id', async (req, res) => {
     res.json({ message: UI_STRINGS.api.success.deleteAgent });
   } catch (error) {
     logger.error('Error deleting agent', { id: req.params.id, error: error.message });
-    if (error.code === 'P2025') {
+    if (error.code === PRISMA_ERRORS.NOT_FOUND) {
       return res.status(404).json({ error: UI_STRINGS.api.errors.agentNotFound });
     }
     res.status(500).json({ error: UI_STRINGS.api.errors.deleteAgent });
