@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
 
@@ -57,7 +58,7 @@ router.get('/agents', async (req, res) => {
     });
     res.json(agents);
   } catch (error) {
-    console.error('Error fetching agents:', error);
+    logger.error('Error fetching agents', { error: error.message });
     res.status(500).json({ error: 'Failed to fetch agents' });
   }
 });
@@ -73,7 +74,7 @@ router.get('/agents/:id', async (req, res) => {
     }
     res.json(agent);
   } catch (error) {
-    console.error('Error fetching agent:', error);
+    logger.error('Error fetching agent', { id: req.params.id, error: error.message });
     res.status(500).json({ error: 'Failed to fetch agent' });
   }
 });
@@ -109,9 +110,10 @@ router.post('/agents', async (req, res) => {
         modelName: modelName || 'gemini-2.5-flash-native-audio-latest',
       },
     });
+    logger.info('Agent created', { id: agent.id, name: agent.name });
     res.status(201).json(agent);
   } catch (error) {
-    console.error('Error creating agent:', error);
+    logger.error('Error creating agent', { error: error.message });
     res.status(500).json({ error: 'Failed to create agent' });
   }
 });
@@ -144,9 +146,10 @@ router.put('/agents/:id', async (req, res) => {
         ...(modelName && { modelName }),
       },
     });
+    logger.info('Agent updated', { id: agent.id, name: agent.name });
     res.json(agent);
   } catch (error) {
-    console.error('Error updating agent:', error);
+    logger.error('Error updating agent', { id: req.params.id, error: error.message });
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Agent not found' });
     }
@@ -160,9 +163,10 @@ router.delete('/agents/:id', async (req, res) => {
     await prisma.voiceAgent.delete({
       where: { id: req.params.id },
     });
+    logger.info('Agent deleted', { id: req.params.id });
     res.json({ message: 'Agent deleted successfully' });
   } catch (error) {
-    console.error('Error deleting agent:', error);
+    logger.error('Error deleting agent', { id: req.params.id, error: error.message });
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Agent not found' });
     }

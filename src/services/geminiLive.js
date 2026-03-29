@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality } from '@google/genai';
+import logger from '../utils/logger.js';
 
 /**
  * Manages Gemini Live API sessions for real-time voice interaction.
@@ -8,7 +9,7 @@ class GeminiLiveService {
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     this.sessions = new Map();
-    console.log('[GeminiLive] Service initialized');
+    logger.info('GeminiLive Service initialized');
   }
 
   /**
@@ -17,12 +18,13 @@ class GeminiLiveService {
   async createSession(sessionId, { systemPrompt, voiceName, modelName, onAudio, onTranscript, onInterrupted, onError, onClose }) {
     try {
       const model = modelName || 'gemini-2.5-flash-native-audio-latest';
-      console.log(`[GeminiLive] ┌─ Creating session`);
-      console.log(`[GeminiLive] │  Session ID: ${sessionId}`);
-      console.log(`[GeminiLive] │  Model: ${model}`);
-      console.log(`[GeminiLive] │  Voice: ${voiceName || 'Puck'}`);
-      console.log(`[GeminiLive] │  System Prompt: "${(systemPrompt || '').substring(0, 80)}${(systemPrompt || '').length > 80 ? '...' : ''}"`);
-      console.log(`[GeminiLive] └─ Connecting...`);
+      
+      logger.info('Creating Gemini Live session', {
+        sessionId,
+        model,
+        voice: voiceName || 'Puck',
+        systemPromptSnippet: (systemPrompt || '').substring(0, 80),
+      });
 
       const config = {
         responseModalities: [Modality.AUDIO],
@@ -47,17 +49,29 @@ class GeminiLiveService {
         callbacks: {
           onopen: () => {
             const elapsed = Date.now() - startTime;
-            console.log(`[GeminiLive] ✅ Session ${sessionId} opened (${elapsed}ms to connect)`);
+            logger.info('Gemini Live session opened', {
+              sessionId,
+              elapsedMs: elapsed,
+            });
           },
           onmessage: (message) => {
             this._handleMessage(sessionId, message, onAudio, onTranscript, onInterrupted);
           },
           onerror: (e) => {
-            console.error(`[GeminiLive] ❌ Session ${sessionId} error:`, e.message || e);
+            const errorMsg = e.message || (typeof e === 'string' ? e : 'Unknown Gemini error');
+            logger.error('Gemini Live session error', {
+              sessionId,
+              error: errorMsg,
+              // @ts-ignore - stack might not exist on all error types from SDK
+              stack: e.stack,
+            });
             if (onError) onError(e);
           },
           onclose: (e) => {
-            console.log(`[GeminiLive] 🔌 Session ${sessionId} closed — reason: ${e?.reason || e?.code || 'unknown'}`);
+            logger.info('Gemini Live session closed', {
+              sessionId,
+              reason: e?.reason || e?.code || 'unknown',
+            });
             this.sessions.delete(sessionId);
             if (onClose) onClose(e);
           },
@@ -65,10 +79,14 @@ class GeminiLiveService {
       });
 
       this.sessions.set(sessionId, { session, voiceName, model, startTime: Date.now(), audioChunksSent: 0, audioChunksReceived: 0 });
-      console.log(`[GeminiLive] 📡 Session ${sessionId} registered and ready`);
+      logger.debug('Gemini Live session registered', { sessionId });
       return session;
     } catch (error) {
-      console.error(`[GeminiLive] ❌ Failed to create session ${sessionId}:`, error.message || error);
+      logger.error('Failed to create Gemini Live session', {
+        sessionId,
+        error: error.message || error,
+        stack: error.stack,
+      });
       throw error;
     }
   }
@@ -89,7 +107,13 @@ class GeminiLiveService {
           if (part.inlineData && part.inlineData.mimeType?.startsWith('audio/')) {
             if (entry) entry.audioChunksReceived++;
             const dataSize = part.inlineData.data ? part.inlineData.data.length : 0;
-            console.log(`[GeminiLive] 🔊 Audio chunk received | session=${sessionId} | size=${dataSize} bytes | total_received=${entry?.audioChunksReceived || '?'}`);
+            
+            logger.debug('Audio chunk received from Gemini', {
+              sessionId,
+              dataSize,
+              totalReceived: entry?.audioChunksReceived,
+            });
+
             if (onAudio) {
               onAudio(part.inlineData.data);
             }
@@ -97,7 +121,10 @@ class GeminiLiveService {
 
           // Text transcript from model
           if (part.text) {
-            console.log(`[GeminiLive] 💬 Model transcript | session=${sessionId} | text="${part.text}"`);
+            logger.info('Model transcript received', {
+              sessionId,
+              text: part.text,
+            });
             if (onTranscript) {
               onTranscript({ role: 'model', text: part.text });
             }
@@ -107,19 +134,22 @@ class GeminiLiveService {
 
       // Turn complete
       if (serverContent.turnComplete) {
-        console.log(`[GeminiLive] ✓ Turn complete | session=${sessionId}`);
+        logger.debug('Turn complete', { sessionId });
       }
 
       // Check if model was interrupted
       if (serverContent.interrupted) {
-        console.log(`[GeminiLive] ⚡ Model interrupted | session=${sessionId}`);
+        logger.info('Model interrupted', { sessionId });
         if (onInterrupted) onInterrupted();
       }
 
       // Input transcription (what the user said)
       if (serverContent.inputTranscription) {
         const text = serverContent.inputTranscription.text || serverContent.inputTranscription;
-        console.log(`[GeminiLive] 🎤 User transcript | session=${sessionId} | text="${text}"`);
+        logger.info('User transcript received', {
+          sessionId,
+          text: typeof text === 'string' ? text : JSON.stringify(text),
+        });
         if (onTranscript) {
           onTranscript({ role: 'user', text: typeof text === 'string' ? text : JSON.stringify(text) });
         }
@@ -128,7 +158,10 @@ class GeminiLiveService {
       // Output transcription
       if (serverContent.outputTranscription) {
         const text = serverContent.outputTranscription.text || serverContent.outputTranscription;
-        console.log(`[GeminiLive] 🤖 Output transcript | session=${sessionId} | text="${text}"`);
+        logger.info('Output transcript received', {
+          sessionId,
+          text: typeof text === 'string' ? text : JSON.stringify(text),
+        });
         if (onTranscript) {
           onTranscript({ role: 'model', text: typeof text === 'string' ? text : JSON.stringify(text) });
         }
@@ -138,7 +171,10 @@ class GeminiLiveService {
     // Some SDK versions deliver audio in message.data directly
     if (message.data && !message.serverContent) {
       if (entry) entry.audioChunksReceived++;
-      console.log(`[GeminiLive] 🔊 Direct audio data | session=${sessionId} | total_received=${entry?.audioChunksReceived || '?'}`);
+      logger.debug('Direct audio data received from Gemini', {
+        sessionId,
+        totalReceived: entry?.audioChunksReceived,
+      });
       if (onAudio) {
         onAudio(message.data);
       }
@@ -146,7 +182,7 @@ class GeminiLiveService {
 
     // Log any setup complete or other messages
     if (message.setupComplete) {
-      console.log(`[GeminiLive] ⚙️  Setup complete | session=${sessionId}`);
+      logger.info('Gemini setup complete', { sessionId });
     }
   }
 
@@ -156,14 +192,18 @@ class GeminiLiveService {
   async sendAudio(sessionId, audioBase64) {
     const entry = this.sessions.get(sessionId);
     if (!entry) {
-      console.warn(`[GeminiLive] ⚠️  No session found for ${sessionId}`);
+      logger.warn('No session found for sending audio', { sessionId });
       return;
     }
 
     try {
       entry.audioChunksSent++;
       if (entry.audioChunksSent % 50 === 1) {
-        console.log(`[GeminiLive] 🎙️  Sending audio | session=${sessionId} | chunk #${entry.audioChunksSent} | size=${audioBase64.length} chars`);
+        logger.debug('Sending audio to Gemini', {
+          sessionId,
+          chunkCount: entry.audioChunksSent,
+          dataSize: audioBase64.length,
+        });
       }
 
       await entry.session.sendRealtimeInput({
@@ -173,7 +213,10 @@ class GeminiLiveService {
         },
       });
     } catch (error) {
-      console.error(`[GeminiLive] ❌ Error sending audio | session=${sessionId}:`, error.message);
+      logger.error('Error sending audio to Gemini', {
+        sessionId,
+        error: error.message,
+      });
     }
   }
 
@@ -185,13 +228,16 @@ class GeminiLiveService {
     if (!entry) return;
 
     try {
-      console.log(`[GeminiLive] 📝 Sending text | session=${sessionId} | text="${text}"`);
+      logger.info('Sending text to Gemini', { sessionId, text });
       await entry.session.sendClientContent({
         turns: [{ role: 'user', parts: [{ text }] }],
         turnComplete: true,
       });
     } catch (error) {
-      console.error(`[GeminiLive] ❌ Error sending text | session=${sessionId}:`, error.message);
+      logger.error('Error sending text to Gemini', {
+        sessionId,
+        error: error.message,
+      });
     }
   }
 
@@ -202,12 +248,19 @@ class GeminiLiveService {
     const entry = this.sessions.get(sessionId);
     if (entry) {
       const duration = Math.round((Date.now() - entry.startTime) / 1000);
-      console.log(`[GeminiLive] 🛑 Closing session ${sessionId}`);
-      console.log(`[GeminiLive]    Duration: ${duration}s | Audio sent: ${entry.audioChunksSent} chunks | Audio received: ${entry.audioChunksReceived} chunks`);
+      logger.info('Closing Gemini session', {
+        sessionId,
+        durationSeconds: duration,
+        audioChunksSent: entry.audioChunksSent,
+        audioChunksReceived: entry.audioChunksReceived,
+      });
       try {
         await entry.session.close();
-      } catch (_e) {
-        // ignore close errors
+      } catch (error) {
+        logger.debug('Error closing Gemini session (expected)', {
+          sessionId,
+          error: error.message,
+        });
       }
       this.sessions.delete(sessionId);
     }

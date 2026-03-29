@@ -25,9 +25,12 @@
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
     "uuid": "^11.0.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitest/coverage-v8": "^4.1.2",
     "eslint": "^10.1.0",
     "eslint-config-prettier": "^10.1.8",

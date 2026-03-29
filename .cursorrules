@@ -16,3 +16,14 @@ This command performs the following checks:
 4.  **Database**: Runs Prisma migration deployment to ensure the schema is up to date.
 
 If any of these checks fail, you MUST fix the issues before proceeding or informing the user that your task is complete.
+
+## Logging Standards
+- **Use the Centralized Logger**: DO NOT use `console.log`, `console.error`, or `console.warn` for application logs. Always import and use the logger from `src/utils/logger.js`.
+- **Structured Logging**: Provide context using metadata objects as the second argument to logger methods.
+  - Correct: `logger.info('User logged in', { userId: user.id });`
+  - Incorrect: `logger.info(\`User \${user.id} logged in\`);`
+- **Log Levels**:
+  - `error`: For critical failures that require attention.
+  - `warn`: For unexpected but non-fatal conditions.
+  - `info`: For significant application milestones (e.g., server start, session created).
+  - `debug`: For detailed internal state or frequent events (e.g., individual message processing).

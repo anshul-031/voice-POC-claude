@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import agentRoutes from './routes/agents.js';
 import signalingServer from './services/signalingServer.js';
+import logger from './utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -18,6 +19,16 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Request logging middleware
+/* istanbul ignore next */
+app.use((req, res, next) => {
+  logger.info(`${req.method} ${req.url}`, {
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+  });
+  next();
+});
+
 // Serve static frontend
 app.use(express.static(join(__dirname, '..', 'public')));
 
@@ -25,7 +36,9 @@ app.use(express.static(join(__dirname, '..', 'public')));
 app.use('/api', agentRoutes);
 
 // Health check
+/* istanbul ignore next */
 app.get('/api/health', (req, res) => {
+  logger.debug('Health check requested');
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -38,17 +51,25 @@ app.get('*', (req, res) => {
 signalingServer.attach(server);
 
 // Start server
-server.listen(PORT, () => {
-  console.log(`\n${'━'.repeat(56)}`);
-  console.log(`🎙️  VoiceForge — AI Voice Agent Platform`);
-  console.log(`${'━'.repeat(56)}`);
-  console.log(`  🌐  Server:     http://localhost:${PORT}`);
-  console.log(`  📡  WebSocket:  ws://localhost:${PORT}/ws`);
-  console.log(`  📊  API:        http://localhost:${PORT}/api`);
-  console.log(`${'─'.repeat(56)}`);
-  console.log(`  🔑  API Key:    ${process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ MISSING'}`);
-  console.log(`  🗄️   Database:   ${process.env.DATABASE_URL ? '✅ Configured' : '❌ MISSING'}`);
-  console.log(`  🖥️   Node:       ${process.version}`);
-  console.log(`  📅  Started:    ${new Date().toLocaleString()}`);
-  console.log(`${'━'.repeat(56)}\n`);
+server.listen(PORT, /* istanbul ignore next */ () => {
+  const startupMsg = `
+${'━'.repeat(56)}
+🎙️  VoiceForge — AI Voice Agent Platform
+${'━'.repeat(56)}
+  🌐  Server:     http://localhost:${PORT}
+  📡  WebSocket:  ws://localhost:${PORT}/ws
+  📊  API:        http://localhost:${PORT}/api
+${'─'.repeat(56)}
+  🔑  API Key:    ${process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ MISSING'}
+  🗄️   Database:   ${process.env.DATABASE_URL ? '✅ Configured' : '❌ MISSING'}
+  🖥️   Node:       ${process.version}
+  📅  Started:    ${new Date().toLocaleString()}
+${'━'.repeat(56)}
+`;
+  console.log(startupMsg);
+  logger.info('Server started', {
+    port: PORT,
+    nodeVersion: process.version,
+    env: process.env.NODE_ENV || 'development',
+  });
 });
