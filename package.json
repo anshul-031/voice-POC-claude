@@ -1,0 +1,26 @@
+{
+  "name": "voice-agent-platform",
+  "version": "1.0.0",
+  "description": "AI Voice Agent Creation Platform with Gemini Live API",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "npx prisma migrate dev",
+    "db:generate": "npx prisma generate",
+    "db:studio": "npx prisma studio"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@prisma/client": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "uuid": "^11.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.0.0"
+  }
+}

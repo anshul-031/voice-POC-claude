@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AI Voice Agent Creation Platform — Create, configure, and test voice agents powered by Gemini Live API">
+  <title>VoiceForge — AI Voice Agent Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Header -->
+  <header id="app-header">
+    <div class="header-content">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <h1>VoiceForge</h1>
+      </div>
+      <div class="header-status">
+        <div class="status-dot" id="api-status"></div>
+        <span id="api-status-text">Checking API...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main id="app-main">
+    <!-- Left Panel: Agent Management -->
+    <section class="panel agent-panel" id="agent-panel">
+      <div class="panel-header">
+        <h2>Voice Agents</h2>
+        <button class="btn btn-primary btn-glow" id="btn-new-agent" onclick="showCreateForm()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          New Agent
+        </button>
+      </div>
+
+      <!-- Agent List -->
+      <div class="agent-list" id="agent-list">
+        <div class="loading-skeleton">
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Panel: Agent Form / Call Panel -->
+    <section class="panel detail-panel" id="detail-panel">
+      <!-- Empty State -->
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <h3>Create Your First Voice Agent</h3>
+        <p>Configure an AI voice agent with a custom personality, system prompt, and voice. Test it with a live call right in your browser.</p>
+      </div>
+
+      <!-- Create/Edit Form -->
+      <div class="agent-form-container hidden" id="agent-form-container">
+        <div class="form-header">
+          <h2 id="form-title">Create New Agent</h2>
+          <button class="btn btn-ghost" onclick="hideForm()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <form id="agent-form" onsubmit="handleSubmit(event)">
+          <input type="hidden" id="form-agent-id" value="">
+          
+          <div class="form-group">
+            <label for="form-name">Agent Name</label>
+            <input type="text" id="form-name" placeholder="e.g. Customer Support Bot" required>
+          </div>
+
+          <div class="form-group">
+            <label for="form-voice">Voice</label>
+            <div class="voice-grid" id="voice-grid">
+              <!-- Voice options loaded dynamically -->
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="form-model">Gemini Live Model</label>
+            <select id="form-model" class="form-select">
+              <!-- Model options loaded dynamically -->
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="form-prompt">System Prompt</label>
+            <textarea id="form-prompt" rows="6" placeholder="You are a helpful customer support agent for Acme Corp. Be friendly, professional, and concise in your responses..." required></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" onclick="hideForm()">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-glow" id="form-submit-btn">
+              <span id="form-submit-text">Create Agent</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Call Panel -->
+      <div class="call-panel hidden" id="call-panel">
+        <div class="call-header">
+          <button class="btn btn-ghost" onclick="hideCallPanel()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="19" y1="12" x2="5" y2="12"/>
+              <polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back
+          </button>
+          <h2 id="call-agent-name">Agent Name</h2>
+          <div class="call-model-badge" id="call-model-badge"></div>
+        </div>
+
+        <div class="call-body-split">
+          <!-- Left: Waveform + Controls -->
+          <div class="call-left">
+            <div class="visualizer-container" id="visualizer-container">
+              <canvas id="waveform-canvas" width="350" height="170"></canvas>
+              <div class="call-status" id="call-status">Ready to call</div>
+              <div class="call-timer hidden" id="call-timer">00:00</div>
+            </div>
+
+            <div class="call-voice-info" id="call-voice-info">
+              <div class="voice-badge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                </svg>
+                <span id="call-voice-name">Puck</span>
+              </div>
+            </div>
+
+            <div class="call-controls">
+              <button class="btn-call btn-mute" id="btn-mute" onclick="toggleMute()" title="Mute/Unmute">
+                <svg id="mute-icon-off" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                </svg>
+                <svg id="mute-icon-on" class="hidden" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                  <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+                  <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .67-.1 1.32-.27 1.93"/>
+                </svg>
+              </button>
+
+              <button class="btn-call btn-phone" id="btn-call" onclick="toggleCall()">
+                <svg id="call-icon-start" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+                </svg>
+                <svg id="call-icon-end" class="hidden" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <path d="M23.71 16.67C20.66 13.78 16.54 12 12 12S3.34 13.78.29 16.67c-.18.18-.29.43-.29.71s.11.53.29.71l2.48 2.48c.18.18.43.29.71.29s.53-.11.71-.29l2.79-2.79c.18-.18.29-.43.29-.71v-3.39c1.69-.64 3.53-1 5.43-1h.1c1.9 0 3.74.36 5.43 1v3.39c0 .28.11.53.29.71l2.79 2.79c.18.18.43.29.71.29s.53-.11.71-.29l2.48-2.48c.18-.18.29-.43.29-.71s-.11-.53-.29-.71z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Right: Live Transcript -->
+          <div class="call-right">
+            <div class="transcript-header">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span>Live Transcript</span>
+            </div>
+            <div class="transcript-body" id="transcript-body">
+              <div class="transcript-empty">
+                Transcription will appear here during the call...
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model VoiceAgent {
+  id           String   @id @default(cuid())
+  name         String
+  systemPrompt String   @db.Text
+  voiceName    String   @default("Puck")
+  modelName    String   @default("gemini-2.5-flash-native-audio-latest")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("voice_agents")
+}
