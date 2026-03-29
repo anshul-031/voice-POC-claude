@@ -977,18 +977,36 @@ body::before {
 }
 
 /* ── Responsive ── */
+
+/* Tablet & Large Mobile (max-width: 1024px) */
+@media (max-width: 1024px) {
+  #app-main {
+    grid-template-columns: 320px 1fr;
+    padding: 20px;
+    gap: 20px;
+  }
+}
+
+/* Tablets (max-width: 900px) */
 @media (max-width: 900px) {
   #app-main {
     grid-template-columns: 1fr;
     padding: 16px;
+    gap: 16px;
   }
 
   .agent-panel {
-    max-height: 50vh;
+    max-height: none;
+    order: 2;
+  }
+
+  .detail-panel {
+    order: 1;
+    min-height: 500px;
   }
 
   .agent-list {
-    max-height: 35vh;
+    max-height: 400px;
   }
 
   .header-content {
@@ -1006,25 +1024,95 @@ body::before {
   .call-left {
     border-right: none;
     border-bottom: 1px solid var(--border-color);
-    padding: 16px;
+    padding: 24px 16px;
   }
 
   .call-right {
-    min-height: 200px;
+    min-height: 300px;
   }
 }
 
-@media (max-width: 480px) {
+/* Mobile (max-width: 640px) */
+@media (max-width: 640px) {
+  .logo h1 {
+    font-size: 1.1rem;
+  }
+
   .panel-header {
+    padding: 16px 20px;
+  }
+
+  .panel-header h2 {
+    font-size: 1rem;
+  }
+
+  .btn {
+    padding: 8px 16px;
+    font-size: 0.8rem;
+  }
+
+  .empty-state {
+    padding: 40px 20px;
+  }
+
+  .empty-icon {
+    width: 80px;
+    height: 80px;
+  }
+
+  .agent-form-container {
     padding: 16px;
   }
 
-  .call-left {
-    padding: 16px;
+  .call-header {
+    padding: 12px 16px;
+  }
+
+  .call-header h2 {
+    font-size: 1rem;
+  }
+
+  .visualizer-container {
+    width: 100%;
   }
 
   #waveform-canvas {
-    width: 280px;
+    width: 100%;
+    max-width: 320px;
     height: 140px;
+  }
+
+  .call-timer {
+    font-size: 1.5rem;
+  }
+
+  .btn-phone {
+    width: 56px;
+    height: 56px;
+  }
+
+  .btn-mute {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+/* Small Mobile (max-width: 400px) */
+@media (max-width: 400px) {
+  .header-status span {
+    display: none;
+  }
+
+  .btn-sm-text-hidden span {
+    display: none;
+  }
+
+  #waveform-canvas {
+    max-width: 280px;
+  }
+
+  .voice-badge {
+    padding: 4px 10px;
+    font-size: 0.75rem;
   }
 }
