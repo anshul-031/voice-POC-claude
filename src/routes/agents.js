@@ -2,7 +2,7 @@ import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import logger from '../utils/logger.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { PRISMA_ERRORS, AUDIO_CONFIG } from '../constants/index.js';
+import { PRISMA_ERRORS, AUDIO_CONFIG } from '../types/index.js';
 import { AVAILABLE_VOICES, AVAILABLE_MODELS } from '../constants/agents.js';
 
 const router = Router();

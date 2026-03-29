@@ -1,6 +1,6 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 import logger from '../utils/logger.js';
-import { AUDIO_CONFIG, TIME } from '../constants/index.js';
+import { AUDIO_CONFIG, TIME } from '../types/index.js';
 
 /**
  * Manages Gemini Live API sessions for real-time voice interaction.
@@ -9,6 +9,7 @@ import { AUDIO_CONFIG, TIME } from '../constants/index.js';
 class GeminiLiveService {
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    /** @type {Map<string, import('../types/index.js').GeminiSession>} */
     this.sessions = new Map();
     logger.info('GeminiLive Service initialized');
   }
@@ -79,7 +80,9 @@ class GeminiLiveService {
         },
       });
 
-      this.sessions.set(sessionId, { session, voiceName, model, startTime: Date.now(), audioChunksSent: 0, audioChunksReceived: 0 });
+      /** @type {import('../types/index.js').GeminiSession} */
+      const sessionEntry = { session, voiceName, model, startTime: Date.now(), audioChunksSent: 0, audioChunksReceived: 0 };
+      this.sessions.set(sessionId, sessionEntry);
       logger.debug('Gemini Live session registered', { sessionId });
       return session;
     } catch (error) {

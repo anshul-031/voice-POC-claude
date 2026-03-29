@@ -40,3 +40,9 @@ If any of these checks fail, you MUST fix the issues before proceeding or inform
 35: - **Flexible Layouts**: Use relative units (`rem`, `%`, `vw`, `vh`) and layout systems (Flexbox, Grid) instead of fixed widths.
 36: - **Touch Targets**: Ensure interactive elements are at least 44x44px on mobile.
 37: - **Testing**: Verify your changes at various screen sizes (320px, 768px, 1024px, 1440px) to ensure no overflow or layout breakage.
+43: 
+44: ## Enums & Interfaces
+45: - **Separate File**: All enums and interfaces (including JSDoc `@typedef` and `@interface`) MUST be kept in a separate file within `src/types/`.
+46: - **Centralized Types**: Use `src/types/enums.js` for enum-like objects and `src/types/interfaces.js` for JSDoc type definitions.
+47: - **Clean Exports**: Re-export all types from `src/types/index.js` for easy access.
+48: - **No Inline Definitions**: DO NOT define enums or interfaces directly within service, route, or component files.

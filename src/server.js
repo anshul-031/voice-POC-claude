@@ -8,7 +8,8 @@ import agentRoutes from './routes/agents.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
 import { UI_STRINGS } from './constants/uiStrings.js';
-import { DEFAULT_PORT, ROUTES } from './constants/index.js';
+import { DEFAULT_PORT } from './constants/index.js';
+import { ROUTES } from './types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

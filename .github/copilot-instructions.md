@@ -41,3 +41,11 @@ Ensure full responsiveness across web and mobile platforms:
 - **Centralized Constants**: All non-user-facing configuration constants, API URLs, timeouts, port numbers, and magic strings/numbers MUST be stored in `src/constants/index.js` (or specific modules within `src/constants/`).
 - **No Hardcoded Values**: DO NOT hardcode configuration values directly in logic. Import them from the constants module.
 - **Naming Convention**: Use `UPPER_SNAKE_CASE` for all constant names.
+44: 
+45: ## 6. Enums & Interfaces
+46: - **Dedicated Directory**: All enums and interfaces (including JSDoc `@typedef`) MUST be stored in `src/types/`.
+47: - **Logical Separation**: 
+48:   - `src/types/enums.js`: For enum-like constant objects.
+49:   - `src/types/interfaces.js`: For JSDoc type definitions.
+50: - **Single Entry Point**: Re-export all types from `src/types/index.js`.
+51: - **Prohibition**: DO NOT define types or enums inline in business logic files.

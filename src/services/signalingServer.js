@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
 import prisma from '../lib/prisma.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { ROUTES, TIME } from '../constants/index.js';
+import { ROUTES, TIME, MESSAGE_TYPE } from '../types/index.js';
 
 /**
  * WebSocket signaling server for audio relay between browser and Gemini Live API.
@@ -12,6 +12,7 @@ import { ROUTES, TIME } from '../constants/index.js';
 class SignalingServer {
   constructor() {
     this.wss = null;
+    /** @type {Map<import('ws').WebSocket, import('../types/index.js').SignalingClient>} */
     this.clients = new Map(); // ws -> { sessionId, agentId, stats }
   }
 
@@ -29,7 +30,7 @@ class SignalingServer {
           await this._handleMessage(ws, message);
         } catch (error) {
           console.error(`[Signaling] ❌ Error handling message:`, error.message);
-          ws.send(JSON.stringify({ type: 'error', message: error.message }));
+          ws.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: error.message }));
         }
       });
 
@@ -49,18 +50,18 @@ class SignalingServer {
 
   async _handleMessage(ws, message) {
     switch (message.type) {
-      case 'start-call':
+      case MESSAGE_TYPE.START_CALL:
         await this._handleStartCall(ws, message);
         break;
-      case 'audio-data':
+      case MESSAGE_TYPE.AUDIO_DATA:
         await this._handleAudioData(ws, message);
         break;
-      case 'end-call':
+      case MESSAGE_TYPE.END_CALL:
         await this._handleEndCall(ws);
         break;
       default:
         console.warn(`[Signaling] ⚠️  Unknown message type: ${message.type}`);
-        ws.send(JSON.stringify({ type: 'error', message: UI_STRINGS.signaling.errors.unknownMessageType(message.type) }));
+        ws.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: UI_STRINGS.signaling.errors.unknownMessageType(message.type) }));
     }
   }
 
@@ -70,7 +71,7 @@ class SignalingServer {
 
     if (!agentId) {
       console.warn(`[Signaling] ⚠️  No agent ID provided`);
-      ws.send(JSON.stringify({ type: 'error', message: UI_STRINGS.signaling.errors.agentIdRequired }));
+      ws.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: UI_STRINGS.signaling.errors.agentIdRequired }));
       return;
     }
 
@@ -79,7 +80,7 @@ class SignalingServer {
     const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } });
     if (!agent) {
       console.warn(`[Signaling] ⚠️  Agent not found: ${agentId}`);
-      ws.send(JSON.stringify({ type: 'error', message: UI_STRINGS.signaling.errors.agentNotFound }));
+      ws.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: UI_STRINGS.signaling.errors.agentNotFound }));
       return;
     }
     console.log(`[Signaling] ✅ Agent found: "${agent.name}" | voice=${agent.voiceName} | model=${agent.modelName}`);
@@ -104,7 +105,7 @@ class SignalingServer {
         onAudio: (audioData) => {
           if (ws.readyState === ws.OPEN) {
             ws.send(JSON.stringify({
-              type: 'audio-response',
+              type: MESSAGE_TYPE.AUDIO_RESPONSE,
               data: audioData,
             }));
           }
@@ -113,7 +114,7 @@ class SignalingServer {
           console.log(`[Signaling] 💬 Relaying transcript | role=${transcript.role} | text="${transcript.text}"`);
           if (ws.readyState === ws.OPEN) {
             ws.send(JSON.stringify({
-              type: 'transcript',
+              type: MESSAGE_TYPE.TRANSCRIPT,
               role: transcript.role,
               text: transcript.text,
             }));
@@ -122,19 +123,19 @@ class SignalingServer {
         onInterrupted: () => {
           console.log(`[Signaling] ⚡ Model interrupted — relaying to client`);
           if (ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ type: 'interrupted' }));
+            ws.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
           }
         },
         onError: (error) => {
           console.error(`[Signaling] ❌ Gemini session error — relaying to client:`, error.message);
           if (ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ type: 'error', message: error.message }));
+            ws.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: error.message }));
           }
         },
         onClose: () => {
           console.log(`[Signaling] 🔌 Gemini session closed — notifying client`);
           if (ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ type: 'call-ended', reason: UI_STRINGS.signaling.status.geminiClosed }));
+            ws.send(JSON.stringify({ type: MESSAGE_TYPE.CALL_ENDED, reason: UI_STRINGS.signaling.status.geminiClosed }));
           }
           this.clients.delete(ws);
         },
@@ -143,7 +144,7 @@ class SignalingServer {
       this.clients.set(ws, { sessionId, agentId, audioChunksRelayed: 0, startTime: Date.now() });
 
       ws.send(JSON.stringify({
-        type: 'call-started',
+        type: MESSAGE_TYPE.CALL_STARTED,
         sessionId,
         agentName: agent.name,
         voiceName: agent.voiceName,
@@ -154,7 +155,7 @@ class SignalingServer {
     } catch (error) {
       console.error(`[Signaling] ❌ Failed to start call:`, error.message || error);
       ws.send(JSON.stringify({
-        type: 'error',
+        type: MESSAGE_TYPE.ERROR,
         message: UI_STRINGS.signaling.errors.geminiConnectFailed,
       }));
     }
@@ -179,7 +180,7 @@ class SignalingServer {
       console.log(`[Signaling] 📴 End call request | session=${client.sessionId} | duration=${duration}s | audio_chunks=${client.audioChunksRelayed}`);
       await geminiLiveService.closeSession(client.sessionId);
       this.clients.delete(ws);
-      ws.send(JSON.stringify({ type: 'call-ended', reason: UI_STRINGS.signaling.status.userEnded }));
+      ws.send(JSON.stringify({ type: MESSAGE_TYPE.CALL_ENDED, reason: UI_STRINGS.signaling.status.userEnded }));
     }
   }
 

@@ -41,7 +41,7 @@ vi.mock('./routes/agents.js', () => ({
   default: vi.fn(),
 }));
 
-import { ROUTES } from './constants/index.js';
+import { ROUTES } from './types/index.js';
 
 const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
