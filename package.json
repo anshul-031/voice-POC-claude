@@ -7,9 +7,16 @@
   "scripts": {
     "dev": "node src/server.js",
     "start": "node src/server.js",
+    "lint": "eslint src/**/*.js",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "echo 'Building...' && tsc",
     "db:migrate": "npx prisma migrate dev",
+    "db:deploy": "npx prisma migrate deploy",
     "db:generate": "npx prisma generate",
-    "db:studio": "npx prisma studio"
+    "db:studio": "npx prisma studio",
+    "pr": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run db:deploy"
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
@@ -21,6 +28,14 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "prisma": "^6.0.0"
+    "@vitest/coverage-v8": "^4.1.2",
+    "eslint": "^10.1.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-node": "^11.1.0",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1",
+    "prisma": "^6.0.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
   }
 }

@@ -1,0 +1,18 @@
+# Custom Instructions for Agent
+
+You are working on the VoiceForge — AI Voice Agent Platform. To maintain high code quality, follow these rules:
+
+## Quality Check Rule
+After every change you make to the codebase, you MUST run the following command to ensure no regressions are introduced:
+
+```bash
+npm run pr
+```
+
+This command performs the following checks:
+1.  **Linting**: Runs ESLint to check for stylistic and programmatic errors.
+2.  **Typechecking**: Runs TypeScript (`tsc`) to check for type errors in JavaScript files.
+3.  **Testing**: Runs Vitest with coverage to ensure all unit tests pass and coverage is maintained.
+4.  **Database**: Runs Prisma migration deployment to ensure the schema is up to date.
+
+If any of these checks fail, you MUST fix the issues before proceeding or informing the user that your task is complete.

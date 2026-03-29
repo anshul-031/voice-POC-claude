@@ -206,7 +206,7 @@ class GeminiLiveService {
       console.log(`[GeminiLive]    Duration: ${duration}s | Audio sent: ${entry.audioChunksSent} chunks | Audio received: ${entry.audioChunksReceived} chunks`);
       try {
         await entry.session.close();
-      } catch (e) {
+      } catch (_e) {
         // ignore close errors
       }
       this.sessions.delete(sessionId);
