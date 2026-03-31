@@ -8,7 +8,7 @@ import { api, checkApiHealth } from './api.js';
 import { initWaveform } from './waveform.js';
 import { toggleCall, endCall, toggleMute as callToggleMute } from './call.js';
 import { showToast, escapeHtml } from './utils.js';
-import { appendTranscript, selectVoiceInGrid } from './transcript.js';
+import { appendTranscript, selectVoiceInGrid, clearDebugLogs } from './transcript.js';
 import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
 
 /** @type {any[]} */
@@ -359,6 +359,7 @@ function showCallPanel(agentId) {
   }
   const bodyEl = document.getElementById('transcript-body');
   if (bodyEl) bodyEl.innerHTML = '';
+  clearDebugLogs();
   showPanel('call');
 }
 

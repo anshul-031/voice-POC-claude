@@ -7,6 +7,7 @@ import { showToast, uint8ToBase64 } from './utils.js';
 import { updateCallUI } from './ui.js';
 import { startWaveformAnimation, stopWaveformAnimation } from './waveform.js';
 import { START_CALL_INPUT_SCHEMA, WS_INBOUND_MESSAGE_SCHEMA } from './constants/inputSchemas.js';
+import { appendDebugLog } from './transcript.js';
 
 /** @type {AudioContext | null} */
 let audioContext = null;
@@ -26,6 +27,7 @@ let callSeconds = 0;
 /** @type {string[]} */
 const audioQueue = [];
 let isPlayingAudio = false;
+let audioChunksSent = 0;
 
 /**
  * @returns {{isInCall: boolean, isMuted: boolean, callSeconds: number}}
@@ -53,9 +55,11 @@ export async function toggleCall(agentId, callbacks) {
  * @returns {Promise<void>}
  */
 async function startCall(agentId, callbacks) {
+  appendDebugLog(UI_STRINGS.signaling.logs.callInit, 'info');
   const callInputParse = START_CALL_INPUT_SCHEMA.safeParse({ agentId });
   if (!callInputParse.success) {
     showToast(UI_STRINGS.api.errors.invalidInput, 'error');
+    appendDebugLog(UI_STRINGS.api.errors.invalidInput, 'error');
     return;
   }
 
@@ -79,6 +83,7 @@ async function startCall(agentId, callbacks) {
         autoGainControl: true,
       },
     });
+    appendDebugLog(UI_STRINGS.signaling.logs.micReady, 'info');
 
     const source = audioContext.createMediaStreamSource(mediaStream);
     analyserNode = audioContext.createAnalyser();
@@ -100,14 +105,21 @@ async function startCall(agentId, callbacks) {
       }
       const uint8 = new Uint8Array(pcm16.buffer);
       if (ws?.readyState === WebSocket.OPEN) {
+        audioChunksSent++;
+        if (audioChunksSent % CONFIG.AUDIO_LOG_THROTTLE === 1) {
+          appendDebugLog(UI_STRINGS.signaling.logs.audioRelay(audioChunksSent), 'info');
+        }
         ws.send(JSON.stringify({ type: MESSAGE_TYPE.AUDIO_DATA, data: uint8ToBase64(uint8) }));
       }
     };
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    appendDebugLog(UI_STRINGS.signaling.logs.wsConnecting, 'info');
     ws = new WebSocket(`${wsProtocol}//${window.location.host}${CONFIG.WS_PATH}`);
 
     ws.onopen = () => {
+      appendDebugLog(UI_STRINGS.signaling.logs.wsOpen, 'info');
+      appendDebugLog(UI_STRINGS.signaling.logs.sendingStart(idValue), 'info');
       ws?.send(JSON.stringify({ type: MESSAGE_TYPE.START_CALL, agentId: idValue }));
     };
 
@@ -117,26 +129,31 @@ async function startCall(agentId, callbacks) {
         const messageParse = WS_INBOUND_MESSAGE_SCHEMA.safeParse(message);
         if (!messageParse.success) {
           showToast(UI_STRINGS.signaling.errors.invalidMessageFormat, 'error');
+          appendDebugLog(UI_STRINGS.signaling.logs.inboundValidationFailed, 'error');
           return;
         }
+        appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageParse.data.type), 'info');
         handleWsMessage(messageParse.data, callbacks);
       } catch {
-        // Ignore parse errors
+        appendDebugLog(UI_STRINGS.signaling.logs.inboundParseFailed, 'error');
       }
     };
 
     ws.onerror = () => {
       showToast(UI_STRINGS.toasts.connectionError, 'error');
+      appendDebugLog(UI_STRINGS.signaling.logs.wsError, 'error');
       endCall();
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      appendDebugLog(UI_STRINGS.signaling.logs.wsClosed(event.code), 'warn');
       if (isInCall) endCall();
     };
 
   } catch (_err) {
     const errMsg = _err instanceof Error ? _err.message : String(_err);
     showToast(`Failed to start call: ${errMsg}`, 'error');
+    appendDebugLog(UI_STRINGS.signaling.logs.startCallFailed(errMsg), 'error');
     endCall();
   }
 }
@@ -149,35 +166,52 @@ async function startCall(agentId, callbacks) {
 function handleWsMessage(message, callbacks) {
   const { onStatusChange, onTranscript = () => {} } = callbacks;
 
-  switch (message.type) {
-    case MESSAGE_TYPE.CALL_STARTED:
+  const handlers = {
+    [MESSAGE_TYPE.CALL_STARTED]: () => {
       isInCall = true;
+      audioChunksSent = 0;
       updateCallUI(true);
       onStatusChange(UI_STRINGS.callPanel.connected, 'active');
       startTimer(callbacks.onTimerUpdate);
+      appendDebugLog(UI_STRINGS.signaling.logs.callStarted, 'info');
       if (message.agentName) {
         showToast(UI_STRINGS.toasts.callStarted(message.agentName), 'success');
       }
-      break;
-
-    case MESSAGE_TYPE.AUDIO_RESPONSE:
+    },
+    [MESSAGE_TYPE.AUDIO_RESPONSE]: () => {
       playAudioResponse(message.data);
-      break;
-
-    case MESSAGE_TYPE.TRANSCRIPT:
+    },
+    [MESSAGE_TYPE.TRANSCRIPT]: () => {
       onTranscript(message.role, message.text);
-      break;
-
-    case MESSAGE_TYPE.CALL_ENDED:
+      if (message.role === 'user') {
+        appendDebugLog(UI_STRINGS.signaling.logs.transcriptUser(message.text.length), 'info');
+      }
+      if (message.role === 'model') {
+        appendDebugLog(UI_STRINGS.signaling.logs.transcriptModel(message.text.length), 'info');
+      }
+    },
+    [MESSAGE_TYPE.INTERRUPTED]: () => {
+      appendDebugLog(UI_STRINGS.signaling.logs.interrupted, 'warn');
+    },
+    [MESSAGE_TYPE.CALL_ENDED]: () => {
       showToast(message.reason || UI_STRINGS.callPanel.ended, 'success');
+      appendDebugLog(UI_STRINGS.signaling.logs.callEnded(message.reason || UI_STRINGS.callPanel.ended), 'warn');
       endCall();
-      break;
-
-    case MESSAGE_TYPE.ERROR:
+    },
+    [MESSAGE_TYPE.ERROR]: () => {
       showToast(message.message, 'error');
+      appendDebugLog(UI_STRINGS.signaling.logs.callError(message.message), 'error');
       endCall();
-      break;
+    },
+  };
+
+  const handler = handlers[message.type];
+  if (!handler) {
+    appendDebugLog(UI_STRINGS.signaling.logs.unknownType(String(message.type)), 'warn');
+    return;
   }
+
+  handler();
 }
 
 /**
@@ -229,6 +263,7 @@ async function processAudioQueue() {
  * @returns {Promise<void>}
  */
 export async function endCall() {
+  appendDebugLog(UI_STRINGS.signaling.logs.callEndCleanup, 'info');
   isInCall = false;
   if (ws?.readyState === WebSocket.OPEN) {
     try {
@@ -252,10 +287,12 @@ export async function endCall() {
   analyserNode = null;
   audioQueue.length = 0;
   isPlayingAudio = false;
+  audioChunksSent = 0;
   stopTimer();
   updateCallUI(false);
   stopWaveformAnimation();
   isMuted = false;
+  appendDebugLog(UI_STRINGS.signaling.logs.callEndComplete, 'info');
 }
 
 /**

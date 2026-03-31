@@ -2,6 +2,7 @@
  * Transcript rendering logic for the VoiceForge frontend.
  */
 import { UI_STRINGS } from './constants/uiStrings.js';
+import { CONFIG } from './constants/config.js';
 import { escapeHtml } from './utils.js';
 
 /**
@@ -58,4 +59,43 @@ export function selectVoiceInGrid(voiceName) {
   radio.checked = true;
   const label = radio.closest('.voice-option');
   if (label) label.classList.add('selected');
+}
+
+/**
+ * @param {string} message
+ * @param {'info' | 'warn' | 'error'} level
+ * @returns {void}
+ */
+export function appendDebugLog(message, level = 'info') {
+  if (!message?.trim()) return;
+  const body = document.getElementById('debug-log-body');
+  if (!body) return;
+
+  const empty = body.querySelector('.debug-log-empty');
+  if (empty) empty.remove();
+
+  const entry = document.createElement('div');
+  entry.className = `debug-log-item ${level}`;
+  entry.innerHTML = `
+    <div class="debug-log-time">${new Date().toLocaleTimeString()}</div>
+    <div class="debug-log-message">${escapeHtml(message)}</div>
+  `;
+
+  body.appendChild(entry);
+
+  while (body.children.length > CONFIG.DEBUG_LOG_MAX_ITEMS) {
+    if (!body.firstElementChild) break;
+    body.removeChild(body.firstElementChild);
+  }
+
+  body.scrollTop = body.scrollHeight;
+}
+
+/**
+ * @returns {void}
+ */
+export function clearDebugLogs() {
+  const body = document.getElementById('debug-log-body');
+  if (!body) return;
+  body.innerHTML = `<div class="debug-log-empty">${UI_STRINGS.callPanel.debugEmpty}</div>`;
 }

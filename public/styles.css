@@ -899,6 +899,65 @@ body::before {
   padding: 0 8px;
 }
 
+/* ── Debug Log Panel ── */
+.debug-log-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.debug-log-body {
+  height: 170px;
+  overflow-y: auto;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.debug-log-empty {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.debug-log-item {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.debug-log-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-log-message {
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.debug-log-item.error .debug-log-message {
+  color: #fca5a5;
+}
+
+.debug-log-item.warn .debug-log-message {
+  color: #fcd34d;
+}
+
+.debug-log-item.info .debug-log-message {
+  color: var(--text-secondary);
+}
+
 /* ── Loading Skeleton ── */
 .loading-skeleton {
   display: flex;
@@ -1035,6 +1094,10 @@ body::before {
 
   .call-right {
     min-height: 300px;
+  }
+
+  .debug-log-body {
+    height: 140px;
   }
 }
 
