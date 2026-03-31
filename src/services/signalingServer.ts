@@ -37,9 +37,15 @@ class SignalingServer {
 
       socket.on('message', async (data: Buffer | string | ArrayBuffer | Buffer[]) => {
         try {
-          const rawMessage = JSON.parse(data.toString());
+          const dataString = data.toString();
+          const rawMessage = JSON.parse(dataString);
           const messageParse = SIGNALING_MESSAGE_SCHEMA.safeParse(rawMessage);
           if (!messageParse.success) {
+            logger.warn('Invalid signaling message payload', {
+              clientIp,
+              issues: messageParse.error.issues,
+              payloadPreview: dataString.slice(0, 400),
+            });
             socket.send(JSON.stringify({
               type: MESSAGE_TYPE.ERROR,
               message: UI_STRINGS.signaling.errors.invalidMessageFormat,
@@ -51,12 +57,16 @@ class SignalingServer {
           logger.debug('Signaling message received', { type: message.type, clientIp });
           await this._handleMessage(socket, message);
         } catch (error: unknown) {
+          const isJsonParseError = error instanceof SyntaxError;
           const errMsg = error instanceof Error ? error.message : String(error);
-          logger.error('Error handling signaling message', { 
+          logger.error('Error handling signaling message', {
             error: errMsg, 
             clientIp,
           });
-          socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: errMsg }));
+          socket.send(JSON.stringify({
+            type: MESSAGE_TYPE.ERROR,
+            message: isJsonParseError ? UI_STRINGS.signaling.errors.invalidMessageFormat : errMsg,
+          }));
         }
       });
 
@@ -195,6 +205,12 @@ class SignalingServer {
         voiceName: agent.voiceName,
         modelName: agent.modelName,
       }));
+      logger.debug('Sent call-started payload', {
+        sessionId,
+        agentName: agent.name,
+        voiceName: agent.voiceName,
+        modelName: agent.modelName,
+      });
 
       logger.info('Call started successfully', { sessionId, agentName: agent.name });
     } catch (error: unknown) {

@@ -23,22 +23,27 @@ export const WS_INBOUND_MESSAGE_SCHEMA = z.union([
     type: z.literal(MESSAGE_TYPE.CALL_STARTED),
     sessionId: z.string().optional(),
     agentName: z.string().optional(),
-  }).strict(),
+    voiceName: z.string().optional(),
+    modelName: z.string().optional(),
+  }).passthrough(),
   z.object({
     type: z.literal(MESSAGE_TYPE.AUDIO_RESPONSE),
     data: z.string().trim().min(1),
-  }).strict(),
+  }).passthrough(),
   z.object({
     type: z.literal(MESSAGE_TYPE.TRANSCRIPT),
     role: z.enum(['user', 'model']),
     text: z.string().trim().min(1),
-  }).strict(),
+  }).passthrough(),
+  z.object({
+    type: z.literal(MESSAGE_TYPE.INTERRUPTED),
+  }).passthrough(),
   z.object({
     type: z.literal(MESSAGE_TYPE.CALL_ENDED),
     reason: z.string().optional(),
-  }).strict(),
+  }).passthrough(),
   z.object({
     type: z.literal(MESSAGE_TYPE.ERROR),
     message: z.string().trim().min(1),
-  }).strict(),
+  }).passthrough(),
 ]);

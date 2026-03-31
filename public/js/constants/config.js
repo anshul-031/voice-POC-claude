@@ -9,6 +9,8 @@ export const CONFIG = {
   DEFAULT_MODEL: 'gemini-2.0-flash-exp',
   SAMPLE_RATE_INPUT: 16000,
   SAMPLE_RATE_OUTPUT: 24000,
+  AUDIO_LOG_THROTTLE: 50,
+  DEBUG_LOG_MAX_ITEMS: 150,
 };
 
 export const MESSAGE_TYPE = {
