@@ -1,6 +1,16 @@
-# VoiceForge — GitHub Copilot Custom Instructions
-
 To maintain high code quality and consistency across the VoiceForge platform, please follow these rules:
+
+## 0. Strictest Code Quality Standards
+- **ESLint Strictness**: The project reflects the strictest ESLint settings. Always ensure:
+    - No `any` types: Use interfaces/types.
+    - Explicit Return Types: On all functions.
+    - No Non-Null Assertions: use `?.` or checks.
+    - Naming: PascalCase for types, camelCase for variables/functions.
+    - Max Complexity: 10 per function.
+    - Max Lines: 300 per file.
+    - Max Length: 120 chars.
+- **Strict Typing**: Backend code MUST be in TypeScript (`.ts`).
+- **Internationalization (i18n)**: All UI strings must be in `UI_STRINGS` from `src/constants/uiStrings.js`.
 
 ## 1. Quality Check Rule
 After every change to the codebase, the following command MUST be run to ensure no regressions:
@@ -49,3 +59,7 @@ Ensure full responsiveness across web and mobile platforms:
 49:   - `src/types/interfaces.js`: For JSDoc type definitions.
 50: - **Single Entry Point**: Re-export all types from `src/types/index.js`.
 51: - **Prohibition**: DO NOT define types or enums inline in business logic files.
+
+## 7. Maintenance & Verification
+- **Gitignore Maintenance**: Avoid committing large binaries, sensitive environment files, or build artifacts; proactively update `.gitignore` when adding new toolchains or dependencies.
+- **UI Verification**: Always perform a manual or automated UI check after implementing visual changes or significant refactors, ensuring the interface remains responsive and user-facing strings are correctly populated. If everything appears to be working, do a final UI sweep to confirm visual integrity.

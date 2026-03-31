@@ -32,7 +32,7 @@ export const UI_STRINGS = {
     },
     card: {
       testCall: 'Test Call',
-      createdAt: (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      createdAt: (date: string): string => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
     },
   },
   emptyState: {
@@ -70,7 +70,7 @@ export const UI_STRINGS = {
     agentCreated: 'Agent created successfully',
     agentUpdated: 'Agent updated successfully',
     agentDeleted: 'Agent deleted',
-    callStarted: (name) => `Call started with ${name}`,
+    callStarted: (name: string): string => `Call started with ${name}`,
     connectionError: 'Connection error',
   },
   api: {
@@ -95,7 +95,7 @@ export const UI_STRINGS = {
       agentIdRequired: 'Agent ID is required',
       agentNotFound: 'Agent not found',
       geminiConnectFailed: 'Failed to connect to Gemini Live API. Check your API key and model name.',
-      unknownMessageType: (type) => `Unknown message type: ${type}`,
+      unknownMessageType: (type: string): string => `Unknown message type: ${type}`,
     },
     status: {
       geminiClosed: 'Gemini session closed',

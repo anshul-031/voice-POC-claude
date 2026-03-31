@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ROUTES } from '../types/index.js';
 
 // Capture handlers for coverage
-const routes = {};
+const routes: Record<string, any> = {};
 vi.mock('express', () => {
   const mockApp = {
     use: vi.fn(),
@@ -9,11 +10,11 @@ vi.mock('express', () => {
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
-    listen: vi.fn((port, cb) => cb && cb()),
+    listen: vi.fn((_port, cb) => cb && cb()),
   };
-  const expressFunc = vi.fn(() => mockApp);
-  expressFunc.json = vi.fn(() => (req, res, next) => next());
-  expressFunc.static = vi.fn(() => (req, res, next) => next());
+  const expressFunc: any = vi.fn(() => mockApp);
+  expressFunc.json = vi.fn(() => (_req: any, _res: any, next: any) => next());
+  expressFunc.static = vi.fn(() => (_req: any, _res: any, next: any) => next());
   expressFunc.Router = vi.fn(() => ({
     get: vi.fn(),
     post: vi.fn(),
@@ -27,38 +28,62 @@ vi.mock('express', () => {
 
 vi.mock('http', () => ({
   createServer: vi.fn(() => ({
-    listen: vi.fn((port, cb) => cb && cb()),
+    listen: vi.fn((_port, cb) => cb && cb()),
   })),
 }));
 
-vi.mock('./services/signalingServer.js', () => ({
+vi.mock('../services/signalingServer.js', () => ({
   default: {
     attach: vi.fn(),
   },
 }));
 
-vi.mock('./routes/agents.js', () => ({
+vi.mock('../routes/agents.js', () => ({
   default: vi.fn(),
 }));
 
-import { ROUTES } from './types/index.js';
-
 const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-describe('Server Routes', () => {
+describe('Server initialization and Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    // Clear routes object
+    for (const key in routes) delete routes[key];
+  });
+
+  it('should handle configuration logs with and without env vars', async () => {
+    // 1. With env vars
+    vi.stubEnv('GEMINI_API_KEY', 'key');
+    vi.stubEnv('DATABASE_URL', 'url');
+    vi.stubEnv('PORT', '4000');
+    // @ts-expect-error type-checked import with query
+    await import('../server.js?test=env-yes');
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('✅ Configured'));
+
+    // 2. Without env vars
+    vi.stubEnv('GEMINI_API_KEY', '');
+    vi.stubEnv('DATABASE_URL', '');
+    vi.unstubAllEnvs(); // Clear them
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.DATABASE_URL;
+    // @ts-expect-error type-checked import with query
+    await import('../server.js?test=env-no');
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('❌ MISSING'));
   });
 
   it('should cover all server branches including routes', async () => {
     vi.stubEnv('GEMINI_API_KEY', 'key');
     vi.stubEnv('DATABASE_URL', 'url');
     
-    // Import and trigger initialization
-    await import('./server.js?test=full');
+    // @ts-expect-error type-checked import with query
+    await import('../server.js?test=full');
 
-    const res = { json: vi.fn(), sendFile: vi.fn(), status: vi.fn().mockReturnThis() };
+    const res: any = { 
+      json: vi.fn(), 
+      sendFile: vi.fn(), 
+      status: vi.fn().mockReturnThis(),
+    };
     
     // Test Health Check
     if (routes[ROUTES.HEALTH_CHECK]) {

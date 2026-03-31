@@ -1,5 +1,5 @@
 /**
- * Entry point for all types.
+ * Central export point for all types and enums.
  */
 
 export * from './enums.js';

@@ -24,8 +24,8 @@ const mockReqRes = (body = {}, params = {}) => {
   return { req, res };
 };
 
-const getRouteHandler = (path, method) => {
-  const layer = router.stack.find(l => {
+const getRouteHandler = (path: string, method: string): any => {
+  const layer = (router as any).stack.find((l: any) => {
     return l.route && l.route.path === path && l.route.methods[method.toLowerCase()];
   });
   return layer.route.stack[0].handle;
@@ -38,135 +38,135 @@ describe('Agents Routes', () => {
 
   it('GET /voices and /models', () => {
     const { res } = mockReqRes();
-    getRouteHandler('/voices', 'get')({}, res);
+    getRouteHandler('/voices', 'get')({} as any, res);
     expect(res.json).toHaveBeenCalled();
-    getRouteHandler('/models', 'get')({}, res);
+    getRouteHandler('/models', 'get')({} as any, res);
     expect(res.json).toHaveBeenCalledTimes(2);
   });
 
   it('GET /agents success and error', async () => {
-    prisma.voiceAgent.findMany.mockResolvedValue([]);
+    (prisma.voiceAgent.findMany as any).mockResolvedValue([]);
     const { res } = mockReqRes();
-    await getRouteHandler('/agents', 'get')({}, res);
+    await getRouteHandler('/agents', 'get')({} as any, res);
     expect(res.json).toHaveBeenCalled();
 
-    prisma.voiceAgent.findMany.mockRejectedValue(new Error('err'));
-    await getRouteHandler('/agents', 'get')({}, res);
+    (prisma.voiceAgent.findMany as any).mockRejectedValue(new Error('err'));
+    await getRouteHandler('/agents', 'get')({} as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.fetchAgents });
   });
 
   it('GET /agents/:id success, 404, error', async () => {
     const { res } = mockReqRes();
-    prisma.voiceAgent.findUnique.mockResolvedValue({ id: '1' });
-    await getRouteHandler('/agents/:id', 'get')({ params: { id: '1' } }, res);
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({ id: '1' });
+    await getRouteHandler('/agents/:id', 'get')({ params: { id: '1' } } as any, res);
     expect(res.json).toHaveBeenCalled();
 
-    prisma.voiceAgent.findUnique.mockResolvedValue(null);
-    await getRouteHandler('/agents/:id', 'get')({ params: { id: '404' } }, res);
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue(null);
+    await getRouteHandler('/agents/:id', 'get')({ params: { id: '404' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
 
-    prisma.voiceAgent.findUnique.mockRejectedValue(new Error('err'));
-    await getRouteHandler('/agents/:id', 'get')({ params: { id: '1' } }, res);
+    (prisma.voiceAgent.findUnique as any).mockRejectedValue(new Error('err'));
+    await getRouteHandler('/agents/:id', 'get')({ params: { id: '1' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.fetchAgent });
   });
 
   it('POST /agents coverage', async () => {
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
-    prisma.voiceAgent.create.mockResolvedValue({ id: '1' });
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
+    (prisma.voiceAgent.create as any).mockResolvedValue({ id: '1' });
 
     // 1. Missing fields
-    await getRouteHandler('/agents', 'post')({ body: {} }, res);
+    await getRouteHandler('/agents', 'post')({ body: {} } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.requiredNamePrompt });
     res.status.mockClear();
 
     // 2. Valid voice
-    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'Puck' } }, res);
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'Puck' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(201);
     res.status.mockClear();
 
     // 3. Invalid voice
-    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'INV' } }, res);
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'INV' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidVoice });
     res.status.mockClear();
 
     // 4. Valid model
-    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', modelName: 'gemini-2.5-flash-native-audio-latest' } }, res);
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', modelName: 'gemini-2.5-flash-native-audio-latest' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(201);
     res.status.mockClear();
 
     // 5. Invalid model
-    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', modelName: 'INV' } }, res);
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', modelName: 'INV' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidModel });
     res.status.mockClear();
 
     // 6. Generic error
-    prisma.voiceAgent.create.mockRejectedValue(new Error('FAIL'));
-    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S' } }, res);
+    (prisma.voiceAgent.create as any).mockRejectedValue(new Error('FAIL'));
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.createAgent });
   });
 
   it('PUT /agents/:id coverage', async () => {
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
-    prisma.voiceAgent.update.mockResolvedValue({ id: '1' });
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
+    (prisma.voiceAgent.update as any).mockResolvedValue({ id: '1' });
 
     // 1. Invalid voice
-    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { voiceName: 'INV' } }, res);
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { voiceName: 'INV' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidVoice });
     res.status.mockClear();
 
     // 2. Valid voice
-    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { voiceName: 'Puck' } }, res);
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { voiceName: 'Puck' } } as any, res);
     expect(res.json).toHaveBeenCalled();
     res.json.mockClear();
 
     // 3. Invalid model
-    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { modelName: 'INV' } }, res);
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { modelName: 'INV' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidModel });
     res.status.mockClear();
 
     // 4. Valid model
-    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { modelName: 'gemini-2.5-flash-native-audio-latest' } }, res);
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { modelName: 'gemini-2.0-flash-exp' } } as any, res);
     expect(res.json).toHaveBeenCalled();
     res.json.mockClear();
 
     // 5. P2025 Not Found
-    const err = new Error(); err.code = 'P2025';
-    prisma.voiceAgent.update.mockRejectedValue(err);
-    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { name: 'N' } }, res);
+    const err: any = new Error(); err.code = 'P2025';
+    (prisma.voiceAgent.update as any).mockRejectedValue(err);
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { name: 'N' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
     res.status.mockClear();
 
     // 6. Generic Error
-    prisma.voiceAgent.update.mockRejectedValue(new Error('FAIL'));
-    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { name: 'N' } }, res);
+    (prisma.voiceAgent.update as any).mockRejectedValue(new Error('FAIL'));
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { name: 'N' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.updateAgent });
   });
 
   it('DELETE /agents/:id coverage', async () => {
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
-    prisma.voiceAgent.delete.mockResolvedValue({});
-    await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } }, res);
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    (prisma.voiceAgent.delete as any).mockResolvedValue({});
+    await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } } as any, res);
     expect(res.json).toHaveBeenCalled();
 
-    const err = new Error(); err.code = 'P2025';
-    prisma.voiceAgent.delete.mockRejectedValue(err);
-    await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } }, res);
+    const err: any = new Error(); err.code = 'P2025';
+    (prisma.voiceAgent.delete as any).mockRejectedValue(err);
+    await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
 
-    prisma.voiceAgent.delete.mockRejectedValue(new Error('FAIL'));
-    await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } }, res);
+    (prisma.voiceAgent.delete as any).mockRejectedValue(new Error('FAIL'));
+    await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.deleteAgent });
   });

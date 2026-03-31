@@ -2,7 +2,19 @@
  * Agent-specific constants
  */
 
-export const AVAILABLE_VOICES = [
+export interface Voice {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface Model {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export const AVAILABLE_VOICES: Voice[] = [
   { id: 'Puck', name: 'Puck', description: 'Warm & friendly — great all-rounder (default)' },
   { id: 'Charon', name: 'Charon', description: 'Deep & authoritative — ideal for formal agents' },
   { id: 'Kore', name: 'Kore', description: 'Bright & engaging — perfect for customer support' },
@@ -13,7 +25,7 @@ export const AVAILABLE_VOICES = [
   { id: 'Orus', name: 'Orus', description: 'Rich & resonant — powerful presence' },
 ];
 
-export const AVAILABLE_MODELS = [
+export const AVAILABLE_MODELS: Model[] = [
   {
     id: 'gemini-2.5-flash-native-audio-latest',
     name: 'Gemini 2.5 Flash Native Audio (Latest)',

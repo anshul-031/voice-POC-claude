@@ -6,13 +6,17 @@
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,
-    "strict": false,
-    "noImplicitAny": false,
+    "strict": true,
+    "noImplicitAny": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "rootDir": "src"
+    "rootDir": ".",
+    "paths": {
+      "*": ["./node_modules/*", "./src/*"]
+    },
+    "types": ["node", "express", "ws", "uuid", "cors", "react", "react-dom"]
   },
-  "include": ["src/**/*.js"],
-  "exclude": ["node_modules", "src/__tests__", "src/**/*.test.js"]
+  "include": ["src/**/*.ts", "src/**/*.js", "public/**/*.ts", "public/**/*.js"],
+  "exclude": ["node_modules", "coverage", "dist"]
 }

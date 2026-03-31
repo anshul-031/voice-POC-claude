@@ -1,6 +1,16 @@
-# Custom Instructions for Agent
-
 You are working on the VoiceForge — AI Voice Agent Platform. To maintain high code quality, follow these rules:
+
+## Strictest Code Quality Standards
+- **ESLint Strictness**: The project uses the strictest ESLint configuration. Any linting errors MUST be fixed before committing. 
+    - No `any` types: Always use explicit interfaces or types.
+    - Explicit Return Types: Every function must have a defined return type.
+    - No Non-Null Assertions: Avoid `!`; use proper null checks or optional chaining.
+    - Naming Conventions: PascalCase for types/interfaces, camelCase for variables/functions.
+    - Max Complexity: 10 per function.
+    - Max Lines: 300 per file.
+    - Max Length: 120 chars.
+- **Strict Typing**: All backend code MUST be in TypeScript (`.ts`). Use `src/types/` for all type definitions.
+- **Internationalization (i18n)**: DO NOT use hardcoded user-facing strings. Use `UI_STRINGS` from `src/constants/uiStrings.js`.
 
 ## Quality Check Rule
 After every change you make to the codebase, you MUST run the following command to ensure no regressions are introduced:
@@ -46,3 +56,7 @@ If any of these checks fail, you MUST fix the issues before proceeding or inform
 46: - **Centralized Types**: Use `src/types/enums.js` for enum-like objects and `src/types/interfaces.js` for JSDoc type definitions.
 47: - **Clean Exports**: Re-export all types from `src/types/index.js` for easy access.
 48: - **No Inline Definitions**: DO NOT define enums or interfaces directly within service, route, or component files.
+
+## Maintenance & Verification
+- **Gitignore Maintenance**: Avoid committing large binaries, sensitive environment files, or build artifacts; proactively update `.gitignore` when adding new toolchains or dependencies.
+- **UI Verification**: Always perform a manual or automated UI check after implementing visual changes or significant refactors, ensuring the interface remains responsive and user-facing strings are correctly populated. If everything appears to be working, do a final UI sweep to confirm visual integrity.

@@ -7,7 +7,7 @@ const { mockConnect, mockSession, state } = vi.hoisted(() => {
     sendClientContent: vi.fn(),
     close: vi.fn(),
   };
-  const st = { callbacks: null };
+  const st: { callbacks: any } = { callbacks: null };
   const connect = vi.fn(async ({ callbacks }) => {
     st.callbacks = callbacks;
     if (callbacks.onopen) callbacks.onopen();
@@ -18,9 +18,9 @@ const { mockConnect, mockSession, state } = vi.hoisted(() => {
 
 vi.mock('@google/genai', () => ({
   GoogleGenAI: class {
-    constructor() {
-      this.live = { connect: mockConnect };
-    }
+    public live = { connect: mockConnect };
+     
+    constructor() {}
   },
   Modality: { AUDIO: 'AUDIO' },
 }));
@@ -36,8 +36,14 @@ describe('GeminiLiveService', () => {
 
   it('should hit 90%+ coverage', async () => {
     const callbacks = { 
-      systemPrompt: 'sys', voiceName: 'vn', modelName: 'mn',
-      onAudio: vi.fn(), onTranscript: vi.fn(), onInterrupted: vi.fn(), onError: vi.fn(), onClose: vi.fn() 
+      systemPrompt: 'sys', 
+      voiceName: 'vn', 
+      modelName: 'mn',
+      onAudio: vi.fn(), 
+      onTranscript: vi.fn(), 
+      onInterrupted: vi.fn(), 
+      onError: vi.fn(), 
+      onClose: vi.fn(),
     };
     await geminiLiveService.createSession('sid', callbacks);
     expect(geminiLiveService.hasSession('sid')).toBe(true);
@@ -50,21 +56,21 @@ describe('GeminiLiveService', () => {
           modelTurn: {
             parts: [
               { inlineData: { mimeType: 'audio/pcm', data: 'a' } },
-              { text: 't' }
-            ]
+              { text: 't' },
+            ],
           },
           turnComplete: true,
           interrupted: true,
           inputTranscription: { text: 'in' },
           outputTranscription: { text: 'out' },
-        }
+        },
       });
       // String transcripts
       state.callbacks.onmessage({
         serverContent: {
           inputTranscription: 'in2',
           outputTranscription: 'out2',
-        }
+        },
       });
       // Test direct audio branch
       state.callbacks.onmessage({ data: 'direct-audio' });
@@ -107,13 +113,13 @@ describe('GeminiLiveService', () => {
           modelTurn: {
             parts: [
               { inlineData: { mimeType: 'audio/pcm' } }, // missing data
-              { text: '' } // empty text
-            ]
+              { text: '' }, // empty text
+            ],
           },
           interrupted: {},
           inputTranscription: {}, // missing text
           outputTranscription: {}, // missing text
-        }
+        },
       });
       state.callbacks.onmessage({ data: 'audio' });
       state.callbacks.onerror(new Error()); // no e.message
@@ -123,7 +129,13 @@ describe('GeminiLiveService', () => {
       
       // Test messages when entry is undefined (already closed)
       state.callbacks.onmessage({ data: 'audio' }); 
-      state.callbacks.onmessage({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm', data: 'a' } }] } } });
+      state.callbacks.onmessage({ 
+        serverContent: { 
+          modelTurn: { 
+            parts: [{ inlineData: { mimeType: 'audio/pcm', data: 'a' } }], 
+          }, 
+        }, 
+      });
     }
   });
 

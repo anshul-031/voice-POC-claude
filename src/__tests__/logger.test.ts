@@ -4,7 +4,7 @@ import logger from '../utils/logger.js';
 describe('Logger Utility', () => {
   it('should be initialized with correct transports', () => {
     expect(logger.transports.length).toBeGreaterThan(0);
-    const hasDailyRotate = logger.transports.some(t => t.name === 'dailyRotateFile');
+    const hasDailyRotate = logger.transports.some((t: any) => t.name === 'dailyRotateFile');
     
     // In test environment, console might be added or not depending on LOG_TO_CONSOLE
     expect(hasDailyRotate).toBe(true);

@@ -13,7 +13,7 @@ const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
-  winston.format.json()
+  winston.format.json(),
 );
 
 // Custom format for console (more readable during development)
@@ -26,7 +26,7 @@ const consoleFormat = winston.format.combine(
       msg += ` ${JSON.stringify(metadata)}`;
     }
     return msg;
-  })
+  }),
 );
 
 // Daily Rotate File Transport for all logs
@@ -61,7 +61,6 @@ const logger = winston.createLogger({
 });
 
 // Add console transport if not in production or if explicitly requested
-/* istanbul ignore next */
 if (process.env.NODE_ENV !== 'production' || process.env.LOG_TO_CONSOLE === 'true') {
   logger.add(new winston.transports.Console({
     format: consoleFormat,
