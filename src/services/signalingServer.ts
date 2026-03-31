@@ -22,11 +22,10 @@ class SignalingServer {
   public clients: Map<WSWebSocket, SignalingClient> = new Map();
 
   public attach(httpServer: Server): void {
-    this.wss = new WebSocketServer({ server: httpServer, path: ROUTES.WS_PATH });
+    const wss = new WebSocketServer({ server: httpServer, path: ROUTES.WS_PATH });
+    this.wss = wss;
 
-    if (!this.wss) return;
-
-    this.wss.on('connection', (socket: WSWebSocket, req: IncomingMessage) => {
+    wss.on('connection', (socket: WSWebSocket, req: IncomingMessage) => {
       const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
       logger.info('New WebSocket connection', { clientIp });
 

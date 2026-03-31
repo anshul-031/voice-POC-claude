@@ -83,6 +83,12 @@ describe('Agents Routes', () => {
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.requiredNamePrompt });
     res.status.mockClear();
 
+    // 1.1 Empty name should fail validation branch
+    await getRouteHandler('/agents', 'post')({ body: { name: '', systemPrompt: 'S' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.requiredNamePrompt });
+    res.status.mockClear();
+
     // 2. Valid voice
     await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'Puck' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(201);
@@ -110,6 +116,12 @@ describe('Agents Routes', () => {
     await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.createAgent });
+
+    // 7. Non-Error failure object
+    (prisma.voiceAgent.create as any).mockRejectedValue({ reason: 'plain-object' });
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.createAgent });
   });
 
   it('PUT /agents/:id coverage', async () => {
@@ -120,6 +132,12 @@ describe('Agents Routes', () => {
     await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { voiceName: 'INV' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidVoice });
+    res.status.mockClear();
+
+    // 1.1 Empty systemPrompt should hit required validation branch
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { systemPrompt: '' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.requiredNamePrompt });
     res.status.mockClear();
 
     // 2. Valid voice
@@ -138,6 +156,19 @@ describe('Agents Routes', () => {
     expect(res.json).toHaveBeenCalled();
     res.json.mockClear();
 
+    // 4.1 Full payload should pass through all prepareUpdateData branches
+    await getRouteHandler('/agents/:id', 'put')({
+      params: { id: '1' },
+      body: {
+        name: 'N',
+        systemPrompt: 'S',
+        voiceName: 'Puck',
+        modelName: 'gemini-2.0-flash-exp',
+      },
+    } as any, res);
+    expect(res.json).toHaveBeenCalled();
+    res.json.mockClear();
+
     // 5. P2025 Not Found
     const err: any = new Error(); err.code = 'P2025';
     (prisma.voiceAgent.update as any).mockRejectedValue(err);
@@ -148,6 +179,12 @@ describe('Agents Routes', () => {
 
     // 6. Generic Error
     (prisma.voiceAgent.update as any).mockRejectedValue(new Error('FAIL'));
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { name: 'N' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.updateAgent });
+
+    // 7. Non-Error failure object
+    (prisma.voiceAgent.update as any).mockRejectedValue({ reason: 'plain-object' });
     await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { name: 'N' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.updateAgent });

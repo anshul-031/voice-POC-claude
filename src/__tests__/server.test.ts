@@ -3,9 +3,15 @@ import { ROUTES } from '../types/index.js';
 
 // Capture handlers for coverage
 const routes: Record<string, any> = {};
+const middlewares: Array<(req: any, res: any, next: any) => void> = [];
 vi.mock('express', () => {
   const mockApp = {
-    use: vi.fn(),
+    use: vi.fn((...args: any[]) => {
+      const handler = args[args.length - 1];
+      if (typeof handler === 'function') {
+        middlewares.push(handler);
+      }
+    }),
     get: vi.fn((path, handler) => { routes[path] = handler; }),
     post: vi.fn(),
     put: vi.fn(),
@@ -50,6 +56,7 @@ describe('Server initialization and Routes', () => {
     vi.resetModules();
     // Clear routes object
     for (const key in routes) delete routes[key];
+    middlewares.length = 0;
   });
 
   it('should handle configuration logs with and without env vars', async () => {
@@ -57,6 +64,7 @@ describe('Server initialization and Routes', () => {
     vi.stubEnv('GEMINI_API_KEY', 'key');
     vi.stubEnv('DATABASE_URL', 'url');
     vi.stubEnv('PORT', '4000');
+    vi.stubEnv('NODE_ENV', '');
     // @ts-expect-error type-checked import with query
     await import('../server.js?test=env-yes');
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('✅ Configured'));
@@ -90,6 +98,25 @@ describe('Server initialization and Routes', () => {
       routes[ROUTES.HEALTH_CHECK]({}, res);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }));
     }
+
+    const next = vi.fn();
+    const reqGet = vi.fn(() => 'vitest-agent');
+    const req = {
+      method: 'GET',
+      url: '/hello',
+      ip: '127.0.0.1',
+      headers: {},
+      get: reqGet,
+    };
+
+    const requestLoggerMiddleware = middlewares.find((middleware) =>
+      middleware.toString().includes('req.method'),
+    );
+    if (requestLoggerMiddleware) {
+      requestLoggerMiddleware(req, {}, next);
+    }
+    expect(reqGet).toHaveBeenCalledWith('user-agent');
+    expect(next).toHaveBeenCalled();
 
     // Test Constants Routes
     if (routes[ROUTES.CONSTANTS_UI_STRINGS]) {

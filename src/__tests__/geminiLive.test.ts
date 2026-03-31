@@ -79,6 +79,7 @@ describe('GeminiLiveService', () => {
 
       // Close and Error
       state.callbacks.onerror(new Error('ws-err'));
+      state.callbacks.onerror('raw-error');
       state.callbacks.onclose({ reason: 'done' });
     }
     
@@ -146,5 +147,12 @@ describe('GeminiLiveService', () => {
   it('should handle loop errors (throw from connect)', async () => {
     mockConnect.mockRejectedValueOnce(new Error('FAIL'));
     await expect(geminiLiveService.createSession('sid-err', {})).rejects.toThrow('FAIL');
+  });
+
+  it('should throw if GEMINI_API_KEY is not defined on module initialization', async () => {
+    vi.resetModules();
+    vi.stubEnv('GEMINI_API_KEY', '');
+    await expect(import('../services/geminiLive.js')).rejects.toThrow('GEMINI_API_KEY is not defined');
+    vi.stubEnv('GEMINI_API_KEY', 'test-key');
   });
 });

@@ -95,9 +95,7 @@ router.post('/agents', async (req: Request, res: Response): Promise<any> => {
     logger.info('Agent created', { id: agent.id, name: agent.name });
     res.status(201).json(agent);
   } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    logger.error('Error creating agent', { error: errMsg });
-    res.status(500).json({ error: UI_STRINGS.api.errors.createAgent });
+    handleAgentError(error, res);
   }
 });
 

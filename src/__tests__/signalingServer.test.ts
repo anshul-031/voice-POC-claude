@@ -67,6 +67,7 @@ describe('SignalingServer', () => {
     
     // 2. audio-data success
     await messageHandler(JSON.stringify({ type: 'audio-data', data: 'abc' }));
+    await messageHandler(JSON.stringify({ type: 'audio-data', data: 'abc-2' }));
     
     // Disconnect with ACTIVE client (hits lines 187-190)
     const closeHandler = mockWs.on.mock.calls.find((c: any) => c[0] === 'close')[1];
@@ -90,6 +91,7 @@ describe('SignalingServer', () => {
     
     // Test _handleEndCall with no client
     signalingServer.clients.delete(mockWs as WebSocket);
+    await messageHandler(JSON.stringify({ type: 'audio-data', data: 'without-client' }));
     await messageHandler(JSON.stringify({ type: 'end-call' }));
     
     // Test disconnect with no client
@@ -150,4 +152,20 @@ describe('SignalingServer', () => {
     capturedCallbacks.onError(new Error('FAIL'));
     capturedCallbacks.onClose();
   });
+
+  it('should handle disconnect close-session failures', async () => {
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'session-close-error',
+      agentId: '1',
+      startTime: Date.now(),
+      audioChunksRelayed: 2,
+    });
+
+    (geminiLiveService.closeSession as any).mockRejectedValueOnce(new Error('CLOSE_FAIL'));
+    signalingServer._handleDisconnect(mockWs);
+    await Promise.resolve();
+
+    expect(geminiLiveService.closeSession).toHaveBeenCalledWith('session-close-error');
+  });
+
 });
