@@ -47,6 +47,12 @@ describe('Agents Routes', () => {
   it('GET /agents success and error', async () => {
     (prisma.voiceAgent.findMany as any).mockResolvedValue([]);
     const { res } = mockReqRes();
+
+    await getRouteHandler('/agents', 'get')({ query: { extra: '1' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
+    res.status.mockClear();
+
     await getRouteHandler('/agents', 'get')({} as any, res);
     expect(res.json).toHaveBeenCalled();
 
@@ -58,6 +64,12 @@ describe('Agents Routes', () => {
 
   it('GET /agents/:id success, 404, error', async () => {
     const { res } = mockReqRes();
+
+    await getRouteHandler('/agents/:id', 'get')({ params: { id: '' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
+    res.status.mockClear();
+
     (prisma.voiceAgent.findUnique as any).mockResolvedValue({ id: '1' });
     await getRouteHandler('/agents/:id', 'get')({ params: { id: '1' } } as any, res);
     expect(res.json).toHaveBeenCalled();
@@ -77,6 +89,15 @@ describe('Agents Routes', () => {
     const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
     (prisma.voiceAgent.create as any).mockResolvedValue({ id: '1' });
 
+    // 0. Invalid content-type
+    await getRouteHandler('/agents', 'post')({
+      headers: { 'content-type': 'text/plain' },
+      body: { name: 'A', systemPrompt: 'S' },
+    } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
+    res.status.mockClear();
+
     // 1. Missing fields
     await getRouteHandler('/agents', 'post')({ body: {} } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -87,6 +108,12 @@ describe('Agents Routes', () => {
     await getRouteHandler('/agents', 'post')({ body: { name: '', systemPrompt: 'S' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.requiredNamePrompt });
+    res.status.mockClear();
+
+    // 1.2 Unknown key should map to generic invalid input
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', extra: 'x' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
     res.status.mockClear();
 
     // 2. Valid voice
@@ -127,6 +154,22 @@ describe('Agents Routes', () => {
   it('PUT /agents/:id coverage', async () => {
     const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
     (prisma.voiceAgent.update as any).mockResolvedValue({ id: '1' });
+
+    // 0. Invalid content-type
+    await getRouteHandler('/agents/:id', 'put')({
+      params: { id: '1' },
+      headers: { 'content-type': 'text/plain' },
+      body: { name: 'N' },
+    } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
+    res.status.mockClear();
+
+    // 0.1 Empty update payload
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: {} } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
+    res.status.mockClear();
 
     // 1. Invalid voice
     await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { voiceName: 'INV' } } as any, res);
@@ -192,6 +235,13 @@ describe('Agents Routes', () => {
 
   it('DELETE /agents/:id coverage', async () => {
     const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+
+    // 0. Invalid id param
+    await getRouteHandler('/agents/:id', 'delete')({ params: { id: '' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
+    res.status.mockClear();
+
     (prisma.voiceAgent.delete as any).mockResolvedValue({});
     await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } } as any, res);
     expect(res.json).toHaveBeenCalled();

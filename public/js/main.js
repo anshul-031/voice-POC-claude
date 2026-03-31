@@ -9,6 +9,7 @@ import { initWaveform } from './waveform.js';
 import { toggleCall, endCall, toggleMute as callToggleMute } from './call.js';
 import { showToast, escapeHtml } from './utils.js';
 import { appendTranscript, selectVoiceInGrid } from './transcript.js';
+import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
 
 /** @type {any[]} */
 let agents = [];
@@ -301,12 +302,13 @@ async function handleSubmit(event) {
   const data = getFormData();
   if (!data) return;
 
-  const { id, name, systemPrompt, voiceName, modelName } = data;
-  
-  if (!name || !systemPrompt) {
+  const parseResult = AGENT_FORM_SCHEMA.safeParse(data);
+  if (!parseResult.success) {
     showToast(UI_STRINGS.form.validation.requiredFields, 'error');
     return;
   }
+
+  const { id, name, systemPrompt, voiceName, modelName } = parseResult.data;
 
   try {
     await api(id ? `/agents/${id}` : '/agents', {
@@ -327,7 +329,7 @@ async function handleSubmit(event) {
  * @returns {Promise<void>}
  */
 async function deleteAgent(id) {
-  if (!confirm('Are you sure?')) return;
+  if (!confirm(UI_STRINGS.common.confirmDelete)) return;
   try {
     await api(`/agents/${id}`, { method: 'DELETE' });
     showToast(UI_STRINGS.toasts.agentDeleted, 'success');

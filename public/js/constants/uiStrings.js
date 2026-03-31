@@ -9,6 +9,7 @@ export const UI_STRINGS = {
     save: 'Save Changes',
     create: 'Create Agent',
     delete: 'Delete',
+    confirmDelete: 'Are you sure?',
     edit: 'Edit',
     loading: 'Loading...',
     error: 'Error',
@@ -84,6 +85,7 @@ export const UI_STRINGS = {
       requiredNamePrompt: 'Name and system prompt are required',
       invalidVoice: 'Invalid voice name',
       invalidModel: 'Invalid model name',
+      invalidInput: 'Invalid request input',
       genericRequestFailed: 'Request failed',
     },
     success: {
@@ -95,6 +97,7 @@ export const UI_STRINGS = {
       agentIdRequired: 'Agent ID is required',
       agentNotFound: 'Agent not found',
       geminiConnectFailed: 'Failed to connect to Gemini Live API. Check your API key and model name.',
+      invalidMessageFormat: 'Invalid signaling message format',
       unknownMessageType: (/** @type {string} */ type) => `Unknown message type: ${type}`,
     },
     status: {

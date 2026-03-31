@@ -10,6 +10,12 @@ import { UI_STRINGS } from '../constants/uiStrings.js';
 import { ROUTES, TIME, MESSAGE_TYPE } from '../types/index.js';
 import type { SignalingClient } from '../types/index.js';
 import logger from '../utils/logger.js';
+import {
+  SIGNALING_AUDIO_DATA_MESSAGE_SCHEMA,
+  SIGNALING_MESSAGE_SCHEMA,
+  SIGNALING_START_CALL_MESSAGE_SCHEMA,
+  type SignalingMessage,
+} from '../constants/inputSchemas.js';
 
 /**
  * WebSocket signaling server for audio relay between browser and Gemini Live API.
@@ -31,11 +37,17 @@ class SignalingServer {
 
       socket.on('message', async (data: Buffer | string | ArrayBuffer | Buffer[]) => {
         try {
-          const message = JSON.parse(data.toString()) as { 
-            type: string; 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            [key: string]: any; 
-          };
+          const rawMessage = JSON.parse(data.toString());
+          const messageParse = SIGNALING_MESSAGE_SCHEMA.safeParse(rawMessage);
+          if (!messageParse.success) {
+            socket.send(JSON.stringify({
+              type: MESSAGE_TYPE.ERROR,
+              message: UI_STRINGS.signaling.errors.invalidMessageFormat,
+            }));
+            return;
+          }
+
+          const message = messageParse.data;
           logger.debug('Signaling message received', { type: message.type, clientIp });
           await this._handleMessage(socket, message);
         } catch (error: unknown) {
@@ -69,37 +81,33 @@ class SignalingServer {
     logger.info('WebSocket server attached', { path: ROUTES.WS_PATH });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async _handleMessage(socket: WSWebSocket, message: { type: string; [key: string]: any }): Promise<void> {
+  private async _handleMessage(socket: WSWebSocket, message: SignalingMessage): Promise<void> {
     switch (message.type) {
       case MESSAGE_TYPE.START_CALL:
-        await this._handleStartCall(socket, message as unknown as { agentId: string });
+        await this._handleStartCall(socket, message);
         break;
       case MESSAGE_TYPE.AUDIO_DATA:
-        await this._handleAudioData(socket, message as unknown as { data: string });
+        await this._handleAudioData(socket, message);
         break;
       case MESSAGE_TYPE.END_CALL:
         await this._handleEndCall(socket);
         break;
-      default:
-        logger.warn('Unknown signaling message type', { type: message.type });
-        socket.send(JSON.stringify({ 
-          type: MESSAGE_TYPE.ERROR, 
-          message: UI_STRINGS.signaling.errors.unknownMessageType(message.type),
-        }));
     }
   }
 
   /** @internal */
   public async _handleStartCall(socket: WSWebSocket, message: { agentId: string }): Promise<void> {
-    const { agentId } = message;
-    logger.info('Start call request', { agentId });
-
-    if (!agentId) {
-      logger.warn('No agent ID provided in start call');
+    const parseResult = SIGNALING_START_CALL_MESSAGE_SCHEMA.safeParse({
+      type: MESSAGE_TYPE.START_CALL,
+      agentId: message.agentId,
+    });
+    if (!parseResult.success) {
       socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: UI_STRINGS.signaling.errors.agentIdRequired }));
       return;
     }
+
+    const { agentId } = parseResult.data;
+    logger.info('Start call request', { agentId });
 
     // Fetch agent config
     logger.debug('Fetching agent config', { agentId });
@@ -204,6 +212,18 @@ class SignalingServer {
 
   /** @internal */
   public async _handleAudioData(socket: WSWebSocket, message: { data: string }): Promise<void> {
+    const parseResult = SIGNALING_AUDIO_DATA_MESSAGE_SCHEMA.safeParse({
+      type: MESSAGE_TYPE.AUDIO_DATA,
+      data: message.data,
+    });
+    if (!parseResult.success) {
+      socket.send(JSON.stringify({
+        type: MESSAGE_TYPE.ERROR,
+        message: UI_STRINGS.signaling.errors.invalidMessageFormat,
+      }));
+      return;
+    }
+
     const client = this.clients.get(socket);
     if (!client) return;
 
@@ -215,7 +235,7 @@ class SignalingServer {
       });
     }
 
-    await geminiLiveService.sendAudio(client.sessionId, message.data);
+    await geminiLiveService.sendAudio(client.sessionId, parseResult.data.data);
   }
 
   /** @internal */

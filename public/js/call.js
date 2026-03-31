@@ -6,6 +6,7 @@ import { UI_STRINGS } from './constants/uiStrings.js';
 import { showToast, uint8ToBase64 } from './utils.js';
 import { updateCallUI } from './ui.js';
 import { startWaveformAnimation, stopWaveformAnimation } from './waveform.js';
+import { START_CALL_INPUT_SCHEMA, WS_INBOUND_MESSAGE_SCHEMA } from './constants/inputSchemas.js';
 
 /** @type {AudioContext | null} */
 let audioContext = null;
@@ -52,8 +53,13 @@ export async function toggleCall(agentId, callbacks) {
  * @returns {Promise<void>}
  */
 async function startCall(agentId, callbacks) {
-  if (!agentId) return;
-  const idValue = String(agentId);
+  const callInputParse = START_CALL_INPUT_SCHEMA.safeParse({ agentId });
+  if (!callInputParse.success) {
+    showToast(UI_STRINGS.api.errors.invalidInput, 'error');
+    return;
+  }
+
+  const idValue = callInputParse.data.agentId;
 
   const { onStatusChange } = callbacks;
   onStatusChange(UI_STRINGS.callPanel.connecting, 'connecting');
@@ -108,7 +114,12 @@ async function startCall(agentId, callbacks) {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        handleWsMessage(message, callbacks);
+        const messageParse = WS_INBOUND_MESSAGE_SCHEMA.safeParse(message);
+        if (!messageParse.success) {
+          showToast(UI_STRINGS.signaling.errors.invalidMessageFormat, 'error');
+          return;
+        }
+        handleWsMessage(messageParse.data, callbacks);
       } catch {
         // Ignore parse errors
       }

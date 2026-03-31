@@ -3,6 +3,7 @@
  */
 import { CONFIG } from './constants/config.js';
 import { UI_STRINGS } from './constants/uiStrings.js';
+import { API_REQUEST_SCHEMA } from './constants/inputSchemas.js';
 
 /**
  * @param {string} path 
@@ -10,6 +11,11 @@ import { UI_STRINGS } from './constants/uiStrings.js';
  * @returns {Promise<any>}
  */
 export async function api(path, options = {}) {
+  const parseResult = API_REQUEST_SCHEMA.safeParse({ path, options });
+  if (!parseResult.success) {
+    throw new Error(UI_STRINGS.api.errors.invalidInput);
+  }
+
   const res = await fetch(`${CONFIG.API_PREFIX}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,

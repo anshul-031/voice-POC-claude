@@ -63,3 +63,11 @@ Ensure full responsiveness across web and mobile platforms:
 ## 7. Maintenance & Verification
 - **Gitignore Maintenance**: Avoid committing large binaries, sensitive environment files, or build artifacts; proactively update `.gitignore` when adding new toolchains or dependencies.
 - **UI Verification**: Always perform a manual or automated UI check after implementing visual changes or significant refactors, ensuring the interface remains responsive and user-facing strings are correctly populated. If everything appears to be working, do a final UI sweep to confirm visual integrity.
+
+## 8. Mandatory Zod Input Validation
+- **Apply On Every Input Touchpoint**: Any change that touches user or system inputs MUST include Zod input validation at the boundary.
+- **Required Coverage**: Frontend forms, API route params, route query, request headers, request bodies, WebSocket payloads, and controller/service entry payloads.
+- **No Inline Schemas**: NEVER declare Zod schemas inline inside route handlers, controllers, services, or UI handlers.
+- **Single Source of Truth**: Define all Zod schemas in dedicated constants modules under `src/constants/` (backend) and `public/js/constants/` (frontend).
+- **safeParse First**: Use `safeParse` for runtime validation, return consistent user-facing errors from `UI_STRINGS`, and avoid throwing raw validation details to clients.
+- **Schema Reuse**: Reuse shared schemas across create/update/list/detail operations when the same payload contract applies.

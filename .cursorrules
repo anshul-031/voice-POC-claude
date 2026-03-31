@@ -60,3 +60,10 @@ If any of these checks fail, you MUST fix the issues before proceeding or inform
 ## Maintenance & Verification
 - **Gitignore Maintenance**: Avoid committing large binaries, sensitive environment files, or build artifacts; proactively update `.gitignore` when adding new toolchains or dependencies.
 - **UI Verification**: Always perform a manual or automated UI check after implementing visual changes or significant refactors, ensuring the interface remains responsive and user-facing strings are correctly populated. If everything appears to be working, do a final UI sweep to confirm visual integrity.
+
+## Mandatory Zod Input Validation
+- **Apply on every input boundary**: Any change that touches user or system input MUST include Zod validation.
+- **Input scope**: Frontend forms, API route params, query params, headers, request bodies, controller/service entry payloads, and WebSocket messages.
+- **No inline schemas**: Define Zod schemas only in dedicated constants modules (`src/constants/` and `public/js/constants/`).
+- **Single source of truth**: Reuse constants-module schemas everywhere instead of duplicating contracts.
+- **safeParse usage**: Prefer `safeParse` and map failures to `UI_STRINGS` messages for consistent UX.

@@ -4,8 +4,33 @@ import logger from '../utils/logger.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
 import { PRISMA_ERRORS, AUDIO_CONFIG } from '../types/index.js';
 import { AVAILABLE_VOICES, AVAILABLE_MODELS } from '../constants/agents.js';
+import {
+  AGENT_ID_PARAMS_SCHEMA,
+  AGENTS_LIST_QUERY_SCHEMA,
+  CREATE_AGENT_BODY_SCHEMA,
+  REQUEST_HEADERS_SCHEMA,
+  UPDATE_AGENT_BODY_SCHEMA,
+} from '../constants/inputSchemas.js';
 
 const router = Router();
+
+function getAgentValidationError(error: { issues: Array<{ path: PropertyKey[] }> }): string {
+  const issuePaths = error.issues.map((issue) => String(issue.path[0] || ''));
+  if (issuePaths.includes('voiceName')) {
+    return UI_STRINGS.api.errors.invalidVoice;
+  }
+  if (issuePaths.includes('modelName')) {
+    return UI_STRINGS.api.errors.invalidModel;
+  }
+  if (issuePaths.includes('name') || issuePaths.includes('systemPrompt')) {
+    return UI_STRINGS.api.errors.requiredNamePrompt;
+  }
+  return UI_STRINGS.api.errors.invalidInput;
+}
+
+function hasJsonContentType(contentType?: string): boolean {
+  return !contentType || contentType.includes('application/json');
+}
 
 // GET /api/voices — list available voices
 router.get('/voices', (_req: Request, res: Response): void => {
@@ -21,6 +46,11 @@ router.get('/models', (_req: Request, res: Response): void => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.get('/agents', async (_req: Request, res: Response): Promise<any> => {
   try {
+    const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(_req.headers ?? {});
+    const queryParse = AGENTS_LIST_QUERY_SCHEMA.safeParse(_req.query ?? {});
+    if (!headersParse.success || !queryParse.success) {
+      return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    }
     const agents = await prisma.voiceAgent.findMany({
       orderBy: { createdAt: 'desc' },
     });
@@ -36,8 +66,14 @@ router.get('/agents', async (_req: Request, res: Response): Promise<any> => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.get('/agents/:id', async (req: Request, res: Response): Promise<any> => {
   try {
+    const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(req.headers ?? {});
+    const paramsParse = AGENT_ID_PARAMS_SCHEMA.safeParse(req.params);
+    if (!headersParse.success || !paramsParse.success) {
+      return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    }
+
     const agent = await prisma.voiceAgent.findUnique({
-      where: { id: req.params.id as string },
+      where: { id: paramsParse.data.id },
     });
     if (!agent) {
       return res.status(404).json({ error: UI_STRINGS.api.errors.agentNotFound });
@@ -50,39 +86,21 @@ router.get('/agents/:id', async (req: Request, res: Response): Promise<any> => {
   }
 });
 
-/**
- * Validates agent data shared between POST and PUT requests.
- */
-function validateAgentData(
-  data: { name?: string; systemPrompt?: string; voiceName?: string; modelName?: string },
-): string | null {
-  const { name, systemPrompt, voiceName, modelName } = data;
-
-  if (name === '' || systemPrompt === '') {
-    return UI_STRINGS.api.errors.requiredNamePrompt;
-  }
-
-  if (voiceName && !AVAILABLE_VOICES.find(v => v.id === voiceName)) {
-    return UI_STRINGS.api.errors.invalidVoice;
-  }
-
-  if (modelName && !AVAILABLE_MODELS.find(m => m.id === modelName)) {
-    return UI_STRINGS.api.errors.invalidModel;
-  }
-
-  return null;
-}
-
 // POST /api/agents — create agent
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.post('/agents', async (req: Request, res: Response): Promise<any> => {
   try {
-    const { name, systemPrompt, voiceName, modelName } = req.body;
-
-    const validationError = validateAgentData({ name, systemPrompt, voiceName, modelName });
-    if (validationError || !name || !systemPrompt) {
-      return res.status(400).json({ error: validationError || UI_STRINGS.api.errors.requiredNamePrompt });
+    const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(req.headers ?? {});
+    if (!headersParse.success || !hasJsonContentType(headersParse.data['content-type'])) {
+      return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
     }
+
+    const bodyParse = CREATE_AGENT_BODY_SCHEMA.safeParse(req.body);
+    if (!bodyParse.success) {
+      return res.status(400).json({ error: getAgentValidationError(bodyParse.error) });
+    }
+
+    const { name, systemPrompt, voiceName, modelName } = bodyParse.data;
 
     const agent = await prisma.voiceAgent.create({
       data: {
@@ -99,9 +117,6 @@ router.post('/agents', async (req: Request, res: Response): Promise<any> => {
   }
 });
 
-/**
- * Prepares the data object for Prisma update.
- */
 /**
  * Prepares the data object for Prisma update.
  */
@@ -137,12 +152,24 @@ function handleAgentError(error: unknown, res: Response, id?: string): void {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.put('/agents/:id', async (req: Request, res: Response): Promise<any> => {
   try {
-    const validationError = validateAgentData(req.body);
-    if (validationError) return res.status(400).json({ error: validationError });
+    const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(req.headers ?? {});
+    const paramsParse = AGENT_ID_PARAMS_SCHEMA.safeParse(req.params);
+    if (!headersParse.success || !paramsParse.success || !hasJsonContentType(headersParse.data['content-type'])) {
+      return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    }
+
+    const bodyParse = UPDATE_AGENT_BODY_SCHEMA.safeParse(req.body);
+    if (!bodyParse.success) {
+      return res.status(400).json({ error: getAgentValidationError(bodyParse.error) });
+    }
+
+    if (Object.keys(bodyParse.data).length === 0) {
+      return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    }
 
     const agent = await prisma.voiceAgent.update({
-      where: { id: req.params.id as string },
-      data: prepareUpdateData(req.body),
+      where: { id: paramsParse.data.id },
+      data: prepareUpdateData(bodyParse.data),
     });
     logger.info('Agent updated', { id: agent.id, name: agent.name });
     res.json(agent);
@@ -155,10 +182,16 @@ router.put('/agents/:id', async (req: Request, res: Response): Promise<any> => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.delete('/agents/:id', async (req: Request, res: Response): Promise<any> => {
   try {
+    const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(req.headers ?? {});
+    const paramsParse = AGENT_ID_PARAMS_SCHEMA.safeParse(req.params);
+    if (!headersParse.success || !paramsParse.success) {
+      return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    }
+
     await prisma.voiceAgent.delete({
-      where: { id: req.params.id as string },
+      where: { id: paramsParse.data.id },
     });
-    logger.info('Agent deleted', { id: req.params.id });
+    logger.info('Agent deleted', { id: paramsParse.data.id });
     res.json({ message: UI_STRINGS.api.success.deleteAgent });
   } catch (error: unknown) {
     const errorMsg = error instanceof Error ? error.message : String(error);
