@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.hoisted(() => {
+  process.env.GEMINI_API_KEY = 'test-key';
+});
+
 import geminiLiveService from '../services/geminiLive.js';
 
 const { mockConnect, mockSession, state } = vi.hoisted(() => {
