@@ -11,7 +11,7 @@ import i18nextPlugin from 'eslint-plugin-i18next';
 /** @type {import('eslint').Linter.FlatConfig[]} */
 export default [
   {
-    ignores: ['node_modules/**', 'coverage/**', 'dist/**', 'public/js/old/**', 'src/server.js'],
+    ignores: ['node_modules/**', 'coverage/**', 'dist/**', 'public/js/old/**'],
   },
   js.configs.recommended,
   {

@@ -4,10 +4,12 @@
   "description": "AI Voice Agent Creation Platform with Gemini Live API",
   "main": "dist/src/server.js",
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "tsx src/server.ts",
     "start": "node dist/src/server.js",
-    "postinstall": "npm run build",
     "lint": "eslint \"src/**/*.{js,ts}\" \"public/**/*.{js,ts}\"",
     "typecheck": "tsc",
     "test": "vitest run",
