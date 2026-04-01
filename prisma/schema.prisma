@@ -7,12 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String
+  passwordHash    String
+  resetToken      String?
+  resetTokenExpiry DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  agents          VoiceAgent[]
+
+  @@map("users")
+}
+
 model VoiceAgent {
   id           String   @id @default(cuid())
   name         String
   systemPrompt String   @db.Text
   voiceName    String   @default("Puck")
   modelName    String   @default("gemini-2.5-flash-native-audio-latest")
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

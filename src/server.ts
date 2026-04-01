@@ -1,10 +1,12 @@
 import 'dotenv/config';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import agentRoutes from './routes/agents.js';
+import authRoutes from './routes/auth.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
 import { UI_STRINGS } from './constants/uiStrings.js';
@@ -21,6 +23,7 @@ const PORT = process.env.PORT || DEFAULT_PORT;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
 
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -35,14 +38,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use(express.static(join(__dirname, '..', 'public')));
 
 // API Routes
+app.use('/api/auth', authRoutes);
 app.use(ROUTES.API_PREFIX, agentRoutes);
 
 // Static Constants for Frontend
 app.get(ROUTES.CONSTANTS_UI_STRINGS, (req: Request, res: Response) => {
-  res.sendFile(join(__dirname, 'constants', 'uiStrings.ts')); // Note: server sends the source, or should send JS? 
-  // Actually, for vanilla frontend, we need the JS. But since we use tsx, we might need a better solution for shared files.
-  // For now, I'll keep it as uiStrings.ts and see if the browser can handle it (it won't).
-  // I should probably have a separate JS file for the frontend or compile it.
+  res.sendFile(join(__dirname, 'constants', 'uiStrings.ts'));
 });
 
 app.get(ROUTES.CONSTANTS_CONFIG, (req: Request, res: Response) => {
@@ -55,7 +56,12 @@ app.get(ROUTES.HEALTH_CHECK, (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Fallback to SPA
+// Landing page as default
+app.get('/', (req: Request, res: Response) => {
+  res.sendFile(join(__dirname, '..', 'public', 'landing.html'));
+});
+
+// Fallback to SPA (dashboard)
 app.get('*', (req: Request, res: Response) => {
   res.sendFile(join(__dirname, '..', 'public', 'index.html'));
 });
@@ -72,6 +78,7 @@ ${'━'.repeat(56)}
   🌐  Server:     http://localhost:${PORT}
   📡  WebSocket:  ws://localhost:${PORT}${ROUTES.WS_PATH}
   📊  API:        http://localhost:${PORT}${ROUTES.API_PREFIX}
+  🔒  Auth:       http://localhost:${PORT}/api/auth
 ${'─'.repeat(56)}
   🔑  API Key:    ${process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ MISSING'}
   🗄️   Database:   ${process.env.DATABASE_URL ? '✅ Configured' : '❌ MISSING'}

@@ -29,7 +29,12 @@ vi.mock('express', () => {
     use: vi.fn(),
     stack: [],
   }));
-  return { default: expressFunc };
+  return { 
+    default: expressFunc,
+    Router: expressFunc.Router,
+    json: expressFunc.json,
+    static: expressFunc.static,
+  };
 });
 
 vi.mock('http', () => ({
@@ -97,6 +102,12 @@ describe('Server initialization and Routes', () => {
     if (routes[ROUTES.HEALTH_CHECK]) {
       routes[ROUTES.HEALTH_CHECK]({}, res);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }));
+    }
+
+    // Test Landing Page
+    if (routes['/']) {
+      routes['/']({}, res);
+      expect(res.sendFile).toHaveBeenCalled();
     }
 
     const next = vi.fn();

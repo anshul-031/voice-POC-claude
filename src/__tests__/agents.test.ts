@@ -8,6 +8,7 @@ vi.mock('../lib/prisma.js', () => ({
     voiceAgent: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -28,7 +29,7 @@ const getRouteHandler = (path: string, method: string): any => {
   const layer = (router as any).stack.find((l: any) => {
     return l.route && l.route.path === path && l.route.methods[method.toLowerCase()];
   });
-  return layer.route.stack[0].handle;
+  return layer.route.stack[layer.route.stack.length - 1].handle;
 };
 
 describe('Agents Routes', () => {
@@ -70,16 +71,16 @@ describe('Agents Routes', () => {
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
     res.status.mockClear();
 
-    (prisma.voiceAgent.findUnique as any).mockResolvedValue({ id: '1' });
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue({ id: '1' });
     await getRouteHandler('/agents/:id', 'get')({ params: { id: '1' } } as any, res);
     expect(res.json).toHaveBeenCalled();
 
-    (prisma.voiceAgent.findUnique as any).mockResolvedValue(null);
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue(null);
     await getRouteHandler('/agents/:id', 'get')({ params: { id: '404' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
 
-    (prisma.voiceAgent.findUnique as any).mockRejectedValue(new Error('err'));
+    (prisma.voiceAgent.findFirst as any).mockRejectedValue(new Error('err'));
     await getRouteHandler('/agents/:id', 'get')({ params: { id: '1' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.fetchAgent });
@@ -155,6 +156,7 @@ describe('Agents Routes', () => {
     const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
     (prisma.voiceAgent.update as any).mockResolvedValue({ id: '1' });
 
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue({ id: '1' });
     // 0. Invalid content-type
     await getRouteHandler('/agents/:id', 'put')({
       params: { id: '1' },
@@ -242,19 +244,38 @@ describe('Agents Routes', () => {
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
     res.status.mockClear();
 
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue({ id: '1' });
     (prisma.voiceAgent.delete as any).mockResolvedValue({});
     await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } } as any, res);
     expect(res.json).toHaveBeenCalled();
 
     const err: any = new Error(); err.code = 'P2025';
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue({ id: '1' });
     (prisma.voiceAgent.delete as any).mockRejectedValue(err);
     await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
 
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue({ id: '1' });
     (prisma.voiceAgent.delete as any).mockRejectedValue(new Error('FAIL'));
     await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.deleteAgent });
+  });
+
+  it('Helper functions coverage', async () => {
+    const { res } = mockReqRes();
+    // Re-import internal functions for direct testing via proxy if needed,
+    // but here we just test them through the router handlers or by picking them from the module if exported.
+    // Since they are not exported, we hit them via route handlers (already mostly done).
+    
+    // To hit the "Error creating agent" branch in handleAgentError, we use POST /agents failure
+    (prisma.voiceAgent.create as any).mockRejectedValue(new Error('CREATE_FAIL'));
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.createAgent });
+
+    // To hit isPrismaNotFound directly, we can't easily as it's internal.
+    // But it's covered by the 404 tests in GET/PUT/DELETE.
   });
 });

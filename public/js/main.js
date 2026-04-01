@@ -7,9 +7,40 @@ import { applyI18n, showPanel } from './ui.js';
 import { api, checkApiHealth } from './api.js';
 import { initWaveform } from './waveform.js';
 import { toggleCall, endCall, toggleMute as callToggleMute } from './call.js';
-import { showToast, escapeHtml } from './utils.js';
+import { showToast } from './utils.js';
 import { appendTranscript, selectVoiceInGrid, clearDebugLogs } from './transcript.js';
 import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
+import { renderVoiceGrid, renderModelSelect, renderAgentList } from './render.js';
+
+// ── Auth Check ──
+async function checkAuthAndInit() {
+  try {
+    const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+    if (!res.ok) {
+      window.location.href = '/login.html';
+      return;
+    }
+    const data = await res.json();
+    // Show user menu
+    const menu = document.getElementById('user-menu');
+    if (menu) menu.style.display = 'flex';
+    const nameEl = document.getElementById('user-name');
+    if (nameEl && data.user) nameEl.textContent = data.user.name;
+  } catch (_e) {
+    window.location.href = '/login.html';
+    return;
+  }
+  
+  // Continue initialization
+  initApp();
+}
+
+async function handleLogout() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  } catch (_e) { /* ignore */ }
+  window.location.href = '/login.html';
+}
 
 /** @type {any[]} */
 let agents = [];
@@ -24,6 +55,10 @@ let currentCallAgentId = null;
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
+  checkAuthAndInit();
+});
+
+function initApp() {
   applyI18n();
   loadVoices();
   loadModels();
@@ -43,13 +78,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-back-call')?.addEventListener('click', hideCallPanel);
   document.getElementById('btn-cancel-form')?.addEventListener('click', hideForm);
   document.getElementById('btn-close-form')?.addEventListener('click', hideForm);
-});
+  document.getElementById('btn-logout')?.addEventListener('click', handleLogout);
+}
 
 // ── API Operations ──
 async function loadVoices() {
   try {
     voices = await api('/voices');
-    renderVoiceGrid();
+    renderVoiceGrid(voices);
   } catch (err) {
     console.error('Failed to load voices:', err);
   }
@@ -58,7 +94,7 @@ async function loadVoices() {
 async function loadModels() {
   try {
     models = await api('/models');
-    renderModelSelect();
+    renderModelSelect(models);
   } catch (err) {
     console.error('Failed to load models:', err);
   }
@@ -67,104 +103,14 @@ async function loadModels() {
 async function loadAgents() {
   try {
     agents = await api('/agents');
-    renderAgentList();
+    renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel, editAgent, deleteAgent);
   } catch (_err) {
     showToast(UI_STRINGS.toasts.loadAgentsFailed, 'error');
     agents = [];
-    renderAgentList();
+    renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel, editAgent, deleteAgent);
   }
 }
 
-// ── Rendering ──
-function renderVoiceGrid() {
-  const grid = document.getElementById('voice-grid');
-  if (!grid) return;
-  grid.innerHTML = voices.map(v => `
-    <label class="voice-option${v.id === CONFIG.DEFAULT_VOICE ? ' selected' : ''}" data-voice="${v.id}">
-      <input type="radio" name="voiceName" value="${v.id}" ${v.id === CONFIG.DEFAULT_VOICE ? 'checked' : ''}>
-      <div class="voice-option-name">${v.name}</div>
-      <div class="voice-option-desc">${v.description}</div>
-    </label>
-  `).join('');
-
-  grid.querySelectorAll('.voice-option').forEach(opt => {
-    opt.addEventListener('click', () => {
-      grid.querySelectorAll('.voice-option').forEach(o => o.classList.remove('selected'));
-      opt.classList.add('selected');
-      const input = opt.querySelector('input');
-      if (input) input.checked = true;
-    });
-  });
-}
-
-function renderModelSelect() {
-  const select = /** @type {HTMLSelectElement} */ (document.getElementById('form-model'));
-  if (!select) return;
-  select.innerHTML = models.map(m => `<option value="${m.id}">${m.name} — ${m.description}</option>`).join('');
-}
-
-function renderAgentList() {
-  const list = document.getElementById('agent-list');
-  if (!list) return;
-  if (agents.length === 0) {
-    list.innerHTML = `<div class="agent-list-empty"><p>${UI_STRINGS.agentList.empty.title} ...</p></div>`;
-    return;
-  }
-
-  list.innerHTML = agents.map(agent => `
-    <div class="agent-card${agent.id === selectedAgentId ? ' active' : ''}" data-id="${agent.id}">
-      <div class="agent-card-header">
-        <span class="agent-card-name">${escapeHtml(agent.name)}</span>
-        <span class="agent-card-voice">${escapeHtml(agent.voiceName)}</span>
-      </div>
-      <div class="agent-card-prompt">${escapeHtml(agent.systemPrompt)}</div>
-      <div class="agent-card-actions">
-        <button class="btn btn-outline btn-sm btn-test-call" data-id="${agent.id}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 ..."/>
-          </svg>
-          ${UI_STRINGS.agentList.card.testCall}
-        </button>
-        <button class="btn btn-outline btn-sm btn-edit-agent" data-id="${agent.id}">
-          ${UI_STRINGS.common.edit}
-        </button>
-        <button class="btn btn-danger btn-sm btn-delete-agent" data-id="${agent.id}">
-          ${UI_STRINGS.common.delete}
-        </button>
-      </div>
-    </div>
-  `).join('');
-
-  list.querySelectorAll('.agent-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const id = /** @type {HTMLElement} */ (card).dataset.id;
-      if (id) selectAgent(id);
-    });
-  });
-
-  list.querySelectorAll('.btn-test-call').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = /** @type {HTMLElement} */ (btn).dataset.id;
-      if (id) showCallPanel(id);
-    });
-  });
-
-  list.querySelectorAll('.btn-edit-agent').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = /** @type {HTMLElement} */ (btn).dataset.id;
-      if (id) editAgent(id);
-    });
-  });
-  list.querySelectorAll('.btn-delete-agent').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = /** @type {HTMLElement} */ (btn).dataset.id;
-      if (id) deleteAgent(id);
-    });
-  });
-}
 
 // ── Callbacks for call.js ──
 const callCallbacks = {
@@ -207,7 +153,7 @@ const callCallbacks = {
  */
 const selectAgent = (id) => {
   selectedAgentId = id;
-  renderAgentList();
+  renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel, editAgent, deleteAgent);
   editAgent(id);
 };
 
