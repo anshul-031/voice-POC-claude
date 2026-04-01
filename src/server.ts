@@ -15,6 +15,7 @@ import { ROUTES } from './types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const PUBLIC_DIR = join(process.cwd(), 'public');
 
 const app = express();
 const server = createServer(app);
@@ -35,7 +36,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Serve static frontend
-app.use(express.static(join(__dirname, '..', 'public')));
+app.use(express.static(PUBLIC_DIR));
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -58,12 +59,12 @@ app.get(ROUTES.HEALTH_CHECK, (req: Request, res: Response) => {
 
 // Landing page as default
 app.get('/', (req: Request, res: Response) => {
-  res.sendFile(join(__dirname, '..', 'public', 'landing.html'));
+  res.sendFile(join(PUBLIC_DIR, 'landing.html'));
 });
 
 // Fallback to SPA (dashboard)
 app.get('*', (req: Request, res: Response) => {
-  res.sendFile(join(__dirname, '..', 'public', 'index.html'));
+  res.sendFile(join(PUBLIC_DIR, 'index.html'));
 });
 
 // Attach WebSocket signaling server
