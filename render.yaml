@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: voice-agent-platform
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: voice-agent-db
+          property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: LOG_TO_CONSOLE
+        value: true
+
+databases:
+  - name: voice-agent-db
+    plan: free

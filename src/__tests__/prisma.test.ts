@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest';
-import prisma from '../lib/prisma.js';
 import { PrismaClient } from '@prisma/client';
 
 vi.mock('@prisma/client', () => {
@@ -12,10 +11,12 @@ vi.mock('@prisma/client', () => {
   return { PrismaClient: MockPrismaClient };
 });
 
-describe('Prisma Client', () => {
-  it('should be an instance of PrismaClient', () => {
+describe('Prisma Client Instance', () => {
+  it('should initialize a singleton prisma instance', async () => {
+    // Re-import to trigger instantiation
+    // @ts-expect-error dynamic import
+    const { default: prisma } = await import('../lib/prisma.ts?test=init');
     expect(prisma).toBeDefined();
-    // Since it's a mock, we just check if it was initialized
     expect(PrismaClient).toHaveBeenCalled();
   });
 });

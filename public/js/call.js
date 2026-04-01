@@ -54,7 +54,7 @@ export async function toggleCall(agentId, callbacks) {
  * @param {any} callbacks 
  * @returns {Promise<void>}
  */
-async function startCall(agentId, callbacks) {
+export async function startCall(agentId, callbacks) {
   appendDebugLog(UI_STRINGS.signaling.logs.callInit, 'info');
   const callInputParse = START_CALL_INPUT_SCHEMA.safeParse({ agentId });
   if (!callInputParse.success) {
@@ -163,7 +163,7 @@ async function startCall(agentId, callbacks) {
  * @param {any} callbacks 
  * @returns {void}
  */
-function handleWsMessage(message, callbacks) {
+export function handleWsMessage(message, callbacks) {
   const { onStatusChange, onTranscript = () => {} } = callbacks;
 
   const handlers = {
@@ -218,7 +218,7 @@ function handleWsMessage(message, callbacks) {
  * @param {string} base64Data 
  * @returns {void}
  */
-function playAudioResponse(base64Data) {
+export function playAudioResponse(base64Data) {
   if (!base64Data) return;
   audioQueue.push(base64Data);
   if (!isPlayingAudio) processAudioQueue();
@@ -227,17 +227,13 @@ function playAudioResponse(base64Data) {
 /**
  * @returns {Promise<void>}
  */
-async function processAudioQueue() {
+export async function processAudioQueue() {
   if (audioQueue.length === 0) {
     isPlayingAudio = false;
     return;
   }
   isPlayingAudio = true;
-  const base64Data = audioQueue.shift();
-  if (!base64Data) {
-    processAudioQueue();
-    return;
-  }
+  const base64Data = /** @type {string} */ (audioQueue.shift());
   try {
     if (!audioContext || audioContext.state === 'closed') return;
     const binaryString = window.atob(base64Data);
@@ -307,7 +303,7 @@ export function toggleMute() {
  * @param {function(number):void} onTimerUpdate 
  * @returns {void}
  */
-function startTimer(onTimerUpdate) {
+export function startTimer(onTimerUpdate) {
   callSeconds = 0;
   onTimerUpdate(callSeconds);
   callTimer = /** @type {any} */ (window.setInterval(() => {
@@ -319,9 +315,38 @@ function startTimer(onTimerUpdate) {
 /**
  * @returns {void}
  */
-function stopTimer() {
+export function stopTimer() {
   if (callTimer) {
     clearInterval(callTimer);
     callTimer = null;
   }
 }
+
+/**
+ * @returns {void}
+ * @internal (For testing)
+ */
+export function resetState() {
+  isInCall = false;
+  isMuted = false;
+  callSeconds = 0;
+  audioQueue.length = 0;
+  isPlayingAudio = false;
+  audioChunksSent = 0;
+  ws = null;
+  audioContext = null;
+  audioProcessor = null;
+  mediaStream = null;
+  analyserNode = null;
+  if (callTimer) {
+    clearInterval(callTimer);
+    callTimer = null;
+  }
+}
+
+/** @returns {WebSocket | null} @internal */
+export function getWs() { return ws; }
+/** @returns {AudioContext | null} @internal */
+export function getAudioContext() { return audioContext; }
+/** @returns {ScriptProcessorNode | null} @internal */
+export function getAudioProcessor() { return audioProcessor; }

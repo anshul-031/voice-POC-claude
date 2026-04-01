@@ -84,8 +84,7 @@ export function appendDebugLog(message, level = 'info') {
   body.appendChild(entry);
 
   while (body.children.length > CONFIG.DEBUG_LOG_MAX_ITEMS) {
-    if (!body.firstElementChild) break;
-    body.removeChild(body.firstElementChild);
+    body.removeChild(/** @type {Element} */ (body.firstElementChild));
   }
 
   body.scrollTop = body.scrollHeight;
@@ -98,4 +97,28 @@ export function clearDebugLogs() {
   const body = document.getElementById('debug-log-body');
   if (!body) return;
   body.innerHTML = `<div class="debug-log-empty">${UI_STRINGS.callPanel.debugEmpty}</div>`;
+}
+
+/**
+ * @param {string} role 
+ * @param {string} text 
+ * @returns {void}
+ */
+export function updateTranscript(role, text) {
+  const content = document.getElementById('transcript-content');
+  const container = document.getElementById('transcript-container');
+  if (!content) return;
+  const div = document.createElement('div');
+  div.className = `transcript-line ${role}`;
+  div.textContent = `${role === 'user' ? 'You' : 'Agent'}: ${text}`;
+  content.appendChild(div);
+  if (container) container.scrollTo(0, container.scrollHeight);
+}
+
+/**
+ * @returns {void}
+ */
+export function clearTranscript() {
+  const content = document.getElementById('transcript-content');
+  if (content) content.innerHTML = '';
 }

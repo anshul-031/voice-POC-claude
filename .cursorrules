@@ -22,10 +22,18 @@ npm run pr
 This command performs the following checks:
 1.  **Linting**: Runs ESLint to check for stylistic and programmatic errors.
 2.  **Typechecking**: Runs TypeScript (`tsc`) to check for type errors in JavaScript files.
-3.  **Testing**: Runs Vitest with coverage to ensure all unit tests pass and coverage is maintained.
+3.  **Testing**: Runs Vitest with coverage to ensure all unit tests pass and per-file coverage is at least 90% (Statements, Branches, Functions, Lines).
 4.  **Database**: Runs Prisma migration deployment to ensure the schema is up to date.
 
 If any of these checks fail, you MUST fix the issues before proceeding or informing the user that your task is complete.
+
+## Unit Testing Standards
+- **90% Per-File Coverage**: Every file MUST achieve at least 90% unit test coverage across lines, statements, branches, and functions.
+- **No File Exclusions**: Do not skip any file in the application for testing.
+- **Global Timeout**: All unit tests must complete within the configured global timeout (30s).
+- **Test Location**: Keep all tests in `src/__tests__/` and name them `filename.test.ts`.
+- **Mocking**: Use Vitest's mocking utilities (`vi.mock`, `vi.fn`, `vi.spyOn`) to isolate the unit under test.
+- **Coverage Validation**: Always run `npm run test:coverage` to verify your changes meet the required thresholds.
 
 ## Logging Standards
 - **Use the Centralized Logger**: DO NOT use `console.log`, `console.error`, or `console.warn` for application logs. Always import and use the logger from `src/utils/logger.js`.

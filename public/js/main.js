@@ -13,7 +13,7 @@ import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
 import { renderVoiceGrid, renderModelSelect, renderAgentList } from './render.js';
 
 // ── Auth Check ──
-async function checkAuthAndInit() {
+export async function checkAuthAndInit() {
   try {
     const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
     if (!res.ok) {
@@ -35,7 +35,7 @@ async function checkAuthAndInit() {
   initApp();
 }
 
-async function handleLogout() {
+export async function handleLogout() {
   try {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
   } catch (_e) { /* ignore */ }
@@ -54,11 +54,16 @@ let selectedAgentId = null;
 let currentCallAgentId = null;
 
 // ── Init ──
-document.addEventListener('DOMContentLoaded', () => {
+export function initDashboard() {
   checkAuthAndInit();
-});
+}
 
-function initApp() {
+// Auto-init on DOMContentLoaded
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', initDashboard);
+}
+
+export function initApp() {
   applyI18n();
   loadVoices();
   loadModels();
@@ -70,11 +75,14 @@ function initApp() {
   document.getElementById('btn-new-agent')?.addEventListener('click', showCreateForm);
   document.getElementById('agent-form')?.addEventListener('submit', handleSubmit);
   document.getElementById('btn-mute')?.addEventListener('click', toggleMute);
-  document.getElementById('btn-call')?.addEventListener('click', () => {
-    if (currentCallAgentId) {
-      toggleCall(currentCallAgentId, callCallbacks);
-    }
-  });
+  const btnCall = document.getElementById('btn-call');
+  if (btnCall) {
+    btnCall.addEventListener('click', () => {
+      if (currentCallAgentId) {
+        toggleCall(currentCallAgentId, callCallbacks);
+      }
+    });
+  }
   document.getElementById('btn-back-call')?.addEventListener('click', hideCallPanel);
   document.getElementById('btn-cancel-form')?.addEventListener('click', hideForm);
   document.getElementById('btn-close-form')?.addEventListener('click', hideForm);
@@ -82,7 +90,7 @@ function initApp() {
 }
 
 // ── API Operations ──
-async function loadVoices() {
+export async function loadVoices() {
   try {
     voices = await api('/voices');
     renderVoiceGrid(voices);
@@ -91,7 +99,7 @@ async function loadVoices() {
   }
 }
 
-async function loadModels() {
+export async function loadModels() {
   try {
     models = await api('/models');
     renderModelSelect(models);
@@ -100,7 +108,7 @@ async function loadModels() {
   }
 }
 
-async function loadAgents() {
+export async function loadAgents() {
   try {
     agents = await api('/agents');
     renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel, editAgent, deleteAgent);
@@ -113,7 +121,7 @@ async function loadAgents() {
 
 
 // ── Callbacks for call.js ──
-const callCallbacks = {
+export const callCallbacks = {
   /**
    * @param {string} text 
    * @param {string} className 
@@ -151,7 +159,7 @@ const callCallbacks = {
  * @param {string} id 
  * @returns {void}
  */
-const selectAgent = (id) => {
+export const selectAgent = (id) => {
   selectedAgentId = id;
   renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel, editAgent, deleteAgent);
   editAgent(id);
@@ -166,7 +174,7 @@ const selectAgent = (id) => {
  * @param {'value' | 'text'} mode
  * @returns {void}
  */
-function setFormField(elId, value, mode = 'value') {
+export function setFormField(elId, value, mode = 'value') {
   const el = document.getElementById(elId);
   if (!el) return;
   if (mode === 'text') { el.textContent = value; }
@@ -178,7 +186,7 @@ function setFormField(elId, value, mode = 'value') {
  * @param {{id?: string, name?: string, systemPrompt?: string, voiceName?: string, modelName?: string, title?: string, submitText?: string}} fields
  * @returns {void}
  */
-function populateForm(fields) {
+export function populateForm(fields) {
   setFormField('form-agent-id', fields.id || '');
   setFormField('form-name', fields.name || '');
   setFormField('form-prompt', fields.systemPrompt || '');
@@ -191,7 +199,7 @@ function populateForm(fields) {
 /**
  * @returns {void}
  */
-const showCreateForm = () => {
+export const showCreateForm = () => {
   populateForm({});
   showPanel('form');
 };
@@ -200,7 +208,7 @@ const showCreateForm = () => {
  * @param {string} id 
  * @returns {void}
  */
-function editAgent(id) {
+export function editAgent(id) {
   const agent = agents.find(a => a.id === id);
   if (!agent) return;
   populateForm({
@@ -218,7 +226,7 @@ function editAgent(id) {
 /**
  * @returns {{id: string, name: string, systemPrompt: string, voiceName: string, modelName: string} | null}
  */
-function getFormData() {
+export function getFormData() {
   const idEl = /** @type {HTMLInputElement} */ (document.getElementById('form-agent-id'));
   const nameEl = /** @type {HTMLInputElement} */ (document.getElementById('form-name'));
   const promptEl = /** @type {HTMLTextAreaElement} */ (document.getElementById('form-prompt'));
@@ -243,7 +251,7 @@ function getFormData() {
  * @param {Event} event 
  * @returns {Promise<void>}
  */
-async function handleSubmit(event) {
+export async function handleSubmit(event) {
   event.preventDefault();
   const data = getFormData();
   if (!data) return;
@@ -274,7 +282,7 @@ async function handleSubmit(event) {
  * @param {string} id 
  * @returns {Promise<void>}
  */
-async function deleteAgent(id) {
+export async function deleteAgent(id) {
   if (!confirm(UI_STRINGS.common.confirmDelete)) return;
   try {
     await api(`/agents/${id}`, { method: 'DELETE' });
@@ -290,7 +298,7 @@ async function deleteAgent(id) {
  * @param {string} agentId 
  * @returns {void}
  */
-function showCallPanel(agentId) {
+export function showCallPanel(agentId) {
   const agent = agents.find(a => a.id === agentId);
   if (!agent) return;
   currentCallAgentId = agentId;
@@ -314,7 +322,7 @@ function showCallPanel(agentId) {
 /**
  * @returns {void}
  */
-function hideCallPanel() {
+export function hideCallPanel() {
   endCall();
   showPanel('empty');
 }
@@ -322,14 +330,14 @@ function hideCallPanel() {
 /**
  * @returns {void}
  */
-function hideForm() {
+export function hideForm() {
   showPanel('empty');
 }
 
 /**
  * @returns {void}
  */
-function toggleMute() {
+export function toggleMute() {
   const isMuted = callToggleMute();
   const btn = document.getElementById('btn-mute');
   if (btn) btn.classList.toggle('muted', isMuted);
@@ -337,4 +345,16 @@ function toggleMute() {
   if (iconOff) iconOff.classList.toggle('hidden', isMuted);
   const iconOn = document.getElementById('mute-icon-on');
   if (iconOn) iconOn.classList.toggle('hidden', !isMuted);
+}
+
+/**
+ * @returns {void}
+ * @internal (For testing)
+ */
+export function resetMainState() {
+  agents = [];
+  voices = [];
+  models = [];
+  selectedAgentId = null;
+  currentCallAgentId = null;
 }

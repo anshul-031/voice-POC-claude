@@ -1,7 +1,5 @@
-import WSLib from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import type { WebSocket as WSWebSocket, WebSocketServer as WSWebSocketServer } from 'ws';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const { WebSocketServer } = WSLib as any;
 import type { IncomingMessage, Server } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
@@ -152,7 +150,7 @@ class SignalingServer {
         voiceName: agent.voiceName,
         modelName: agent.modelName || undefined,
         onAudio: (audioData: string) => {
-          if (socket.readyState === WSLib.OPEN) {
+          if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({
               type: MESSAGE_TYPE.AUDIO_RESPONSE,
               data: audioData,
@@ -161,7 +159,7 @@ class SignalingServer {
         },
         onTranscript: (transcript: { role: 'user' | 'model'; text: string }) => {
           logger.debug('Relaying transcript', { role: transcript.role, sessionId });
-          if (socket.readyState === WSLib.OPEN) {
+          if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({
               type: MESSAGE_TYPE.TRANSCRIPT,
               role: transcript.role,
@@ -171,7 +169,7 @@ class SignalingServer {
         },
         onInterrupted: (): void => {
           logger.info('Model interrupted, relaying to client', { sessionId });
-          if (socket.readyState === WSLib.OPEN) {
+          if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
           }
         },
@@ -180,13 +178,13 @@ class SignalingServer {
             sessionId, 
             error: error.message, 
           });
-          if (socket.readyState === WSLib.OPEN) {
+          if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: error.message }));
           }
         },
         onClose: (): void => {
           logger.info('Gemini session closed, notifying client', { sessionId });
-          if (socket.readyState === WSLib.OPEN) {
+          if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ 
               type: MESSAGE_TYPE.CALL_ENDED, 
               reason: UI_STRINGS.signaling.status.geminiClosed,

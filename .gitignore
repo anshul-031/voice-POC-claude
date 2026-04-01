@@ -26,6 +26,8 @@ prisma/dev.db-journal
 
 # Logs
 logs/
+custom-logs/
+test-logs/
 *.log
 
 # Coverage

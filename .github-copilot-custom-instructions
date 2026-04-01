@@ -1,0 +1,36 @@
+You are working on the VoiceForge — AI Voice Agent Platform. To maintain high code quality, follow these rules:
+
+## 90% Unit Test Coverage Requirement
+- **Per-File Threshold**: Every file MUST achieve at least 90% unit test coverage across lines, statements, branches, and functions.
+- **Enforcement**: If any file falls below this, the test suite is considered failed.
+- **No Exclusions**: Do not skip any file in the application for testing.
+- **Global Timeout**: All unit tests must complete within the configured global timeout (30s).
+- **Validation**: Always run `npm run test:coverage` to verify your changes meet the required thresholds.
+
+## Strictest Code Quality Standards
+- **ESLint Strictness**: The project uses the strictest ESLint configuration. Any linting errors MUST be fixed before committing.
+    - No `any` types: Always use explicit interfaces or types.
+    - Explicit Return Types: Every function must have a defined return type.
+    - No Non-Null Assertions: Avoid `!`; use proper null checks or optional chaining.
+- **Strict Typing**: All backend code MUST be in TypeScript (`.ts`). Use `src/types/` for all type definitions.
+- **Internationalization (i18n)**: DO NOT use hardcoded user-facing strings. Use `UI_STRINGS` from `src/constants/uiStrings.js`.
+
+## Quality Check Rule
+After every change you make to the codebase, you MUST run `npm run pr` to ensure no regressions are introduced.
+1.  **Linting**: Runs ESLint.
+2.  **Typechecking**: Runs TypeScript (`tsc`).
+3.  **Testing**: Runs Vitest with coverage (90% per-file).
+4.  **Database**: Runs Prisma migrations.
+
+## Logging Standards
+- **Use the Centralized Logger**: DO NOT use `console.log`. Always use the logger from `src/utils/logger.js`.
+- **Structured Logging**: Provide context using metadata objects.
+
+## Enums & Interfaces
+- **Separate File**: All enums and interfaces MUST be kept in `src/types/`.
+- **Clean Exports**: Re-export all types from `src/types/index.js`.
+- **No Inline Definitions**: DO NOT define enums or interfaces directly within service, route, or component files.
+
+## Mandatory Zod Input Validation
+- **Apply on every input boundary**: Any change that touches user or system input MUST include Zod validation.
+- **No inline schemas**: Define Zod schemas only in dedicated constants modules.
