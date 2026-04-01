@@ -11,7 +11,7 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "echo 'Building...' && tsc",
+    "build": "tsc && npx prisma generate",
     "db:migrate": "npx prisma migrate dev",
     "db:deploy": "npx prisma migrate deploy",
     "db:generate": "npx prisma generate",
