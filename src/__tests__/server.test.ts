@@ -71,7 +71,7 @@ describe('Server initialization and Routes', () => {
     vi.stubEnv('PORT', '4000');
     vi.stubEnv('NODE_ENV', '');
     // @ts-expect-error type-checked import with query
-    await import('../server.js?test=env-yes');
+    await import('../server.ts?test=env-yes');
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('✅ Configured'));
 
     // 2. Without env vars
@@ -81,7 +81,7 @@ describe('Server initialization and Routes', () => {
     delete process.env.GEMINI_API_KEY;
     delete process.env.DATABASE_URL;
     // @ts-expect-error type-checked import with query
-    await import('../server.js?test=env-no');
+    await import('../server.ts?test=env-no');
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('❌ MISSING'));
   });
 
@@ -90,7 +90,7 @@ describe('Server initialization and Routes', () => {
     vi.stubEnv('DATABASE_URL', 'url');
     
     // @ts-expect-error type-checked import with query
-    await import('../server.js?test=full');
+    await import('../server.ts?test=full');
 
     const res: any = { 
       json: vi.fn(), 
