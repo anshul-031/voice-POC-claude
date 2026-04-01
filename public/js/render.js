@@ -112,3 +112,26 @@ export function renderAgentList(agents, selectedAgentId, onSelect, onTestCall, o
     });
   });
 }
+
+/**
+ * @param {string} role 
+ * @param {string} content 
+ * @returns {void}
+ */
+export function renderMessage(role, content) {
+  const container = document.getElementById('messages');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  div.innerHTML = `<div class="content">${escapeHtml(content)}</div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * @returns {void}
+ */
+export function clearMessages() {
+  const container = document.getElementById('messages');
+  if (container) container.innerHTML = '';
+}

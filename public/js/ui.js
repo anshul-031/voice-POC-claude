@@ -11,18 +11,20 @@ export function applyI18n() {
     const key = el.getAttribute('data-i18n');
     if (!key) return;
     // @ts-ignore - Indexing UI_STRINGS with dynamic key
-    const text = key.split('.').reduce((obj, k) => obj[k], UI_STRINGS);
-    if (typeof text === 'string') el.textContent = text;
+    const text = key.split('.').reduce((obj, k) => (obj ? obj[k] : undefined), UI_STRINGS);
+    el.textContent = typeof text === 'string' ? text : key;
   });
 
   document.querySelectorAll('[data-i18n-attr]').forEach(el => {
-    const attrMapping = el.getAttribute('data-i18n-attr');
-    if (!attrMapping) return;
-    const [attr, key] = attrMapping.split(':');
-    if (!attr || !key) return;
-    // @ts-ignore - Indexing UI_STRINGS with dynamic key
-    const text = key.split('.').reduce((obj, k) => obj[k], UI_STRINGS);
-    if (typeof text === 'string') el.setAttribute(attr, text);
+    const attrMappingString = el.getAttribute('data-i18n-attr');
+    if (!attrMappingString) return;
+    attrMappingString.split(';').forEach(mapping => {
+      const [attr, key] = mapping.split(':');
+      if (!attr || !key) return;
+      // @ts-ignore - Indexing UI_STRINGS with dynamic key
+      const text = key.trim().split('.').reduce((obj, k) => (obj ? obj[k] : undefined), UI_STRINGS);
+      if (typeof text === 'string') el.setAttribute(attr.trim(), text);
+    });
   });
 }
 
@@ -71,4 +73,46 @@ export function updateCallUI(active) {
     iconStart.classList.remove('hidden');
     iconEnd.classList.add('hidden');
   }
+}
+/**
+ * @param {string[]} voices 
+ * @returns {void}
+ */
+export function updateAgentVoices(voices) {
+  const select = document.getElementById('voice-select');
+  if (!select) return;
+  if (!voices.length) {
+    select.innerHTML = `<option>${UI_STRINGS.agentList.empty.title}</option>`;
+    return;
+  }
+  select.innerHTML = voices.map(v => `<option value="${v}">${v}</option>`).join('');
+}
+
+/**
+ * @returns {string}
+ */
+export function getSelectedVoice() {
+  const select = /** @type {HTMLSelectElement} */ (document.getElementById('voice-select'));
+  return select?.value || '';
+}
+
+/**
+ * @param {string} text 
+ * @param {string} [type]
+ * @returns {void}
+ */
+export function setStatus(text, type = '') {
+  const textEl = document.getElementById('status-text');
+  const dotEl = document.getElementById('status-dot');
+  if (textEl) textEl.textContent = text;
+  if (dotEl) dotEl.className = `status-dot ${type}`;
+}
+
+/**
+ * @param {string} time 
+ * @returns {void}
+ */
+export function setTimer(time) {
+  const el = document.getElementById('timer');
+  if (el) el.textContent = time;
 }

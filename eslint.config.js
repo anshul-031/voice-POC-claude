@@ -121,11 +121,14 @@ export default [
     },
   },
   {
-    files: ['src/__tests__/**/*.ts', 'src/**/*.test.ts'],
+    files: ['src/__tests__/**/*.ts', 'src/**/*.test.ts', 'public/js/__tests__/**/*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/prefer-optional-chain': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      'max-len': 'off',
+      'comma-dangle': 'off',
     },
   },
 ];

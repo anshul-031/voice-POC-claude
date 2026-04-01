@@ -9,14 +9,14 @@ const API_BASE = '/api/auth';
  * @param {string} text 
  * @param {'error' | 'success'} type 
  */
-function showMessage(text, type = 'error') {
+export function showMessage(text, type = 'error') {
   const el = document.getElementById('auth-message');
   if (!el) return;
   el.textContent = text;
   el.className = `auth-message visible ${type}`;
 }
 
-function hideMessage() {
+export function hideMessage() {
   const el = document.getElementById('auth-message');
   if (el) el.className = 'auth-message';
 }
@@ -25,7 +25,7 @@ function hideMessage() {
  * @param {string} btnId 
  * @param {boolean} loading 
  */
-function setLoading(btnId, loading) {
+export function setLoading(btnId, loading) {
   const btn = /** @type {HTMLButtonElement | null} */ (document.getElementById(btnId));
   if (!btn) return;
   if (loading) {
@@ -41,7 +41,7 @@ function setLoading(btnId, loading) {
  * @param {string} endpoint 
  * @param {object} body 
  */
-async function apiPost(endpoint, body) {
+export async function apiPost(endpoint, body) {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -54,7 +54,7 @@ async function apiPost(endpoint, body) {
 }
 
 // ── Check if already logged in ──
-async function checkAuth() {
+export async function checkAuth() {
   try {
     const res = await fetch(`${API_BASE}/me`, { credentials: 'same-origin' });
     if (res.ok) {
@@ -68,7 +68,7 @@ async function checkAuth() {
 
 // ── Password Strength ──
 /** @param {string} password */
-function evaluatePassword(password) {
+export function evaluatePassword(password) {
   let score = 0;
   if (password.length >= 8) score++;
   if (password.length >= 12) score++;
@@ -83,7 +83,7 @@ function evaluatePassword(password) {
 }
 
 /** @param {string} password */
-function updateStrengthIndicator(password) {
+export function updateStrengthIndicator(password) {
   const bar = document.getElementById('strength-bar');
   const text = document.getElementById('strength-text');
   if (!bar || !text) return;
@@ -100,7 +100,7 @@ function updateStrengthIndicator(password) {
 }
 
 // ── Login ──
-function initLogin() {
+export function initLogin() {
   const form = document.getElementById('login-form');
   if (!form) return;
 
@@ -135,7 +135,7 @@ function initLogin() {
  * @param {string | undefined} password 
  * @param {string | undefined} confirm 
  */
-function validateSignupData(name, email, password, confirm) {
+export function validateSignupData(name, email, password, confirm) {
   if (!name || !email || !password || !confirm) {
     return 'Please fill in all fields';
   }
@@ -149,7 +149,7 @@ function validateSignupData(name, email, password, confirm) {
 }
 
 // ── Signup ──
-function initSignup() {
+export function initSignup() {
   const form = document.getElementById('signup-form');
   if (!form) return;
 
@@ -190,7 +190,7 @@ function initSignup() {
 }
 
 // ── Forgot Password ──
-function initForgot() {
+export function initForgot() {
   const form = document.getElementById('forgot-form');
   if (!form) return;
 
@@ -220,7 +220,7 @@ function initForgot() {
 }
 
 // ── Reset Password ──
-function initReset() {
+export function initReset() {
   const form = document.getElementById('reset-form');
   if (!form) return;
 
@@ -280,8 +280,7 @@ function initReset() {
   });
 }
 
-// ── Init ──
-document.addEventListener('DOMContentLoaded', async () => {
+export async function initAuth() {
   // If on login/signup page and already authenticated, redirect
   const isAuthPage = document.getElementById('login-form') || document.getElementById('signup-form');
   if (isAuthPage) {
@@ -293,4 +292,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSignup();
   initForgot();
   initReset();
-});
+}
+
+// ── Auto-Init ──
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', initAuth);
+}
