@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+/* eslint-disable complexity */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { 
   renderVoiceGrid, renderModelSelect, renderAgentList,
@@ -65,14 +66,32 @@ describe('Render Logic (render.js) — 90%+ Exclusive Coverage', () => {
 
   describe('Agent List Rendering', () => {
     const mockAgents = [
-      { id: 'a1', name: 'Agent 1', systemPrompt: 'p1', voiceName: 'v1', modelName: 'm1', createdAt: new Date() },
-      { id: 'a2', name: 'Agent 2', systemPrompt: 'p2', voiceName: 'v2', modelName: 'm2', createdAt: new Date() },
+      {
+        id: 'a1',
+        name: 'Agent 1',
+        systemPrompt: 'p1',
+        voiceName: 'v1',
+        modelName: 'm1',
+        publicPreviewEnabled: true,
+        createdAt: new Date(),
+      },
+      {
+        id: 'a2',
+        name: 'Agent 2',
+        systemPrompt: 'p2',
+        voiceName: 'v2',
+        modelName: 'm2',
+        publicPreviewEnabled: false,
+        createdAt: new Date(),
+      },
     ];
     const mockCallbacks = {
       onSelect: vi.fn(),
       onCall: vi.fn(),
       onEdit: vi.fn(),
       onDelete: vi.fn(),
+      onCopyPreviewUrl: vi.fn(),
+      onTogglePublicPreview: vi.fn(),
     };
 
     it('should render agent cards with active class and attach listeners', () => {
@@ -83,6 +102,8 @@ describe('Render Logic (render.js) — 90%+ Exclusive Coverage', () => {
         mockCallbacks.onCall, 
         mockCallbacks.onEdit, 
         mockCallbacks.onDelete,
+        mockCallbacks.onCopyPreviewUrl,
+        mockCallbacks.onTogglePublicPreview,
       );
       
       const card = document.querySelector('.agent-card');
@@ -98,6 +119,13 @@ describe('Render Logic (render.js) — 90%+ Exclusive Coverage', () => {
       card?.querySelector('.btn-delete-agent')?.dispatchEvent(new Event('click', { bubbles: true }));
       expect(mockCallbacks.onDelete).toHaveBeenCalledWith('a1');
 
+      card?.querySelector('.btn-copy-preview')?.dispatchEvent(new Event('click', { bubbles: true }));
+      expect(mockCallbacks.onCopyPreviewUrl).toHaveBeenCalledWith('a1');
+
+      const toggle = card?.querySelector('.agent-public-toggle-input');
+      toggle?.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(mockCallbacks.onTogglePublicPreview).toHaveBeenCalled();
+
       card?.dispatchEvent(new Event('click', { bubbles: true }));
       expect(mockCallbacks.onSelect).toHaveBeenCalledWith('a1');
     });
@@ -110,6 +138,8 @@ describe('Render Logic (render.js) — 90%+ Exclusive Coverage', () => {
         mockCallbacks.onCall, 
         mockCallbacks.onEdit, 
         mockCallbacks.onDelete,
+        mockCallbacks.onCopyPreviewUrl,
+        mockCallbacks.onTogglePublicPreview,
       );
       const card = document.querySelector('.agent-card');
 
@@ -129,14 +159,22 @@ describe('Render Logic (render.js) — 90%+ Exclusive Coverage', () => {
       const btnDelete = card?.querySelector('.btn-delete-agent') as HTMLElement;
       btnDelete.dataset.id = '';
       btnDelete.dispatchEvent(new Event('click', { bubbles: true }));
+
+      const btnCopy = card?.querySelector('.btn-copy-preview') as HTMLElement;
+      btnCopy.dataset.id = '';
+      btnCopy.dispatchEvent(new Event('click', { bubbles: true }));
+
+      const toggle = card?.querySelector('.agent-public-toggle-input') as HTMLInputElement;
+      toggle.dataset.id = '';
+      toggle.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
     it('should handle empty agent list', () => {
-      renderAgentList([], null, vi.fn(), vi.fn(), vi.fn(), vi.fn());
+      renderAgentList([], null, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
       expect(document.getElementById('agent-list')?.innerHTML).toContain('No agents yet');
 
       document.getElementById('agent-list')?.remove();
-      renderAgentList([], null, vi.fn(), vi.fn(), vi.fn(), vi.fn()); // missing container branch
+      renderAgentList([], null, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()); // missing container branch
     });
   });
 

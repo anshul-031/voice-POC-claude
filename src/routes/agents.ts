@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import prisma from '../lib/prisma.js';
 import logger from '../utils/logger.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { PRISMA_ERRORS, AUDIO_CONFIG } from '../types/index.js';
+import { PRISMA_ERRORS, AUDIO_CONFIG, ROUTES } from '../types/index.js';
 import { AVAILABLE_VOICES, AVAILABLE_MODELS } from '../constants/agents.js';
 import {
   AGENT_ID_PARAMS_SCHEMA,
@@ -33,6 +33,10 @@ function hasJsonContentType(contentType?: string): boolean {
   return !contentType || contentType.includes('application/json');
 }
 
+function buildPublicPreviewUrl(agentId: string): string {
+  return `${ROUTES.PREVIEW_PAGE}/${agentId}`;
+}
+
 // GET /api/voices — list available voices
 router.get('/voices', (_req: Request, res: Response): void => {
   res.json(AVAILABLE_VOICES);
@@ -57,7 +61,10 @@ router.get('/agents', requireAuth, async (_req: Request, res: Response): Promise
       where: { userId: req.user?.id },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(agents);
+    res.json(agents.map((agent) => ({
+      ...agent,
+      publicPreviewUrl: buildPublicPreviewUrl(agent.id),
+    })));
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     logger.error('Error fetching agents', { error: errMsg });
@@ -82,7 +89,10 @@ router.get('/agents/:id', requireAuth, async (_req: Request, res: Response): Pro
     if (!agent) {
       return res.status(404).json({ error: UI_STRINGS.api.errors.agentNotFound });
     }
-    res.json(agent);
+    res.json({
+      ...agent,
+      publicPreviewUrl: buildPublicPreviewUrl(agent.id),
+    });
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     logger.error('Error fetching agent', { id: req.params.id, error: errMsg });
@@ -105,7 +115,7 @@ router.post('/agents', requireAuth, async (_req: Request, res: Response): Promis
       return res.status(400).json({ error: getAgentValidationError(bodyParse.error) });
     }
 
-    const { name, systemPrompt, voiceName, modelName } = bodyParse.data;
+    const { name, systemPrompt, voiceName, modelName, publicPreviewEnabled } = bodyParse.data;
 
     const agent = await prisma.voiceAgent.create({
       data: {
@@ -113,11 +123,15 @@ router.post('/agents', requireAuth, async (_req: Request, res: Response): Promis
         systemPrompt,
         voiceName: voiceName || AUDIO_CONFIG.DEFAULT_VOICE,
         modelName: modelName || AUDIO_CONFIG.DEFAULT_MODEL,
+        publicPreviewEnabled: publicPreviewEnabled || false,
         userId: req.user?.id,
       },
     });
     logger.info('Agent created', { id: agent.id, name: agent.name });
-    res.status(201).json(agent);
+    res.status(201).json({
+      ...agent,
+      publicPreviewUrl: buildPublicPreviewUrl(agent.id),
+    });
   } catch (error: unknown) {
     handleAgentError(error, res);
   }
@@ -126,13 +140,22 @@ router.post('/agents', requireAuth, async (_req: Request, res: Response): Promis
 /**
  * Prepares the data object for Prisma update.
  */
-function prepareUpdateData(body: Record<string, string | undefined>): Record<string, string> {
-  const { name, systemPrompt, voiceName, modelName } = body;
+function prepareUpdateData(
+  body: {
+    name?: string;
+    systemPrompt?: string;
+    voiceName?: string;
+    modelName?: string;
+    publicPreviewEnabled?: boolean;
+  },
+): { name?: string; systemPrompt?: string; voiceName?: string; modelName?: string; publicPreviewEnabled?: boolean } {
+  const { name, systemPrompt, voiceName, modelName, publicPreviewEnabled } = body;
   return {
     ...(name && { name }),
     ...(systemPrompt && { systemPrompt }),
     ...(voiceName && { voiceName }),
     ...(modelName && { modelName }),
+    ...(publicPreviewEnabled !== undefined && { publicPreviewEnabled }),
   };
 }
 
@@ -210,7 +233,10 @@ router.put('/agents/:id', requireAuth, async (_req: Request, res: Response): Pro
       data: prepareUpdateData(bodyParse.data),
     });
     logger.info('Agent updated', { id: agent.id, name: agent.name });
-    res.json(agent);
+    res.json({
+      ...agent,
+      publicPreviewUrl: buildPublicPreviewUrl(agent.id),
+    });
   } catch (error: unknown) {
     handleAgentError(error, res, req.params.id as string);
   }
@@ -236,6 +262,42 @@ router.delete('/agents/:id', requireAuth, async (_req: Request, res: Response): 
     res.json({ message: UI_STRINGS.api.success.deleteAgent });
   } catch (error: unknown) {
     handleAgentError(error, res, req.params.id as string, UI_STRINGS.api.errors.deleteAgent);
+  }
+});
+
+// GET /api/public/agents/:id/preview — public preview metadata for an agent
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+router.get('/public/agents/:id/preview', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const paramsParse = AGENT_ID_PARAMS_SCHEMA.safeParse(req.params);
+    if (!paramsParse.success) {
+      return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    }
+
+    const agent = await prisma.voiceAgent.findUnique({
+      where: { id: paramsParse.data.id },
+      select: {
+        id: true,
+        name: true,
+        systemPrompt: true,
+        publicPreviewEnabled: true,
+      },
+    });
+
+    if (!agent?.publicPreviewEnabled) {
+      return res.status(404).json({ error: UI_STRINGS.api.errors.agentNotFound });
+    }
+
+    return res.json({
+      id: agent.id,
+      name: agent.name,
+      systemPrompt: agent.systemPrompt,
+      publicPreviewUrl: buildPublicPreviewUrl(agent.id),
+    });
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    logger.error('Error fetching public preview agent', { id: req.params.id, error: errMsg });
+    return res.status(500).json({ error: UI_STRINGS.api.errors.fetchAgent });
   }
 });
 

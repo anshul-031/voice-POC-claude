@@ -47,9 +47,20 @@ export function renderModelSelect(models) {
  * @param {{ (id: string): void }} onTestCall
  * @param {{ (id: string): void }} onEdit
  * @param {{ (id: string): void }} onDelete
+ * @param {{ (id: string): void }} onCopyPreviewUrl
+ * @param {{ (id: string, enabled: boolean): void }} onTogglePublicPreview
  * @returns {void}
  */
-export function renderAgentList(agents, selectedAgentId, onSelect, onTestCall, onEdit, onDelete) {
+export function renderAgentList(
+  agents,
+  selectedAgentId,
+  onSelect,
+  onTestCall,
+  onEdit,
+  onDelete,
+  onCopyPreviewUrl,
+  onTogglePublicPreview,
+) {
   const list = document.getElementById('agent-list');
   if (!list) return;
   if (agents.length === 0) {
@@ -61,9 +72,16 @@ export function renderAgentList(agents, selectedAgentId, onSelect, onTestCall, o
     <div class="agent-card${agent.id === selectedAgentId ? ' active' : ''}" data-id="${agent.id}">
       <div class="agent-card-header">
         <span class="agent-card-name">${escapeHtml(agent.name)}</span>
-        <span class="agent-card-voice">${escapeHtml(agent.voiceName)}</span>
+        <span class="agent-card-visibility ${agent.publicPreviewEnabled ? 'public' : 'private'}">
+          ${agent.publicPreviewEnabled ? UI_STRINGS.agentList.card.publicBadge : UI_STRINGS.agentList.card.privateBadge}
+        </span>
       </div>
       <div class="agent-card-prompt">${escapeHtml(agent.systemPrompt)}</div>
+      <div class="agent-card-meta">${escapeHtml(agent.voiceName)}</div>
+      <label class="agent-public-toggle" data-id="${agent.id}">
+        <input type="checkbox" class="agent-public-toggle-input" data-id="${agent.id}" ${agent.publicPreviewEnabled ? 'checked' : ''}>
+        <span>${UI_STRINGS.agentList.card.publicPreviewEnabled}</span>
+      </label>
       <div class="agent-card-actions">
         <button class="btn btn-outline btn-sm btn-test-call" data-id="${agent.id}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -74,6 +92,9 @@ export function renderAgentList(agents, selectedAgentId, onSelect, onTestCall, o
         </button>
         <button class="btn btn-outline btn-sm btn-edit-agent" data-id="${agent.id}">
           ${UI_STRINGS.common.edit}
+        </button>
+        <button class="btn btn-outline btn-sm btn-copy-preview ${agent.publicPreviewEnabled ? '' : 'hidden'}" data-id="${agent.id}">
+          ${UI_STRINGS.agentList.card.copyPreviewUrl}
         </button>
         <button class="btn btn-danger btn-sm btn-delete-agent" data-id="${agent.id}">
           ${UI_STRINGS.common.delete}
@@ -109,6 +130,26 @@ export function renderAgentList(agents, selectedAgentId, onSelect, onTestCall, o
       e.stopPropagation();
       const id = /** @type {HTMLElement} */ (btn).dataset.id;
       if (id) onDelete(id);
+    });
+  });
+
+  list.querySelectorAll('.btn-copy-preview').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = /** @type {HTMLElement} */ (btn).dataset.id;
+      if (id) onCopyPreviewUrl(id);
+    });
+  });
+
+  list.querySelectorAll('.agent-public-toggle-input').forEach(toggle => {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    toggle.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const input = /** @type {HTMLInputElement} */ (toggle);
+      const id = input.dataset.id;
+      if (id) onTogglePublicPreview(id, input.checked);
     });
   });
 }

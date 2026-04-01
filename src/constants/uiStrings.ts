@@ -33,12 +33,21 @@ export const UI_STRINGS = {
     },
     card: {
       testCall: 'Test Call',
+      copyPreviewUrl: 'Copy Preview URL',
+      publicPreviewEnabled: 'Public preview enabled',
+      publicBadge: 'Public',
+      privateBadge: 'Private',
       createdAt: (date: string): string => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
     },
   },
   emptyState: {
     title: 'Create Your First Voice Agent',
     description: 'Configure an AI voice agent with a custom personality, system prompt, and voice. Test it with a live call right in your browser.',
+  },
+  preview: {
+    title: 'Agent Web Call Preview',
+    subtitle: 'Test call quality and view live transcription',
+    unavailable: 'This preview link is unavailable.',
   },
   form: {
     createTitle: 'Create New Agent',
@@ -48,6 +57,7 @@ export const UI_STRINGS = {
     voiceLabel: 'Voice',
     modelLabel: 'Gemini Live Model',
     promptLabel: 'System Prompt',
+    publicPreviewLabel: 'Enable public preview URL',
     promptPlaceholder: 'You are a helpful customer support agent for Acme Corp. Be friendly, professional, and concise in your responses...',
     validation: {
       requiredFields: 'Please fill in all fields',
@@ -76,6 +86,7 @@ export const UI_STRINGS = {
     agentDeleted: 'Agent deleted',
     callStarted: (name: string): string => `Call started with ${name}`,
     connectionError: 'Connection error',
+    previewUrlCopied: 'Preview URL copied',
   },
   api: {
     errors: {
@@ -99,6 +110,7 @@ export const UI_STRINGS = {
     errors: {
       agentIdRequired: 'Agent ID is required',
       agentNotFound: 'Agent not found',
+      agentNotPublic: 'This agent is private and cannot be accessed from this link.',
       geminiConnectFailed: 'Failed to connect to Gemini Live API. Check your API key and model name.',
       invalidMessageFormat: 'Invalid signaling message format',
       unknownMessageType: (type: string): string => `Unknown message type: ${type}`,

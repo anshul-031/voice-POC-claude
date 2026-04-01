@@ -12,6 +12,7 @@ export const AGENT_FORM_SCHEMA = z.object({
   systemPrompt: z.string().trim().min(1),
   voiceName: z.string().trim().min(1),
   modelName: z.string().trim().min(1),
+  publicPreviewEnabled: z.boolean(),
 });
 
 export const START_CALL_INPUT_SCHEMA = z.object({

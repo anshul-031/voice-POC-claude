@@ -27,6 +27,7 @@ model VoiceAgent {
   systemPrompt String   @db.Text
   voiceName    String   @default("Puck")
   modelName    String   @default("gemini-2.5-flash-native-audio-latest")
+  publicPreviewEnabled Boolean @default(false)
   userId       String?
   user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())

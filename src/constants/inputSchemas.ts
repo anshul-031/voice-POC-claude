@@ -23,6 +23,7 @@ export const CREATE_AGENT_BODY_SCHEMA = z.object({
   systemPrompt: z.string().trim().min(1),
   voiceName: z.string().trim().optional().refine((value) => !value || isValidVoiceId(value)),
   modelName: z.string().trim().optional().refine((value) => !value || isValidModelId(value)),
+  publicPreviewEnabled: z.boolean().optional(),
 }).strict();
 
 export const UPDATE_AGENT_BODY_SCHEMA = z.object({
@@ -30,6 +31,7 @@ export const UPDATE_AGENT_BODY_SCHEMA = z.object({
   systemPrompt: z.string().trim().min(1).optional(),
   voiceName: z.string().trim().min(1).optional().refine((value) => !value || isValidVoiceId(value)),
   modelName: z.string().trim().min(1).optional().refine((value) => !value || isValidModelId(value)),
+  publicPreviewEnabled: z.boolean().optional(),
 }).strict();
 
 export const SIGNALING_START_CALL_MESSAGE_SCHEMA = z.object({

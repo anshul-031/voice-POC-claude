@@ -5,6 +5,7 @@
 export const CONFIG = {
   API_PREFIX: '/api',
   WS_PATH: '/ws',
+  PREVIEW_PATH: '/preview',
   DEFAULT_VOICE: 'Puck',
   DEFAULT_MODEL: 'gemini-2.0-flash-exp',
   SAMPLE_RATE_INPUT: 16000,

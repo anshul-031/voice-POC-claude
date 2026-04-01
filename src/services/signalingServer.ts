@@ -8,6 +8,7 @@ import { UI_STRINGS } from '../constants/uiStrings.js';
 import { ROUTES, TIME, MESSAGE_TYPE } from '../types/index.js';
 import type { SignalingClient } from '../types/index.js';
 import logger from '../utils/logger.js';
+import { verifyToken } from './auth.js';
 import {
   SIGNALING_AUDIO_DATA_MESSAGE_SCHEMA,
   SIGNALING_MESSAGE_SCHEMA,
@@ -35,6 +36,7 @@ class SignalingServer {
 
       socket.on('message', async (data: Buffer | string | ArrayBuffer | Buffer[]) => {
         try {
+          const requesterUserId = this._resolveRequesterUserId(req);
           const dataString = data.toString();
           const rawMessage = JSON.parse(dataString);
           const messageParse = SIGNALING_MESSAGE_SCHEMA.safeParse(rawMessage);
@@ -53,7 +55,7 @@ class SignalingServer {
 
           const message = messageParse.data;
           logger.debug('Signaling message received', { type: message.type, clientIp });
-          await this._handleMessage(socket, message);
+          await this._handleMessage(socket, message, requesterUserId);
         } catch (error: unknown) {
           const isJsonParseError = error instanceof SyntaxError;
           const errMsg = error instanceof Error ? error.message : String(error);
@@ -89,10 +91,30 @@ class SignalingServer {
     logger.info('WebSocket server attached', { path: ROUTES.WS_PATH });
   }
 
-  private async _handleMessage(socket: WSWebSocket, message: SignalingMessage): Promise<void> {
+  private _resolveRequesterUserId(req: IncomingMessage): string | null {
+    const cookieHeader = req.headers.cookie;
+    if (!cookieHeader) return null;
+    const tokenCookie = cookieHeader
+      .split(';')
+      .map((item) => item.trim())
+      .find((item) => item.startsWith('token='));
+    if (!tokenCookie) return null;
+
+    const encodedToken = tokenCookie.slice('token='.length);
+    if (!encodedToken) return null;
+
+    const decodedToken = verifyToken(decodeURIComponent(encodedToken));
+    return decodedToken?.userId || null;
+  }
+
+  private async _handleMessage(
+    socket: WSWebSocket,
+    message: SignalingMessage,
+    requesterUserId: string | null,
+  ): Promise<void> {
     switch (message.type) {
       case MESSAGE_TYPE.START_CALL:
-        await this._handleStartCall(socket, message);
+        await this._handleStartCall(socket, message, requesterUserId);
         break;
       case MESSAGE_TYPE.AUDIO_DATA:
         await this._handleAudioData(socket, message);
@@ -103,14 +125,30 @@ class SignalingServer {
     }
   }
 
+  private _sendSocketError(socket: WSWebSocket, message: string): void {
+    socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message }));
+  }
+
+  private _canAccessAgent(
+    agent: { publicPreviewEnabled: boolean; userId: string | null },
+    requesterUserId: string | null,
+  ): boolean {
+    const isOwner = !!requesterUserId && agent.userId === requesterUserId;
+    return agent.publicPreviewEnabled || isOwner;
+  }
+
   /** @internal */
-  public async _handleStartCall(socket: WSWebSocket, message: { agentId: string }): Promise<void> {
+  public async _handleStartCall(
+    socket: WSWebSocket,
+    message: { agentId: string },
+    requesterUserId: string | null = null,
+  ): Promise<void> {
     const parseResult = SIGNALING_START_CALL_MESSAGE_SCHEMA.safeParse({
       type: MESSAGE_TYPE.START_CALL,
       agentId: message.agentId,
     });
     if (!parseResult.success) {
-      socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: UI_STRINGS.signaling.errors.agentIdRequired }));
+      this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentIdRequired);
       return;
     }
 
@@ -122,9 +160,19 @@ class SignalingServer {
     const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } });
     if (!agent) {
       logger.warn('Agent not found', { agentId });
-      socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: UI_STRINGS.signaling.errors.agentNotFound }));
+      this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentNotFound);
       return;
     }
+
+    if (!this._canAccessAgent(agent, requesterUserId)) {
+      logger.warn('Blocked unauthorized call start for private agent', {
+        agentId,
+        requesterUserId,
+      });
+      this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentNotPublic);
+      return;
+    }
+
     logger.info('Agent found for call', { 
       agentId, 
       name: agent.name, 

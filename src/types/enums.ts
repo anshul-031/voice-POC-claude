@@ -5,6 +5,7 @@
 export const ROUTES = {
   API_PREFIX: '/api',
   WS_PATH: '/ws',
+  PREVIEW_PAGE: '/preview',
   HEALTH_CHECK: '/api/health',
   CONSTANTS_UI_STRINGS: '/constants/uiStrings.js',
   CONSTANTS_CONFIG: '/constants/config.js',

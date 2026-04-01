@@ -111,6 +111,12 @@ describe('Server initialization and Routes', () => {
       expect(res.sendFile).toHaveBeenCalled();
     }
 
+    // Test Public Preview Page Route
+    if (routes[`${ROUTES.PREVIEW_PAGE}/:agentId`]) {
+      routes[`${ROUTES.PREVIEW_PAGE}/:agentId`]({ params: { agentId: 'abc' } }, res);
+      expect(res.sendFile).toHaveBeenCalled();
+    }
+
     const next = vi.fn();
     const reqGet = vi.fn(() => 'vitest-agent');
     const req = {

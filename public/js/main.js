@@ -11,6 +11,10 @@ import { showToast } from './utils.js';
 import { appendTranscript, selectVoiceInGrid, clearDebugLogs } from './transcript.js';
 import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
 import { renderVoiceGrid, renderModelSelect, renderAgentList } from './render.js';
+import {
+  copyPreviewUrl as copyPreviewUrlToClipboard,
+  togglePublicPreview as togglePublicPreviewRequest,
+} from './previewLinks.js';
 
 // ── Auth Check ──
 export async function checkAuthAndInit() {
@@ -111,11 +115,29 @@ export async function loadModels() {
 export async function loadAgents() {
   try {
     agents = await api('/agents');
-    renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel, editAgent, deleteAgent);
+    renderAgentList(
+      agents,
+      selectedAgentId,
+      selectAgent,
+      showCallPanel,
+      editAgent,
+      deleteAgent,
+      copyPreviewUrl,
+      togglePublicPreview,
+    );
   } catch (_err) {
     showToast(UI_STRINGS.toasts.loadAgentsFailed, 'error');
     agents = [];
-    renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel, editAgent, deleteAgent);
+    renderAgentList(
+      agents,
+      selectedAgentId,
+      selectAgent,
+      showCallPanel,
+      editAgent,
+      deleteAgent,
+      copyPreviewUrl,
+      togglePublicPreview,
+    );
   }
 }
 
@@ -161,7 +183,16 @@ export const callCallbacks = {
  */
 export const selectAgent = (id) => {
   selectedAgentId = id;
-  renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel, editAgent, deleteAgent);
+  renderAgentList(
+    agents,
+    selectedAgentId,
+    selectAgent,
+    showCallPanel,
+    editAgent,
+    deleteAgent,
+    copyPreviewUrl,
+    togglePublicPreview,
+  );
   editAgent(id);
 };
 
@@ -183,7 +214,7 @@ export function setFormField(elId, value, mode = 'value') {
 
 /**
  * Populates the agent form fields.
- * @param {{id?: string, name?: string, systemPrompt?: string, voiceName?: string, modelName?: string, title?: string, submitText?: string}} fields
+ * @param {{id?: string, name?: string, systemPrompt?: string, voiceName?: string, modelName?: string, publicPreviewEnabled?: boolean, title?: string, submitText?: string}} fields
  * @returns {void}
  */
 export function populateForm(fields) {
@@ -193,6 +224,10 @@ export function populateForm(fields) {
   setFormField('form-title', fields.title || UI_STRINGS.form.createTitle, 'text');
   setFormField('form-submit-text', fields.submitText || UI_STRINGS.common.create, 'text');
   if (fields.modelName) setFormField('form-model', fields.modelName);
+  const publicPreviewCheckbox = /** @type {HTMLInputElement | null} */ (document.getElementById('form-public-preview-enabled'));
+  if (publicPreviewCheckbox) {
+    publicPreviewCheckbox.checked = !!fields.publicPreviewEnabled;
+  }
   if (fields.voiceName) selectVoiceInGrid(fields.voiceName);
 }
 
@@ -217,6 +252,7 @@ export function editAgent(id) {
     systemPrompt: agent.systemPrompt,
     voiceName: agent.voiceName,
     modelName: agent.modelName,
+    publicPreviewEnabled: agent.publicPreviewEnabled,
     title: UI_STRINGS.form.editTitle || 'Edit Agent',
     submitText: UI_STRINGS.common.save || 'Save Changes',
   });
@@ -224,13 +260,14 @@ export function editAgent(id) {
 }
 
 /**
- * @returns {{id: string, name: string, systemPrompt: string, voiceName: string, modelName: string} | null}
+ * @returns {{id: string, name: string, systemPrompt: string, voiceName: string, modelName: string, publicPreviewEnabled: boolean} | null}
  */
 export function getFormData() {
   const idEl = /** @type {HTMLInputElement} */ (document.getElementById('form-agent-id'));
   const nameEl = /** @type {HTMLInputElement} */ (document.getElementById('form-name'));
   const promptEl = /** @type {HTMLTextAreaElement} */ (document.getElementById('form-prompt'));
   const modelEl = /** @type {HTMLSelectElement} */ (document.getElementById('form-model'));
+  const publicPreviewEl = /** @type {HTMLInputElement | null} */ (document.getElementById('form-public-preview-enabled'));
   
   if (!idEl || !nameEl || !promptEl || !modelEl) return null;
 
@@ -244,6 +281,7 @@ export function getFormData() {
     systemPrompt: promptEl.value.trim(),
     voiceName,
     modelName: modelEl.value,
+    publicPreviewEnabled: !!publicPreviewEl?.checked,
   };
 }
 
@@ -262,12 +300,12 @@ export async function handleSubmit(event) {
     return;
   }
 
-  const { id, name, systemPrompt, voiceName, modelName } = parseResult.data;
+  const { id, name, systemPrompt, voiceName, modelName, publicPreviewEnabled } = parseResult.data;
 
   try {
     await api(id ? `/agents/${id}` : '/agents', {
       method: id ? 'PUT' : 'POST',
-      body: JSON.stringify({ name, systemPrompt, voiceName, modelName }),
+      body: JSON.stringify({ name, systemPrompt, voiceName, modelName, publicPreviewEnabled }),
     });
     showToast(id ? UI_STRINGS.toasts.agentUpdated : UI_STRINGS.toasts.agentCreated, 'success');
     await loadAgents();
@@ -275,6 +313,28 @@ export async function handleSubmit(event) {
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     showToast(errMsg, 'error');
+  }
+}
+
+/**
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function copyPreviewUrl(id) {
+  await copyPreviewUrlToClipboard(id);
+}
+
+/**
+ * @param {string} id
+ * @param {boolean} enabled
+ * @returns {Promise<void>}
+ */
+export async function togglePublicPreview(id, enabled) {
+  try {
+    await togglePublicPreviewRequest(id, enabled);
+    await loadAgents();
+  } catch (_err) {
+    await loadAgents();
   }
 }
 

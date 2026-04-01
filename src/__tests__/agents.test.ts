@@ -122,6 +122,18 @@ describe('Agents Routes', () => {
     expect(res.status).toHaveBeenCalledWith(201);
     res.status.mockClear();
 
+    // 2.1 Public preview enabled on create
+    await getRouteHandler('/agents', 'post')({
+      body: {
+        name: 'A',
+        systemPrompt: 'S',
+        voiceName: 'Puck',
+        publicPreviewEnabled: true,
+      },
+    } as any, res);
+    expect(prisma.voiceAgent.create).toHaveBeenCalled();
+    res.status.mockClear();
+
     // 3. Invalid voice
     await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'INV' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -214,6 +226,14 @@ describe('Agents Routes', () => {
     expect(res.json).toHaveBeenCalled();
     res.json.mockClear();
 
+    // 4.2 Boolean-only payload should pass publicPreviewEnabled branch
+    await getRouteHandler('/agents/:id', 'put')({
+      params: { id: '1' },
+      body: { publicPreviewEnabled: true },
+    } as any, res);
+    expect(res.json).toHaveBeenCalled();
+    res.json.mockClear();
+
     // 5. P2025 Not Found
     const err: any = new Error(); err.code = 'P2025';
     (prisma.voiceAgent.update as any).mockRejectedValue(err);
@@ -277,5 +297,41 @@ describe('Agents Routes', () => {
 
     // To hit isPrismaNotFound directly, we can't easily as it's internal.
     // But it's covered by the 404 tests in GET/PUT/DELETE.
+  });
+
+  it('GET /public/agents/:id/preview coverage', async () => {
+    const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
+
+    await getRouteHandler('/public/agents/:id/preview', 'get')({ params: { id: '' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    res.status.mockClear();
+
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue(null);
+    await getRouteHandler('/public/agents/:id/preview', 'get')({ params: { id: 'x' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    res.status.mockClear();
+
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: 'x',
+      name: 'agent',
+      systemPrompt: 'prompt',
+      publicPreviewEnabled: false,
+    });
+    await getRouteHandler('/public/agents/:id/preview', 'get')({ params: { id: 'x' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    res.status.mockClear();
+
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: 'x',
+      name: 'agent',
+      systemPrompt: 'prompt',
+      publicPreviewEnabled: true,
+    });
+    await getRouteHandler('/public/agents/:id/preview', 'get')({ params: { id: 'x' } } as any, res);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ id: 'x' }));
+
+    (prisma.voiceAgent.findUnique as any).mockRejectedValue(new Error('fail'));
+    await getRouteHandler('/public/agents/:id/preview', 'get')({ params: { id: 'x' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(500);
   });
 });

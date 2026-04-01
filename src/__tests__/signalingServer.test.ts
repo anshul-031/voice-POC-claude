@@ -3,6 +3,7 @@ import type { WebSocket } from 'ws';
 import signalingServer from '../services/signalingServer.js';
 import geminiLiveService from '../services/geminiLive.js';
 import prisma from '../lib/prisma.js';
+import { generateToken } from '../services/auth.js';
 
 // Mock correctly to capture the mock instance
 let lastMockWss: any;
@@ -61,7 +62,12 @@ describe('SignalingServer', () => {
     const messageHandler = mockWs.on.mock.calls.find((c: any) => c[0] === 'message')[1];
     
     // 1. start-call success
-    (prisma.voiceAgent.findUnique as any).mockResolvedValue({ id: '1', name: 'A', systemPrompt: 'S' });
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: '1',
+      name: 'A',
+      systemPrompt: 'S',
+      publicPreviewEnabled: true,
+    });
     (geminiLiveService.createSession as any).mockResolvedValue({});
     await messageHandler(JSON.stringify({ type: 'start-call', agentId: '1' }));
     
@@ -116,7 +122,12 @@ describe('SignalingServer', () => {
     await expect(signalingServer._handleStartCall(mockWs, { agentId: '1' })).rejects.toThrow('DB_FAIL');
     
     // 4. CreateSession failure (inner catch block)
-    (prisma.voiceAgent.findUnique as any).mockResolvedValue({ id: '1', name: 'A', systemPrompt: 'S' });
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: '1',
+      name: 'A',
+      systemPrompt: 'S',
+      publicPreviewEnabled: true,
+    });
     (geminiLiveService.createSession as any).mockRejectedValue(new Error('CREATE_FAIL'));
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
     expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('error'));
@@ -134,7 +145,12 @@ describe('SignalingServer', () => {
       capturedCallbacks = config;
       return Promise.resolve();
     });
-    (prisma.voiceAgent.findUnique as any).mockResolvedValue({ id: '1', name: 'A', systemPrompt: 'S' });
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: '1',
+      name: 'A',
+      systemPrompt: 'S',
+      publicPreviewEnabled: true,
+    });
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
     
     // Trigger each callback when OPEN
@@ -153,6 +169,20 @@ describe('SignalingServer', () => {
     capturedCallbacks.onClose();
   });
 
+  it('should reject private agent calls without owner auth', async () => {
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: 'private-agent',
+      name: 'Private',
+      systemPrompt: 'S',
+      publicPreviewEnabled: false,
+      userId: 'owner-1',
+    });
+
+    await signalingServer._handleStartCall(mockWs, { agentId: 'private-agent' }, null);
+
+    expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('private'));
+  });
+
   it('should handle disconnect close-session failures', async () => {
     signalingServer.clients.set(mockWs as WebSocket, {
       sessionId: 'session-close-error',
@@ -166,6 +196,45 @@ describe('SignalingServer', () => {
     await Promise.resolve();
 
     expect(geminiLiveService.closeSession).toHaveBeenCalledWith('session-close-error');
+  });
+
+  it('should parse requester user id from cookies and evaluate access helper', () => {
+    const noCookie = (signalingServer as any)._resolveRequesterUserId({ headers: {} });
+    expect(noCookie).toBeNull();
+
+    const noTokenCookie = (signalingServer as any)._resolveRequesterUserId({
+      headers: { cookie: 'a=1; b=2' },
+    });
+    expect(noTokenCookie).toBeNull();
+
+    const invalidToken = (signalingServer as any)._resolveRequesterUserId({
+      headers: { cookie: 'token=badtoken' },
+    });
+    expect(invalidToken).toBeNull();
+
+    const token = generateToken('user-1', 'user@example.com');
+    const validToken = (signalingServer as any)._resolveRequesterUserId({
+      headers: { cookie: `x=1; token=${encodeURIComponent(token)}` },
+    });
+    expect(validToken).toBe('user-1');
+
+    const publicAllowed = (signalingServer as any)._canAccessAgent(
+      { publicPreviewEnabled: true, userId: 'owner-1' },
+      null,
+    );
+    expect(publicAllowed).toBe(true);
+
+    const ownerAllowed = (signalingServer as any)._canAccessAgent(
+      { publicPreviewEnabled: false, userId: 'owner-1' },
+      'owner-1',
+    );
+    expect(ownerAllowed).toBe(true);
+
+    const denied = (signalingServer as any)._canAccessAgent(
+      { publicPreviewEnabled: false, userId: 'owner-1' },
+      'other-user',
+    );
+    expect(denied).toBe(false);
   });
 
 });

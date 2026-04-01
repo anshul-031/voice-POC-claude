@@ -8,6 +8,7 @@ export interface VoiceAgent {
   systemPrompt: string;
   voiceName: string;
   modelName: string;
+  publicPreviewEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

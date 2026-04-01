@@ -62,6 +62,11 @@ app.get('/', (req: Request, res: Response) => {
   res.sendFile(join(PUBLIC_DIR, 'landing.html'));
 });
 
+// Public preview page with agent id path parameter
+app.get(`${ROUTES.PREVIEW_PAGE}/:agentId`, (req: Request, res: Response) => {
+  res.sendFile(join(PUBLIC_DIR, 'preview.html'));
+});
+
 // Fallback to SPA (dashboard)
 app.get('*', (req: Request, res: Response) => {
   res.sendFile(join(PUBLIC_DIR, 'index.html'));
