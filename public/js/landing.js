@@ -4,6 +4,10 @@
 
 // ── Scroll Reveal ──
 export function initLanding() {
+  if (typeof IntersectionObserver === 'undefined') {
+    document.querySelectorAll('.reveal').forEach((el) => el.classList.add('visible'));
+    return;
+  }
   const revealElements = document.querySelectorAll('.reveal');
   const revealObserver = new IntersectionObserver(
     (entries) => {
@@ -93,4 +97,7 @@ export function animateCounters() {
 // Auto-init on DOMContentLoaded
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', initLanding);
+  if (document.readyState !== 'loading') {
+    initLanding();
+  }
 }

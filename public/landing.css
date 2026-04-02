@@ -143,7 +143,7 @@
 }
 
 .hero h1 .gradient-text {
-  background: linear-gradient(135deg, #7c3aed, #06b6d4, #8b5cf6);
+  background: linear-gradient(135deg, #a78bfa, #22d3ee, #c4b5fd);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -200,14 +200,14 @@
 
 .hero-btn-outline {
   background: transparent;
-  color: #a0a0c0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .hero-btn-outline:hover {
-  border-color: rgba(124, 58, 237, 0.3);
-  color: #f0f0f8;
-  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(124, 58, 237, 0.6);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* Hero wave animation */

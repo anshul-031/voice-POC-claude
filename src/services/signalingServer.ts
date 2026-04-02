@@ -1,4 +1,4 @@
-import { WebSocket, WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import type { WebSocket as WSWebSocket, WebSocketServer as WSWebSocketServer } from 'ws';
 import type { IncomingMessage, Server } from 'http';
 import { v4 as uuidv4 } from 'uuid';
