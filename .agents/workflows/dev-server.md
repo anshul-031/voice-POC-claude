@@ -8,5 +8,5 @@ description: Start the development server
 
 1. Kill any existing process on port 3000 and start the dev server:
 ```bash
-kill $(lsof -t -i:3000) 2>/dev/null; sleep 1 && npm run dev
+kill $(lsof -t -i:3000) 2>/dev/null; sleep 1 && npm run start
 ```
