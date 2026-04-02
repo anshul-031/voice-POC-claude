@@ -132,12 +132,13 @@
 }
 
 .hero h1 {
-  font-size: 3.5rem;
+  font-size: 4.2rem;
   font-weight: 800;
   line-height: 1.1;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
   color: #f0f0f8;
   margin-bottom: 24px;
+  text-wrap: balance;
   animation: fadeSlideUp 0.6s ease-out 0.1s both;
 }
 
@@ -233,7 +234,7 @@
   height: 100%;
 }
 
-/* Floating particles */
+/* Floating particles as Mesh Gradient Orbs */
 .hero-particles {
   position: absolute;
   inset: 0;
@@ -243,24 +244,28 @@
 
 .particle {
   position: absolute;
-  width: 4px;
-  height: 4px;
+  width: 40vw;
+  height: 40vw;
+  max-width: 600px;
+  max-height: 600px;
   border-radius: 50%;
-  background: rgba(124, 58, 237, 0.3);
-  animation: particleFloat 12s ease-in-out infinite;
+  background: rgba(124, 58, 237, 0.12);
+  filter: blur(80px);
+  animation: meshFloat 15s ease-in-out infinite alternate;
 }
 
-.particle:nth-child(2) { left: 20%; animation-delay: -3s; background: rgba(6, 182, 212, 0.3); }
-.particle:nth-child(3) { left: 40%; animation-delay: -6s; width: 6px; height: 6px; }
-.particle:nth-child(4) { left: 60%; animation-delay: -2s; background: rgba(6, 182, 212, 0.2); }
-.particle:nth-child(5) { left: 80%; animation-delay: -8s; width: 3px; height: 3px; }
-.particle:nth-child(6) { left: 90%; animation-delay: -4s; background: rgba(124, 58, 237, 0.2); }
+.particle:nth-child(1) { left: -10%; top: -10%; }
+.particle:nth-child(2) { right: -10%; top: 20%; background: rgba(6, 182, 212, 0.12); animation-delay: -3s; animation-duration: 18s; }
+.particle:nth-child(3) { left: 40%; bottom: -20%; width: 50vw; height: 50vw; background: rgba(139, 92, 246, 0.1); animation-delay: -6s; animation-duration: 20s; }
+.particle:nth-child(4) { left: 20%; top: 40%; background: rgba(236, 72, 153, 0.08); animation-delay: -2s; animation-duration: 22s; }
+.particle:nth-child(5) { right: 20%; bottom: 10%; width: 30vw; height: 30vw; background: rgba(6, 182, 212, 0.1); animation-delay: -8s; animation-duration: 16s; }
+.particle:nth-child(6) { left: 50%; top: -20%; background: rgba(124, 58, 237, 0.12); animation-delay: -4s; animation-duration: 25s; }
 
-@keyframes particleFloat {
-  0%, 100% { transform: translateY(100vh) scale(0); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+@keyframes meshFloat {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  33% { transform: translate(3vw, -5vh) scale(1.1) rotate(2deg); }
+  66% { transform: translate(-2vw, 3vh) scale(0.9) rotate(-2deg); }
+  100% { transform: translate(0, 0) scale(1) rotate(0deg); }
 }
 
 @keyframes fadeSlideUp {
@@ -368,9 +373,9 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.06), transparent 50%);
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(6, 182, 212, 0.05));
   opacity: 0;
-  transition: opacity 0.35s;
+  transition: opacity 0.4s;
 }
 
 .usecase-card:hover {

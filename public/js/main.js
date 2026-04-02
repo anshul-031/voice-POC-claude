@@ -15,6 +15,7 @@ import {
   copyPreviewUrl as copyPreviewUrlToClipboard,
   togglePublicPreview as togglePublicPreviewRequest,
 } from './previewLinks.js';
+import { renderCallPanelTemplate } from './components/callPanel.js';
 
 // ── Auth Check ──
 export async function checkAuthAndInit() {
@@ -73,6 +74,12 @@ export function initApp() {
   loadModels();
   loadAgents();
   checkApiHealth();
+  
+  const callPanelContainer = document.getElementById('call-panel');
+  if (callPanelContainer) {
+    callPanelContainer.innerHTML = renderCallPanelTemplate({ hideDetails: false });
+  }
+  
   initWaveform();
   
   // Set up event listeners

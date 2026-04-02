@@ -8,6 +8,7 @@ import { initWaveform } from './waveform.js';
 import { toggleCall, endCall, toggleMute as callToggleMute } from './call.js';
 import { showToast } from './utils.js';
 import { appendTranscript, clearDebugLogs } from './transcript.js';
+import { renderCallPanelTemplate } from './components/callPanel.js';
 
 /** @type {string | null} */
 let previewAgentId = null;
@@ -104,6 +105,12 @@ function toggleMute() {
  */
 function initPreviewPage() {
   applyI18n();
+
+  const callPanelContainer = document.getElementById('call-panel');
+  if (callPanelContainer) {
+    callPanelContainer.innerHTML = renderCallPanelTemplate({ hideDetails: true });
+  }
+
   initWaveform();
   clearDebugLogs();
 
