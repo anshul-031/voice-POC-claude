@@ -72,6 +72,8 @@ class GeminiLiveService {
       onClose?: (event: { reason?: string; code?: number }) => void;
     },
   ): Promise<void> {
+    const startTime = Date.now();
+
     try {
       const model = this._resolveModel(modelName);
 
@@ -99,8 +101,6 @@ class GeminiLiveService {
       if (systemPrompt) {
         config.systemInstruction = systemPrompt;
       }
-
-      const startTime = Date.now();
 
       const session = await this.ai.live.connect({
         model,
@@ -148,7 +148,9 @@ class GeminiLiveService {
         audioChunksReceived: 0,
       };
       this.sessions.set(sessionId, sessionEntry);
-      logger.debug('Gemini Live session registered', { sessionId });
+
+      const totalElapsed = Date.now() - startTime;
+      logger.info('Gemini Live session fully registered', { sessionId, totalElapsedMs: totalElapsed });
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Failed to create Gemini Live session', {
@@ -232,7 +234,11 @@ class GeminiLiveService {
     onTranscript?: (transcript: Transcript) => void,
   ): void {
     const text = transcription.text || transcription;
-    const finalMsg = typeof text === 'string' ? text : JSON.stringify(text);
+    let finalMsg = typeof text === 'string' ? text : JSON.stringify(text);
+
+    // Ensure proper spacing between words
+    finalMsg = finalMsg.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+
     logger.info(`${role === 'user' ? 'User' : 'Output'} transcript received`, { sessionId, text: finalMsg });
     if (onTranscript) onTranscript({ role, text: finalMsg });
   }

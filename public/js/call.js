@@ -8,6 +8,7 @@ import { updateCallUI } from './ui.js';
 import { startWaveformAnimation, stopWaveformAnimation } from './waveform.js';
 import { START_CALL_INPUT_SCHEMA, WS_INBOUND_MESSAGE_SCHEMA } from './constants/inputSchemas.js';
 import { appendDebugLog } from './transcript.js';
+import { calculateRMS, convertToPCM16, decodeAudioChunk } from './audioUtils.js';
 
 /** @type {AudioContext | null} */
 let audioContext = null;
@@ -28,6 +29,40 @@ let callSeconds = 0;
 const audioQueue = [];
 let isPlayingAudio = false;
 let audioChunksSent = 0;
+/** @type {AudioBufferSourceNode | null} */
+let currentAudioSource = null;
+
+/**
+ * @param {AudioContext} context
+ * @param {MediaStreamAudioSourceNode} source
+ * @returns {void}
+ */
+function setupAudioProcessor(context, source) {
+  audioProcessor = context.createScriptProcessor(4096, 1, 1);
+  source.connect(audioProcessor);
+  audioProcessor.connect(context.destination);
+
+  audioProcessor.onaudioprocess = (event) => {
+    if (!isInCall || isMuted || isPlayingAudio) return;
+    const inputData = event.inputBuffer.getChannelData(0);
+
+    // Simple VAD: calculate RMS energy
+    const rms = calculateRMS(inputData);
+    const VOICE_THRESHOLD = 0.01;
+
+    // Skip sending if below threshold (silence)
+    if (rms < VOICE_THRESHOLD) return;
+
+    const uint8 = convertToPCM16(inputData);
+    if (ws?.readyState === WebSocket.OPEN) {
+      audioChunksSent++;
+      if (audioChunksSent % CONFIG.AUDIO_LOG_THROTTLE === 1) {
+        appendDebugLog(UI_STRINGS.signaling.logs.audioRelay(audioChunksSent), 'info');
+      }
+      ws.send(JSON.stringify({ type: MESSAGE_TYPE.AUDIO_DATA, data: uint8ToBase64(uint8) }));
+    }
+  };
+}
 
 /**
  * @returns {{isInCall: boolean, isMuted: boolean, callSeconds: number}}
@@ -91,27 +126,7 @@ export async function startCall(agentId, callbacks) {
     source.connect(analyserNode);
     startWaveformAnimation(analyserNode);
 
-    audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-    source.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination);
-
-    audioProcessor.onaudioprocess = (event) => {
-      if (!isInCall || isMuted) return;
-      const inputData = event.inputBuffer.getChannelData(0);
-      const pcm16 = new Int16Array(inputData.length);
-      for (let i = 0; i < inputData.length; i++) {
-        const s = Math.max(-1, Math.min(1, inputData[i]));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      const uint8 = new Uint8Array(pcm16.buffer);
-      if (ws?.readyState === WebSocket.OPEN) {
-        audioChunksSent++;
-        if (audioChunksSent % CONFIG.AUDIO_LOG_THROTTLE === 1) {
-          appendDebugLog(UI_STRINGS.signaling.logs.audioRelay(audioChunksSent), 'info');
-        }
-        ws.send(JSON.stringify({ type: MESSAGE_TYPE.AUDIO_DATA, data: uint8ToBase64(uint8) }));
-      }
-    };
+    setupAudioProcessor(audioContext, source);
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     appendDebugLog(UI_STRINGS.signaling.logs.wsConnecting, 'info');
@@ -192,6 +207,15 @@ export function handleWsMessage(message, callbacks) {
     },
     [MESSAGE_TYPE.INTERRUPTED]: () => {
       appendDebugLog(UI_STRINGS.signaling.logs.interrupted, 'warn');
+      // Stop current audio playback and clear queue
+      if (currentAudioSource) {
+        try {
+          currentAudioSource.stop();
+        } catch (_e) { /* already stopped */ }
+        currentAudioSource = null;
+      }
+      audioQueue.length = 0;
+      isPlayingAudio = false;
     },
     [MESSAGE_TYPE.CALL_ENDED]: () => {
       showToast(message.reason || UI_STRINGS.callPanel.ended, 'success');
@@ -230,37 +254,39 @@ export function playAudioResponse(base64Data) {
 export async function processAudioQueue() {
   if (audioQueue.length === 0) {
     isPlayingAudio = false;
+    currentAudioSource = null;
     return;
   }
   isPlayingAudio = true;
   const base64Data = /** @type {string} */ (audioQueue.shift());
   try {
-    if (!audioContext || audioContext.state === 'closed') return;
-    const binaryString = window.atob(base64Data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-    const int16 = new Int16Array(bytes.buffer);
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
-    const audioBuffer = audioContext.createBuffer(1, float32.length, CONFIG.SAMPLE_RATE_OUTPUT);
-    audioBuffer.getChannelData(0).set(float32);
+    if (!audioContext || audioContext.state === 'closed') {
+      isPlayingAudio = false;
+      currentAudioSource = null;
+      return;
+    }
+    const audioBuffer = decodeAudioChunk(base64Data, audioContext, CONFIG.SAMPLE_RATE_OUTPUT);
     const bufferSource = audioContext.createBufferSource();
     bufferSource.buffer = audioBuffer;
     bufferSource.connect(audioContext.destination);
     if (analyserNode) bufferSource.connect(analyserNode);
-    bufferSource.onended = () => processAudioQueue();
+    bufferSource.onended = () => {
+      currentAudioSource = null;
+      processAudioQueue();
+    };
+    currentAudioSource = bufferSource;
     bufferSource.start();
   } catch (_e) {
+    currentAudioSource = null;
     processAudioQueue();
   }
 }
 
 /**
- * @returns {Promise<void>}
+ * Clean up WebSocket connection
+ * @returns {void}
  */
-export async function endCall() {
-  appendDebugLog(UI_STRINGS.signaling.logs.callEndCleanup, 'info');
-  isInCall = false;
+function cleanupWebSocket() {
   if (ws?.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({ type: MESSAGE_TYPE.END_CALL }));
@@ -268,6 +294,17 @@ export async function endCall() {
     } catch (_e) { /* ignore */ }
   }
   ws = null;
+}
+
+/**
+ * Clean up audio resources
+ * @returns {Promise<void>}
+ */
+async function cleanupAudioResources() {
+  if (currentAudioSource) {
+    try { currentAudioSource.stop(); } catch (_e) { /* ignore */ }
+    currentAudioSource = null;
+  }
   if (audioProcessor) {
     try { audioProcessor.disconnect(); } catch (_e) { /* ignore */ }
   }
@@ -281,6 +318,16 @@ export async function endCall() {
   }
   audioContext = null;
   analyserNode = null;
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+export async function endCall() {
+  appendDebugLog(UI_STRINGS.signaling.logs.callEndCleanup, 'info');
+  isInCall = false;
+  cleanupWebSocket();
+  await cleanupAudioResources();
   audioQueue.length = 0;
   isPlayingAudio = false;
   audioChunksSent = 0;
@@ -333,6 +380,7 @@ export function resetState() {
   audioQueue.length = 0;
   isPlayingAudio = false;
   audioChunksSent = 0;
+  currentAudioSource = null;
   ws = null;
   audioContext = null;
   audioProcessor = null;

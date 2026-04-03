@@ -152,25 +152,61 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       expect(getWs()).toBe(null);
     });
 
-    it('should handle scriptProcessor.onaudioprocess', async () => {
+    it('should handle scriptProcessor.onaudioprocess with voice', async () => {
       await startCall('a1', mockCallbacks);
       const sp = getAudioProcessor() as any;
       const ws = getWs() as any;
       expect(ws).not.toBeNull();
       if (ws) ws.readyState = 1; // WebSocket.OPEN
-      
+
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
       expect(getCallState().isInCall).toBe(true);
 
+      // Create audio with voice activity (above threshold)
+      const audioWithVoice = new Float32Array(1024);
+      for (let i = 0; i < audioWithVoice.length; i++) {
+        audioWithVoice[i] = 0.1 * Math.sin(i * 0.1); // Sufficient amplitude
+      }
+
       sp?.onaudioprocess?.({
-        inputBuffer: { getChannelData: () => new Float32Array(1024) },
+        inputBuffer: { getChannelData: () => audioWithVoice },
       });
       expect(ws?.send).toHaveBeenCalled();
+    });
+
+    it('should not send audio when muted', async () => {
+      await startCall('a1', mockCallbacks);
+      const sp = getAudioProcessor() as any;
+      const ws = getWs() as any;
+      if (ws) ws.readyState = 1;
+
+      handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
+
+      const audioWithVoice = new Float32Array(1024);
+      for (let i = 0; i < audioWithVoice.length; i++) {
+        audioWithVoice[i] = 0.1 * Math.sin(i * 0.1);
+      }
 
       toggleMute();
       vi.mocked(ws?.send).mockClear();
       sp?.onaudioprocess?.({
-        inputBuffer: { getChannelData: () => new Float32Array(1024) },
+        inputBuffer: { getChannelData: () => audioWithVoice },
+      });
+      expect(ws?.send).not.toHaveBeenCalled();
+    });
+
+    it('should not send audio below VAD threshold', async () => {
+      await startCall('a1', mockCallbacks);
+      const sp = getAudioProcessor() as any;
+      const ws = getWs() as any;
+      if (ws) ws.readyState = 1;
+
+      handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
+
+      vi.mocked(ws?.send).mockClear();
+      const silentAudio = new Float32Array(1024); // All zeros
+      sp?.onaudioprocess?.({
+        inputBuffer: { getChannelData: () => silentAudio },
       });
       expect(ws?.send).not.toHaveBeenCalled();
     });
