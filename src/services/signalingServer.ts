@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
 import prisma from '../lib/prisma.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { ROUTES, TIME, MESSAGE_TYPE } from '../types/index.js';
+import { ROUTES, TIME, MESSAGE_TYPE, AUDIO_CONFIG } from '../types/index.js';
 import type { SignalingClient } from '../types/index.js';
 import logger from '../utils/logger.js';
 import { verifyToken } from './auth.js';
@@ -25,6 +25,34 @@ class SignalingServer {
   public wss: WSWebSocketServer | null = null;
   /** @internal */
   public clients: Map<WSWebSocket, SignalingClient> = new Map();
+
+  /**
+   * Detect voice activity in PCM16 audio data (server-side).
+   * @param base64Data Base64-encoded PCM16 audio data
+   * @returns True if voice activity detected
+   */
+  private _detectServerVoiceActivity(base64Data: string): boolean {
+    if (!AUDIO_CONFIG.VAD_ENABLED) return true;
+
+    try {
+      // Decode base64 to buffer
+      const buffer = Buffer.from(base64Data, 'base64');
+      const samples = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
+
+      // Calculate RMS amplitude
+      let sum = 0;
+      for (let i = 0; i < samples.length; i++) {
+        const normalized = samples[i] / 32768.0;
+        sum += normalized * normalized;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+
+      return rms > AUDIO_CONFIG.VAD_THRESHOLD;
+    } catch (error) {
+      logger.error('Error in server-side VAD', { error: error instanceof Error ? error.message : String(error) });
+      return true; // On error, pass through audio
+    }
+  }
 
   public attach(httpServer: Server): void {
     const wss = new WebSocketServer({ server: httpServer, path: ROUTES.WS_PATH });
@@ -242,7 +270,14 @@ class SignalingServer {
         },
       });
 
-      this.clients.set(socket, { sessionId, agentId, audioChunksRelayed: 0, startTime: Date.now() });
+      this.clients.set(socket, {
+        sessionId,
+        agentId,
+        audioChunksRelayed: 0,
+        startTime: Date.now(),
+        speechFrameCount: 0,
+        lastActivityTime: Date.now(),
+      });
 
       socket.send(JSON.stringify({
         type: MESSAGE_TYPE.CALL_STARTED,
@@ -289,15 +324,32 @@ class SignalingServer {
     const client = this.clients.get(socket);
     if (!client) return;
 
-    client.audioChunksRelayed++;
-    if (client.audioChunksRelayed % 50 === 1) {
-      logger.debug('Relaying audio chunks to Gemini', { 
-        sessionId: client.sessionId, 
-        chunkCount: client.audioChunksRelayed, 
-      });
+    // Server-side VAD check
+    const hasVoiceActivity = this._detectServerVoiceActivity(parseResult.data.data);
+
+    if (hasVoiceActivity) {
+      client.speechFrameCount++;
+      client.lastActivityTime = Date.now();
+    } else {
+      client.speechFrameCount = Math.max(0, client.speechFrameCount - 1);
     }
 
-    await geminiLiveService.sendAudio(client.sessionId, parseResult.data.data);
+    // Only relay audio if sufficient speech frames detected (reduces false positives)
+    const shouldRelay = !AUDIO_CONFIG.VAD_ENABLED || client.speechFrameCount >= AUDIO_CONFIG.VAD_MIN_SPEECH_FRAMES;
+
+    if (shouldRelay) {
+      client.audioChunksRelayed++;
+      if (client.audioChunksRelayed % 50 === 1) {
+        logger.debug('Relaying audio chunks to Gemini', {
+          sessionId: client.sessionId,
+          chunkCount: client.audioChunksRelayed,
+          vadActive: AUDIO_CONFIG.VAD_ENABLED,
+          speechFrames: client.speechFrameCount,
+        });
+      }
+
+      await geminiLiveService.sendAudio(client.sessionId, parseResult.data.data);
+    }
   }
 
   /** @internal */

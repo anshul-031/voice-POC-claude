@@ -28,6 +28,15 @@ let callSeconds = 0;
 const audioQueue = [];
 let isPlayingAudio = false;
 let audioChunksSent = 0;
+/** @type {AudioBufferSourceNode | null} */
+let currentAudioSource = null;
+/** @type {GainNode | null} */
+let currentAudioGain = null;
+// VAD state
+let isUserSpeaking = false;
+let lastSpeechTime = 0;
+/** @type {number | null} */
+let vadCheckInterval = null;
 
 /**
  * @returns {{isInCall: boolean, isMuted: boolean, callSeconds: number}}
@@ -35,6 +44,94 @@ let audioChunksSent = 0;
 export function getCallState() {
   return { isInCall, isMuted, callSeconds };
 }
+
+/**
+ * Detect voice activity using amplitude analysis.
+ * @returns {boolean} True if voice activity detected
+ */
+function detectVoiceActivity() {
+  if (!analyserNode || !CONFIG.VAD_ENABLED) return true;
+
+  const bufferLength = analyserNode.fftSize;
+  const dataArray = new Uint8Array(bufferLength);
+  analyserNode.getByteTimeDomainData(dataArray);
+
+  // Calculate RMS (Root Mean Square) amplitude
+  let sum = 0;
+  for (let i = 0; i < bufferLength; i++) {
+    const normalized = (dataArray[i] - 128) / 128.0;
+    sum += normalized * normalized;
+  }
+  const rms = Math.sqrt(sum / bufferLength);
+
+  return rms > CONFIG.VAD_THRESHOLD;
+}
+
+/**
+ * Check and update VAD state periodically.
+ */
+function checkVoiceActivity() {
+  const isSpeaking = detectVoiceActivity();
+  const now = Date.now();
+
+  if (isSpeaking) {
+    lastSpeechTime = now;
+    if (!isUserSpeaking) {
+      isUserSpeaking = true;
+      appendDebugLog(UI_STRINGS.signaling.logs.vadSpeechStart, 'info');
+    }
+  } else {
+    // User stopped speaking if silence duration exceeded
+    const silenceDuration = now - lastSpeechTime;
+    if (isUserSpeaking && silenceDuration > CONFIG.VAD_SILENCE_DURATION_MS) {
+      isUserSpeaking = false;
+      appendDebugLog(UI_STRINGS.signaling.logs.vadSpeechEnd, 'info');
+    }
+  }
+}
+
+/**
+ * Stop bot audio playback immediately with fade-out.
+ */
+function stopBotAudio() {
+  // Stop currently playing audio with fade-out
+  if (currentAudioSource && currentAudioGain && audioContext) {
+    try {
+      const fadeOutDuration = CONFIG.AUDIO_FADE_OUT_MS / 1000;
+      const currentTime = audioContext.currentTime;
+
+      // Exponential fade-out for smoother transition
+      currentAudioGain.gain.cancelScheduledValues(currentTime);
+      currentAudioGain.gain.setValueAtTime(currentAudioGain.gain.value, currentTime);
+      currentAudioGain.gain.exponentialRampToValueAtTime(0.01, currentTime + fadeOutDuration);
+
+      // Stop after fade-out completes
+      setTimeout(() => {
+        if (currentAudioSource) {
+          try {
+            currentAudioSource.stop();
+          } catch (e) { /* already stopped */ }
+        }
+      }, CONFIG.AUDIO_FADE_OUT_MS);
+
+      appendDebugLog(UI_STRINGS.signaling.logs.audioStopped, 'warn');
+    } catch (e) {
+      // Audio might already be stopped
+    }
+    currentAudioSource = null;
+    currentAudioGain = null;
+  }
+
+  // Clear pending queue
+  const queuedCount = audioQueue.length;
+  if (queuedCount > 0) {
+    audioQueue.length = 0;
+    appendDebugLog(UI_STRINGS.signaling.logs.queueCleared(queuedCount), 'warn');
+  }
+
+  isPlayingAudio = false;
+}
+
 
 /**
  * @param {string | null} agentId 
@@ -97,6 +194,12 @@ export async function startCall(agentId, callbacks) {
 
     audioProcessor.onaudioprocess = (event) => {
       if (!isInCall || isMuted) return;
+
+      // Apply VAD filtering
+      if (CONFIG.VAD_ENABLED && !isUserSpeaking) {
+        return; // Don't send audio when user is not speaking
+      }
+
       const inputData = event.inputBuffer.getChannelData(0);
       const pcm16 = new Int16Array(inputData.length);
       for (let i = 0; i < inputData.length; i++) {
@@ -112,6 +215,14 @@ export async function startCall(agentId, callbacks) {
         ws.send(JSON.stringify({ type: MESSAGE_TYPE.AUDIO_DATA, data: uint8ToBase64(uint8) }));
       }
     };
+
+    // Start VAD check interval
+    if (CONFIG.VAD_ENABLED) {
+      appendDebugLog(UI_STRINGS.signaling.logs.vadEnabled, 'info');
+      vadCheckInterval = /** @type {any} */ (window.setInterval(() => {
+        checkVoiceActivity();
+      }, CONFIG.VAD_SAMPLE_INTERVAL_MS));
+    }
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     appendDebugLog(UI_STRINGS.signaling.logs.wsConnecting, 'info');
@@ -191,6 +302,7 @@ export function handleWsMessage(message, callbacks) {
       }
     },
     [MESSAGE_TYPE.INTERRUPTED]: () => {
+      stopBotAudio();
       appendDebugLog(UI_STRINGS.signaling.logs.interrupted, 'warn');
     },
     [MESSAGE_TYPE.CALL_ENDED]: () => {
@@ -215,11 +327,18 @@ export function handleWsMessage(message, callbacks) {
 }
 
 /**
- * @param {string} base64Data 
+ * @param {string} base64Data
  * @returns {void}
  */
 export function playAudioResponse(base64Data) {
   if (!base64Data) return;
+
+  // Enforce queue size limit
+  if (audioQueue.length >= CONFIG.MAX_AUDIO_QUEUE_SIZE) {
+    const dropped = audioQueue.splice(0, audioQueue.length - CONFIG.MAX_AUDIO_QUEUE_SIZE + 1).length;
+    appendDebugLog(UI_STRINGS.signaling.logs.queueOverflow(dropped), 'warn');
+  }
+
   audioQueue.push(base64Data);
   if (!isPlayingAudio) processAudioQueue();
 }
@@ -230,6 +349,8 @@ export function playAudioResponse(base64Data) {
 export async function processAudioQueue() {
   if (audioQueue.length === 0) {
     isPlayingAudio = false;
+    currentAudioSource = null;
+    currentAudioGain = null;
     return;
   }
   isPlayingAudio = true;
@@ -244,13 +365,30 @@ export async function processAudioQueue() {
     for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
     const audioBuffer = audioContext.createBuffer(1, float32.length, CONFIG.SAMPLE_RATE_OUTPUT);
     audioBuffer.getChannelData(0).set(float32);
+
+    // Create gain node for fade-out control
+    const gainNode = audioContext.createGain();
+    gainNode.gain.value = 1.0;
+
     const bufferSource = audioContext.createBufferSource();
     bufferSource.buffer = audioBuffer;
-    bufferSource.connect(audioContext.destination);
-    if (analyserNode) bufferSource.connect(analyserNode);
-    bufferSource.onended = () => processAudioQueue();
+    bufferSource.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    if (analyserNode) gainNode.connect(analyserNode);
+
+    // Store references for interruption control
+    currentAudioSource = bufferSource;
+    currentAudioGain = gainNode;
+
+    bufferSource.onended = () => {
+      currentAudioSource = null;
+      currentAudioGain = null;
+      processAudioQueue();
+    };
     bufferSource.start();
   } catch (_e) {
+    currentAudioSource = null;
+    currentAudioGain = null;
     processAudioQueue();
   }
 }
@@ -261,6 +399,13 @@ export async function processAudioQueue() {
 export async function endCall() {
   appendDebugLog(UI_STRINGS.signaling.logs.callEndCleanup, 'info');
   isInCall = false;
+
+  // Stop VAD check interval
+  if (vadCheckInterval) {
+    clearInterval(vadCheckInterval);
+    vadCheckInterval = null;
+  }
+
   if (ws?.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({ type: MESSAGE_TYPE.END_CALL }));
@@ -284,6 +429,10 @@ export async function endCall() {
   audioQueue.length = 0;
   isPlayingAudio = false;
   audioChunksSent = 0;
+  currentAudioSource = null;
+  currentAudioGain = null;
+  isUserSpeaking = false;
+  lastSpeechTime = 0;
   stopTimer();
   updateCallUI(false);
   stopWaveformAnimation();
@@ -338,9 +487,17 @@ export function resetState() {
   audioProcessor = null;
   mediaStream = null;
   analyserNode = null;
+  currentAudioSource = null;
+  currentAudioGain = null;
+  isUserSpeaking = false;
+  lastSpeechTime = 0;
   if (callTimer) {
     clearInterval(callTimer);
     callTimer = null;
+  }
+  if (vadCheckInterval) {
+    clearInterval(vadCheckInterval);
+    vadCheckInterval = null;
   }
 }
 

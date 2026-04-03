@@ -21,6 +21,10 @@ export const AUDIO_CONFIG = {
   SAMPLE_RATE_OUTPUT: 24000,
   DEFAULT_VOICE: 'Puck',
   DEFAULT_MODEL: 'gemini-2.5-flash-native-audio-latest',
+  // Server-side VAD
+  VAD_ENABLED: true,
+  VAD_THRESHOLD: 0.01,
+  VAD_MIN_SPEECH_FRAMES: 3,
 } as const;
 
 export const TIME = {

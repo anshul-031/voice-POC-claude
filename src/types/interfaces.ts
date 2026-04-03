@@ -28,6 +28,9 @@ export interface SignalingClient {
   agentId: string;
   audioChunksRelayed: number;
   startTime: number;
+  // Server-side VAD state
+  speechFrameCount: number;
+  lastActivityTime: number;
 }
 
 export interface Transcript {

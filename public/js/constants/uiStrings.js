@@ -137,6 +137,12 @@ export const UI_STRINGS = {
       transcriptUser: (/** @type {number} */ chars) => `User transcript chunk (${chars} chars)`,
       transcriptModel: (/** @type {number} */ chars) => `Model transcript chunk (${chars} chars)`,
       unknownType: (/** @type {string} */ type) => `Unhandled signaling message type: ${type}`,
+      vadEnabled: 'Voice activity detection enabled',
+      vadSpeechStart: 'User started speaking',
+      vadSpeechEnd: 'User stopped speaking',
+      audioStopped: 'Bot audio stopped (interrupted)',
+      queueCleared: (/** @type {number} */ count) => `Cleared ${count} pending audio chunks`,
+      queueOverflow: (/** @type {number} */ dropped) => `Audio queue overflow, dropped ${dropped} old chunks`,
     },
     status: {
       geminiClosed: 'Gemini session closed',
