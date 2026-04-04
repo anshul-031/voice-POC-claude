@@ -94,9 +94,13 @@ describe('GeminiLiveService', () => {
     await geminiLiveService.sendAudio('sid2', 'data');
     mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw new Error('ERR'); });
     await geminiLiveService.sendAudio('sid2', 'data');
+    mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw 'RAW_AUDIO_ERR'; });
+    await geminiLiveService.sendAudio('sid2', 'data');
 
     await geminiLiveService.sendText('sid2', 'text');
     mockSession.sendClientContent.mockImplementationOnce(() => { throw new Error('ERR'); });
+    await geminiLiveService.sendText('sid2', 'text');
+    mockSession.sendClientContent.mockImplementationOnce(() => { throw 'RAW_TEXT_ERR'; });
     await geminiLiveService.sendText('sid2', 'text');
 
     await geminiLiveService.closeSession('sid2');
@@ -105,6 +109,10 @@ describe('GeminiLiveService', () => {
     await geminiLiveService.createSession('sid3', callbacks);
     mockSession.close.mockImplementationOnce(() => { throw new Error('ERR'); });
     await geminiLiveService.closeSession('sid3');
+
+    await geminiLiveService.createSession('sid4', callbacks);
+    mockSession.close.mockImplementationOnce(() => { throw 'RAW_CLOSE_ERR'; });
+    await geminiLiveService.closeSession('sid4');
     
     // no session
     await geminiLiveService.sendAudio('missing', 'a');
@@ -160,4 +168,5 @@ describe('GeminiLiveService', () => {
     await expect(import('../services/geminiLive.js')).rejects.toThrow('GEMINI_API_KEY is not defined');
     vi.stubEnv('GEMINI_API_KEY', 'test-key');
   });
+
 });

@@ -26,6 +26,21 @@ describe('UI_STRINGS', () => {
   });
 
   it('signaling.logs helper strings should format details', () => {
+    expect(UI_STRINGS.toasts.callStartFailed('network')).toBe('Failed to start call: network');
+    expect(UI_STRINGS.signaling.errors.wsConnectTimeout).toBe('Signaling connection timed out');
+    expect(UI_STRINGS.signaling.errors.micAccessTimeout).toBe('Microphone access timed out');
+    expect(UI_STRINGS.signaling.logs.callRunId('run-1')).toBe('Call run ID: run-1');
+    expect(UI_STRINGS.signaling.logs.startupBegin).toBe('Startup sequence started');
+    expect(UI_STRINGS.signaling.logs.startupComplete(100)).toBe('Startup sequence completed in 100ms');
+    expect(UI_STRINGS.signaling.logs.startupFailed(245)).toBe('Startup failed after 245ms');
+    expect(UI_STRINGS.signaling.logs.micRequesting).toBe('Requesting microphone access');
+    expect(UI_STRINGS.signaling.logs.micReadyElapsed(12)).toBe('Microphone ready in 12ms');
+    expect(UI_STRINGS.signaling.logs.wsOpenElapsed(56)).toBe('Signaling socket connected in 56ms');
+    expect(UI_STRINGS.signaling.logs.wsTimeout(10000)).toBe('Signaling socket open timeout after 10000ms');
+    expect(UI_STRINGS.signaling.logs.startSentElapsed(66)).toBe('start-call sent in 66ms');
+    expect(UI_STRINGS.signaling.logs.firstAudioRelayElapsed(90)).toBe('First audio chunk relayed in 90ms');
+    expect(UI_STRINGS.signaling.logs.firstInboundAudioElapsed(120)).toBe('First inbound audio received in 120ms');
+    expect(UI_STRINGS.signaling.logs.firstPlaybackElapsed(133)).toBe('First playback started in 133ms');
     expect(UI_STRINGS.signaling.logs.wsClosed(1000)).toBe('Signaling socket closed (1000)');
     expect(UI_STRINGS.signaling.logs.sendingStart('agent-1')).toBe('Sending start-call for agent agent-1');
     expect(UI_STRINGS.signaling.logs.recvType('call-started')).toBe('Received signaling message: call-started');

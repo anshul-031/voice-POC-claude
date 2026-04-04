@@ -25,6 +25,7 @@ export const AUDIO_CONFIG = {
 
 export const TIME = {
   MS_TO_SEC: 1000,
+  GEMINI_CONNECT_TIMEOUT_MS: 15000,
 } as const;
 
 export const LOGGING = {

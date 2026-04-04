@@ -68,8 +68,18 @@ export function getIsPlayingAudio() {
   return isPlayingAudio;
 }
 
-/** @param {AudioContext | null} audioContext @param {AnalyserNode | null} analyserNode @returns {Promise<void>} */
-export async function processAudioQueue(audioContext, analyserNode) {
+/**
+ * @typedef {Object} PlaybackQueueOptions
+ * @property {() => void} [onPlaybackStarted]
+ */
+
+/**
+ * @param {AudioContext | null} audioContext
+ * @param {AnalyserNode | null} analyserNode
+ * @param {PlaybackQueueOptions} [options]
+ * @returns {Promise<void>}
+ */
+export async function processAudioQueue(audioContext, analyserNode, options = {}) {
   if (audioQueue.length === 0) {
     isPlayingAudio = false;
     currentPlaybackSource = null;
@@ -106,12 +116,15 @@ export async function processAudioQueue(audioContext, analyserNode) {
       if (currentPlaybackSource === bufferSource) {
         currentPlaybackSource = null;
       }
-      processAudioQueue(audioContext, analyserNode);
+      processAudioQueue(audioContext, analyserNode, options);
     };
+    if (options.onPlaybackStarted) {
+      options.onPlaybackStarted();
+    }
     bufferSource.start();
   } catch (_e) {
     currentPlaybackSource = null;
-    processAudioQueue(audioContext, analyserNode);
+    processAudioQueue(audioContext, analyserNode, options);
   }
 }
 

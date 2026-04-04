@@ -18,6 +18,7 @@ export interface GeminiSession {
   // Actually, let's use a more specific type if we can find it, or mark it as an interface.
   voiceName: string;
   model: string;
+  correlationId?: string;
   startTime: number;
   audioChunksSent: number;
   audioChunksReceived: number;
@@ -26,6 +27,7 @@ export interface GeminiSession {
 export interface SignalingClient {
   sessionId: string;
   agentId: string;
+  correlationId?: string;
   audioChunksRelayed: number;
   startTime: number;
 }
@@ -44,7 +46,7 @@ export interface AudioConfig {
 
 export interface TimeConstants {
   MS_TO_SEC: number;
-  RECONNECT_DELAY: number;
+  GEMINI_CONNECT_TIMEOUT_MS: number;
 }
 
 export interface RoutesConfig {
