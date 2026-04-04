@@ -63,6 +63,55 @@ describe('Transcript Logic (transcript.js) — 90%+ Exclusive Coverage', () => {
       appendTranscript('user', ' '); // Should be ignored due to trim()
     });
 
+    it('should insert a space when streamed chunks split words without whitespace', () => {
+      appendTranscript('model', 'मैं समझता हूं');
+      appendTranscript('model', 'दोबारा');
+
+      const bubbleText = document
+        .querySelector('.transcript-msg.model .transcript-bubble')
+        ?.textContent;
+
+      expect(bubbleText).toBe('मैं समझता हूं दोबारा');
+    });
+
+    it('should not add an extra space before punctuation chunks', () => {
+      appendTranscript('model', 'Hello');
+      appendTranscript('model', ', world');
+
+      const bubbleText = document
+        .querySelector('.transcript-msg.model .transcript-bubble')
+        ?.textContent;
+
+      expect(bubbleText).toBe('Hello, world');
+    });
+
+    it('should handle merge when existing bubble text is empty', () => {
+      appendTranscript('model', 'initial');
+      const bubble = document
+        .querySelector('.transcript-msg.model .transcript-bubble');
+      if (bubble) {
+        bubble.textContent = '';
+      }
+
+      appendTranscript('model', 'restored');
+
+      const bubbleText = document
+        .querySelector('.transcript-msg.model .transcript-bubble')
+        ?.textContent;
+
+      expect(bubbleText).toBe('restored');
+    });
+
+    it('should tolerate same-role transcript rows missing bubble/time elements', () => {
+      const body = document.getElementById('transcript-body');
+      body?.insertAdjacentHTML('beforeend', '<div class="transcript-msg model"></div>');
+
+      appendTranscript('model', 'chunk');
+
+      const msgs = body?.querySelectorAll('.transcript-msg.model');
+      expect(msgs?.length).toBe(1);
+    });
+
     it('should handle missing elements in transcript functions', () => {
       document.getElementById('transcript-body')?.remove();
       appendTranscript('user', 'Should not crash');
@@ -85,6 +134,16 @@ describe('Transcript Logic (transcript.js) — 90%+ Exclusive Coverage', () => {
 
       updateTranscript('model', 'Test Agent');
       updateTranscript('system' as unknown as string, 'Test System');
+    });
+
+    it('should clear transcript content when container exists', () => {
+      const content = document.getElementById('transcript-content');
+      if (content) {
+        content.innerHTML = '<div>old content</div>';
+      }
+
+      clearTranscript();
+      expect(content?.innerHTML).toBe('');
     });
   });
 

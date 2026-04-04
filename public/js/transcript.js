@@ -6,6 +6,61 @@ import { CONFIG } from './constants/config.js';
 import { escapeHtml } from './utils.js';
 
 /**
+ * Joins incremental transcript chunks while preserving intended word boundaries.
+ * @param {string} existingText
+ * @param {string} incomingText
+ * @returns {string}
+ */
+function mergeTranscriptText(existingText, incomingText) {
+  if (!existingText) return incomingText;
+
+  const endsWithWhitespace = /\s$/u.test(existingText);
+  const startsWithWhitespace = /^\s/u.test(incomingText);
+  const endsWithWordChar = /[\p{L}\p{N}\p{M}]$/u.test(existingText);
+  const startsWithWordChar = /^[\p{L}\p{N}\p{M}]/u.test(incomingText);
+  const shouldInsertSpace = !endsWithWhitespace && !startsWithWhitespace && endsWithWordChar && startsWithWordChar;
+
+  return shouldInsertSpace ? `${existingText} ${incomingText}` : `${existingText}${incomingText}`;
+}
+
+/**
+ * @param {Element | null} lastMsg
+ * @param {string} role
+ * @param {string} text
+ * @param {HTMLElement} body
+ * @returns {boolean}
+ */
+function appendToExistingBubble(lastMsg, role, text, body) {
+  if (!lastMsg?.classList.contains(role)) return false;
+
+  const bubble = lastMsg.querySelector('.transcript-bubble');
+  const timeEl = lastMsg.querySelector('.transcript-time');
+  if (bubble) bubble.textContent = mergeTranscriptText(bubble.textContent || '', text);
+  if (timeEl) timeEl.textContent = new Date().toLocaleTimeString();
+  body.scrollTop = body.scrollHeight;
+  return true;
+}
+
+/**
+ * @param {HTMLElement} body
+ * @param {string} role
+ * @param {string} text
+ * @returns {void}
+ */
+function createTranscriptBubble(body, role, text) {
+  const roleLabel = role === 'user' ? UI_STRINGS.callPanel.roles.user : UI_STRINGS.callPanel.roles.agent;
+  const msgDiv = document.createElement('div');
+  msgDiv.className = `transcript-msg ${role}`;
+  msgDiv.innerHTML = `
+    <div class="transcript-role">${roleLabel}</div>
+    <div class="transcript-bubble">${escapeHtml(text)}</div>
+    <div class="transcript-time">${new Date().toLocaleTimeString()}</div>
+  `;
+  body.appendChild(msgDiv);
+  body.scrollTop = body.scrollHeight;
+}
+
+/**
  * Appends or accumulates a transcript message in the transcript body.
  * If the last message is from the same role, appends text to it.
  * Otherwise, creates a new message bubble.
@@ -23,24 +78,9 @@ export function appendTranscript(role, text) {
 
   // Append to existing bubble if same role is still speaking
   const lastMsg = body.querySelector('.transcript-msg:last-child');
-  if (lastMsg?.classList.contains(role)) {
-    const bubble = lastMsg.querySelector('.transcript-bubble');
-    const timeEl = lastMsg.querySelector('.transcript-time');
-    if (bubble) bubble.textContent += text;
-    if (timeEl) timeEl.textContent = new Date().toLocaleTimeString();
-    body.scrollTop = body.scrollHeight;
-    return;
-  }
+  if (appendToExistingBubble(lastMsg, role, text, body)) return;
 
-  const msgDiv = document.createElement('div');
-  msgDiv.className = `transcript-msg ${role}`;
-  msgDiv.innerHTML = `
-    <div class="transcript-role">${role === 'user' ? UI_STRINGS.callPanel.roles.user : UI_STRINGS.callPanel.roles.agent}</div>
-    <div class="transcript-bubble">${escapeHtml(text)}</div>
-    <div class="transcript-time">${new Date().toLocaleTimeString()}</div>
-  `;
-  body.appendChild(msgDiv);
-  body.scrollTop = body.scrollHeight;
+  createTranscriptBubble(body, role, text);
 }
 
 /**
