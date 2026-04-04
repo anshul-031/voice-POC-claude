@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
 import prisma from '../lib/prisma.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { ROUTES, TIME, MESSAGE_TYPE } from '../types/index.js';
+import { LIVE_CALL, LOGGING, ROUTES, TIME, MESSAGE_TYPE } from '../types/index.js';
 import type { SignalingClient } from '../types/index.js';
 import logger from '../utils/logger.js';
 import { verifyToken } from './auth.js';
@@ -16,6 +16,16 @@ import {
   SIGNALING_START_CALL_MESSAGE_SCHEMA,
   type SignalingMessage,
 } from '../constants/inputSchemas.js';
+
+type StartCallAgent = {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  voiceName: string;
+  modelName: string | null;
+  publicPreviewEnabled: boolean;
+  userId: string | null;
+};
 
 /**
  * WebSocket signaling server for audio relay between browser and Gemini Live API.
@@ -155,6 +165,260 @@ class SignalingServer {
     return agent.publicPreviewEnabled || isOwner;
   }
 
+  private async _fetchAgentForCall(
+    socket: WSWebSocket,
+    agentId: string,
+    requesterUserId: string | null,
+    correlationId: string,
+  ): Promise<StartCallAgent | null> {
+    logger.debug('Fetching agent config', { agentId, correlationId });
+    const agentLookupStart = Date.now();
+    const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } }) as StartCallAgent | null;
+
+    logger.info('Agent lookup completed', {
+      agentId,
+      correlationId,
+      elapsedMs: Date.now() - agentLookupStart,
+      found: !!agent,
+    });
+
+    if (!agent) {
+      logger.warn('Agent not found', { agentId, correlationId });
+      this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentNotFound);
+      return null;
+    }
+
+    if (!this._canAccessAgent(agent, requesterUserId)) {
+      logger.warn('Blocked unauthorized call start for private agent', {
+        agentId,
+        requesterUserId,
+        correlationId,
+      });
+      this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentNotPublic);
+      return null;
+    }
+
+    logger.info('Agent found for call', {
+      agentId,
+      name: agent.name,
+      voice: agent.voiceName,
+      model: agent.modelName,
+      correlationId,
+    });
+
+    return agent;
+  }
+
+  private async _closeExistingClientSession(socket: WSWebSocket): Promise<void> {
+    const existing = this.clients.get(socket);
+    if (!existing) {
+      return;
+    }
+
+    logger.info('Closing existing session for client reconnect', { sessionId: existing.sessionId });
+    await geminiLiveService.closeSession(existing.sessionId);
+  }
+
+  private _relayModelAudioToClient(socket: WSWebSocket, sessionId: string, audioData: string): void {
+    if (socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const now = Date.now();
+    const client = this.clients.get(socket);
+
+    if (client) {
+      client.modelAudioChunksRelayed++;
+
+      if (!client.firstModelAudioRelayedAt) {
+        client.firstModelAudioRelayedAt = now;
+        const firstResponseMs = now - client.startTime;
+        logger.info('First model audio relayed to client', {
+          sessionId,
+          correlationId: client.correlationId,
+          elapsedMs: firstResponseMs,
+          sinceFirstUserTranscriptMs: client.firstUserTranscriptRelayedAt
+            ? now - client.firstUserTranscriptRelayedAt
+            : undefined,
+          proactiveGreetingSent: client.proactiveGreetingSent,
+          proactiveGreetingLatencyMs: client.proactiveGreetingSentAt
+            ? now - client.proactiveGreetingSentAt
+            : undefined,
+        });
+
+        if (firstResponseMs > LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS) {
+          logger.warn('First model audio relay exceeded target latency', {
+            sessionId,
+            correlationId: client.correlationId,
+            firstResponseMs,
+            thresholdMs: LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS,
+            clientAudioChunksRelayed: client.audioChunksRelayed,
+          });
+        }
+      }
+
+      if (client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
+        logger.debug('Relaying model audio to client', {
+          sessionId,
+          correlationId: client.correlationId,
+          modelAudioChunksRelayed: client.modelAudioChunksRelayed,
+        });
+      }
+    }
+
+    socket.send(JSON.stringify({
+      type: MESSAGE_TYPE.AUDIO_RESPONSE,
+      data: audioData,
+    }));
+  }
+
+  private _relayTranscriptToClient(
+    socket: WSWebSocket,
+    sessionId: string,
+    transcript: { role: 'user' | 'model'; text: string },
+    correlationId: string,
+  ): void {
+    const now = Date.now();
+    const client = this.clients.get(socket);
+
+    if (client && transcript.role === 'user' && !client.firstUserTranscriptRelayedAt) {
+      client.firstUserTranscriptRelayedAt = now;
+      logger.info('First user transcript relayed to client', {
+        sessionId,
+        correlationId: client.correlationId,
+        elapsedMs: now - client.startTime,
+        chars: transcript.text.length,
+      });
+    }
+
+    if (client && transcript.role === 'model' && !client.firstModelTranscriptRelayedAt) {
+      client.firstModelTranscriptRelayedAt = now;
+      logger.info('First model transcript relayed to client', {
+        sessionId,
+        correlationId: client.correlationId,
+        elapsedMs: now - client.startTime,
+        sinceFirstUserTranscriptMs: client.firstUserTranscriptRelayedAt
+          ? now - client.firstUserTranscriptRelayedAt
+          : undefined,
+        chars: transcript.text.length,
+      });
+    }
+
+    logger.debug('Relaying transcript', {
+      role: transcript.role,
+      sessionId,
+      correlationId,
+      chars: transcript.text.length,
+    });
+
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: MESSAGE_TYPE.TRANSCRIPT,
+        role: transcript.role,
+        text: transcript.text,
+      }));
+    }
+  }
+
+  private _buildGeminiCallbacks(
+    socket: WSWebSocket,
+    sessionId: string,
+    correlationId: string,
+  ): {
+    onAudio: (audioData: string) => void;
+    onTranscript: (transcript: { role: 'user' | 'model'; text: string }) => void;
+    onInterrupted: () => void;
+    onError: (error: Error) => void;
+    onClose: () => void;
+  } {
+    return {
+      onAudio: (audioData: string): void => {
+        this._relayModelAudioToClient(socket, sessionId, audioData);
+      },
+      onTranscript: (transcript: { role: 'user' | 'model'; text: string }): void => {
+        this._relayTranscriptToClient(socket, sessionId, transcript, correlationId);
+      },
+      onInterrupted: (): void => {
+        logger.info('Model interrupted, relaying to client', { sessionId, correlationId });
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
+        }
+      },
+      onError: (error: Error): void => {
+        logger.error('Gemini session error, relaying to client', {
+          sessionId,
+          error: error.message,
+          correlationId,
+        });
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: error.message }));
+        }
+      },
+      onClose: (): void => {
+        logger.info('Gemini session closed, notifying client', { sessionId, correlationId });
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: MESSAGE_TYPE.CALL_ENDED,
+            reason: UI_STRINGS.signaling.status.geminiClosed,
+          }));
+        }
+        this.clients.delete(socket);
+      },
+    };
+  }
+
+  private _registerClientSession(
+    socket: WSWebSocket,
+    sessionId: string,
+    agentId: string,
+    correlationId: string,
+    startTime: number,
+  ): void {
+    this.clients.set(socket, {
+      sessionId,
+      agentId,
+      correlationId,
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      startTime,
+      proactiveGreetingSent: false,
+    });
+  }
+
+  private async _sendProactiveGreeting(
+    socket: WSWebSocket,
+    sessionId: string,
+    correlationId: string,
+  ): Promise<void> {
+    const greetingSendStart = Date.now();
+    const greetingSent = await geminiLiveService.sendText(
+      sessionId,
+      LIVE_CALL.PROACTIVE_GREETING_PROMPT,
+      'initial-greeting',
+    );
+
+    const activeClient = this.clients.get(socket);
+    if (greetingSent && activeClient) {
+      activeClient.proactiveGreetingSent = true;
+      activeClient.proactiveGreetingSentAt = greetingSendStart;
+    }
+
+    if (greetingSent) {
+      logger.info('Proactive greeting prompt sent to Gemini', {
+        sessionId,
+        correlationId,
+        elapsedMs: Date.now() - greetingSendStart,
+      });
+      return;
+    }
+
+    logger.warn('Proactive greeting prompt failed to send', {
+      sessionId,
+      correlationId,
+      elapsedMs: Date.now() - greetingSendStart,
+    });
+  }
+
   /** @internal */
   public async _handleStartCall(
     socket: WSWebSocket,
@@ -175,50 +439,14 @@ class SignalingServer {
     const { agentId } = parseResult.data;
     logger.info('Start call request', { agentId, correlationId });
 
-    // Fetch agent config
-    logger.debug('Fetching agent config', { agentId, correlationId });
-    const agentLookupStart = Date.now();
-    const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } });
-    logger.info('Agent lookup completed', {
-      agentId,
-      correlationId,
-      elapsedMs: Date.now() - agentLookupStart,
-      found: !!agent,
-    });
+    const agent = await this._fetchAgentForCall(socket, agentId, requesterUserId, correlationId);
     if (!agent) {
-      logger.warn('Agent not found', { agentId, correlationId });
-      this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentNotFound);
       return;
     }
-
-    if (!this._canAccessAgent(agent, requesterUserId)) {
-      logger.warn('Blocked unauthorized call start for private agent', {
-        agentId,
-        requesterUserId,
-        correlationId,
-      });
-      this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentNotPublic);
-      return;
-    }
-
-    logger.info('Agent found for call', { 
-      agentId, 
-      name: agent.name, 
-      voice: agent.voiceName, 
-      model: agent.modelName, 
-      correlationId,
-    });
 
     const sessionId = uuidv4();
+    await this._closeExistingClientSession(socket);
 
-    // Close existing session if any
-    const existing = this.clients.get(socket);
-    if (existing) {
-      logger.info('Closing existing session for client reconnect', { sessionId: existing.sessionId });
-      await geminiLiveService.closeSession(existing.sessionId);
-    }
-
-    // Create Gemini Live session
     try {
       const geminiConnectStart = Date.now();
       logger.info('Creating Gemini Live session', { sessionId, correlationId });
@@ -228,73 +456,11 @@ class SignalingServer {
         voiceName: agent.voiceName,
         modelName: agent.modelName || undefined,
         correlationId,
-        onAudio: (audioData: string) => {
-          if (socket.readyState === WebSocket.OPEN) {
-            const client = this.clients.get(socket);
-            if (client && client.audioChunksRelayed > 0 && client.audioChunksRelayed === 1) {
-              logger.info('First model audio relayed to client', {
-                sessionId,
-                correlationId: client.correlationId,
-                elapsedMs: Date.now() - client.startTime,
-              });
-            }
-            socket.send(JSON.stringify({
-              type: MESSAGE_TYPE.AUDIO_RESPONSE,
-              data: audioData,
-            }));
-          }
-        },
-        onTranscript: (transcript: { role: 'user' | 'model'; text: string }) => {
-          logger.debug('Relaying transcript', {
-            role: transcript.role,
-            sessionId,
-            correlationId,
-            chars: transcript.text.length,
-          });
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: MESSAGE_TYPE.TRANSCRIPT,
-              role: transcript.role,
-              text: transcript.text,
-            }));
-          }
-        },
-        onInterrupted: (): void => {
-          logger.info('Model interrupted, relaying to client', { sessionId, correlationId });
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
-          }
-        },
-        onError: (error: Error) => {
-          logger.error('Gemini session error, relaying to client', { 
-            sessionId, 
-            error: error.message, 
-            correlationId,
-          });
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: error.message }));
-          }
-        },
-        onClose: (): void => {
-          logger.info('Gemini session closed, notifying client', { sessionId, correlationId });
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ 
-              type: MESSAGE_TYPE.CALL_ENDED, 
-              reason: UI_STRINGS.signaling.status.geminiClosed,
-            }));
-          }
-          this.clients.delete(socket);
-        },
+        ...this._buildGeminiCallbacks(socket, sessionId, correlationId),
       });
 
       const callStartedAt = Date.now();
-      this.clients.set(socket, {
-        sessionId,
-        agentId,
-        correlationId,
-        audioChunksRelayed: 0,
-        startTime: callStartedAt,
-      });
+      this._registerClientSession(socket, sessionId, agentId, correlationId, callStartedAt);
 
       logger.info('Gemini session created', {
         sessionId,
@@ -317,6 +483,8 @@ class SignalingServer {
         modelName: agent.modelName,
         correlationId,
       });
+
+      await this._sendProactiveGreeting(socket, sessionId, correlationId);
 
       logger.info('Call started successfully', {
         sessionId,

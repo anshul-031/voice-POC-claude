@@ -34,6 +34,7 @@ import {
  * @property {number} startAt
  * @property {boolean} firstAudioRelayedLogged
  * @property {boolean} firstInboundAudioLogged
+ * @property {boolean} firstInboundTranscriptLogged
  * @property {boolean} firstPlaybackLogged
  */
 
@@ -177,6 +178,14 @@ function setupSocket(agentId, callbacks) {
           startupTrace.firstInboundAudioLogged = true;
           appendDebugLog(UI_STRINGS.signaling.logs.firstInboundAudioElapsed(getStartupElapsedMs()), 'info');
         }
+        if (
+          messageParse.data.type === MESSAGE_TYPE.TRANSCRIPT
+          && startupTrace
+          && !startupTrace.firstInboundTranscriptLogged
+        ) {
+          startupTrace.firstInboundTranscriptLogged = true;
+          appendDebugLog(UI_STRINGS.signaling.logs.firstInboundTranscriptElapsed(getStartupElapsedMs()), 'info');
+        }
         appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageParse.data.type), 'info');
         handleWsMessage(messageParse.data, callbacks);
       } catch {
@@ -210,6 +219,7 @@ export async function startCall(agentId, callbacks) {
     startAt: Date.now(),
     firstAudioRelayedLogged: false,
     firstInboundAudioLogged: false,
+    firstInboundTranscriptLogged: false,
     firstPlaybackLogged: false,
   };
   appendDebugLog(UI_STRINGS.signaling.logs.callInit, 'info');
