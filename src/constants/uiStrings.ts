@@ -141,6 +141,7 @@ export const UI_STRINGS = {
       audioRelay: (count: number): string => `Relayed ${count} audio chunks`,
       firstAudioRelayElapsed: (elapsedMs: number): string => `First audio chunk relayed in ${elapsedMs}ms`,
       firstInboundAudioElapsed: (elapsedMs: number): string => `First inbound audio received in ${elapsedMs}ms`,
+      firstInboundTranscriptElapsed: (elapsedMs: number): string => `First inbound transcript in ${elapsedMs}ms`,
       firstPlaybackElapsed: (elapsedMs: number): string => `First playback started in ${elapsedMs}ms`,
       callEndCleanup: 'Cleaning up call resources',
       callEndComplete: 'Call cleanup completed',

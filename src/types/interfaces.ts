@@ -22,6 +22,13 @@ export interface GeminiSession {
   startTime: number;
   audioChunksSent: number;
   audioChunksReceived: number;
+  firstClientAudioAt?: number;
+  firstModelAudioAt?: number;
+  firstUserTranscriptAt?: number;
+  firstModelTranscriptAt?: number;
+  firstTextPromptAt?: number;
+  lastAudioChunkSentAt?: number;
+  firstResponseLatencyWarned?: boolean;
 }
 
 export interface SignalingClient {
@@ -29,7 +36,13 @@ export interface SignalingClient {
   agentId: string;
   correlationId?: string;
   audioChunksRelayed: number;
+  modelAudioChunksRelayed: number;
   startTime: number;
+  firstModelAudioRelayedAt?: number;
+  firstUserTranscriptRelayedAt?: number;
+  firstModelTranscriptRelayedAt?: number;
+  proactiveGreetingSent: boolean;
+  proactiveGreetingSentAt?: number;
 }
 
 export interface Transcript {

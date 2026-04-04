@@ -98,9 +98,12 @@ describe('GeminiLiveService', () => {
     await geminiLiveService.sendAudio('sid2', 'data');
 
     await geminiLiveService.sendText('sid2', 'text');
-    mockSession.sendClientContent.mockImplementationOnce(() => { throw new Error('ERR'); });
+    expect(mockSession.sendRealtimeInput).toHaveBeenLastCalledWith({
+      text: 'text',
+    });
+    mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw new Error('ERR'); });
     await geminiLiveService.sendText('sid2', 'text');
-    mockSession.sendClientContent.mockImplementationOnce(() => { throw 'RAW_TEXT_ERR'; });
+    mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw 'RAW_TEXT_ERR'; });
     await geminiLiveService.sendText('sid2', 'text');
 
     await geminiLiveService.closeSession('sid2');

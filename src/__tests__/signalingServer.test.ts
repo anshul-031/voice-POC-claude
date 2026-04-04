@@ -26,6 +26,7 @@ vi.mock('../services/geminiLive.js', () => ({
   default: {
     createSession: vi.fn(),
     sendAudio: vi.fn(),
+    sendText: vi.fn().mockResolvedValue(true),
     closeSession: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -133,7 +134,14 @@ describe('SignalingServer', () => {
     expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('error'));
     
     // 5. Existing session on WS
-    signalingServer.clients.set(mockWs as WebSocket, { sessionId: 'old', agentId: '1', startTime: Date.now(), audioChunksRelayed: 0 });
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'old',
+      agentId: '1',
+      startTime: Date.now(),
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      proactiveGreetingSent: false,
+    });
     (geminiLiveService.createSession as any).mockResolvedValue({});
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
     expect(geminiLiveService.closeSession).toHaveBeenCalledWith('old');
@@ -152,16 +160,23 @@ describe('SignalingServer', () => {
       publicPreviewEnabled: true,
     });
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
+    expect(geminiLiveService.sendText).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      'initial-greeting',
+    );
 
     const client = signalingServer.clients.get(mockWs as WebSocket);
     if (client) {
       client.audioChunksRelayed = 1;
-      client.startTime = Date.now() - 25;
+      client.modelAudioChunksRelayed = 0;
+      client.startTime = Date.now() - 4000;
     }
     
     // Trigger each callback when OPEN
     capturedCallbacks.onAudio('chunk');
     capturedCallbacks.onTranscript({ role: 'user', text: 'hi' });
+    capturedCallbacks.onTranscript({ role: 'model', text: 'hello' });
     capturedCallbacks.onInterrupted();
     capturedCallbacks.onError(new Error('FAIL'));
     capturedCallbacks.onClose();
@@ -189,12 +204,37 @@ describe('SignalingServer', () => {
     expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('private'));
   });
 
+  it('should cover proactive greeting failure branch', async () => {
+    (geminiLiveService.sendText as any).mockResolvedValueOnce(false);
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: '1',
+      name: 'A',
+      systemPrompt: 'S',
+      voiceName: 'Puck',
+      modelName: 'gemini-2.0-flash-exp',
+      publicPreviewEnabled: true,
+      userId: null,
+    });
+    (geminiLiveService.createSession as any).mockResolvedValue({});
+
+    await signalingServer._handleStartCall(mockWs, { agentId: '1' });
+
+    expect(geminiLiveService.sendText).toHaveBeenCalled();
+  });
+
+  it('should reject invalid audio payloads in _handleAudioData', async () => {
+    await signalingServer._handleAudioData(mockWs, { data: '' }, 'cid-invalid-audio');
+    expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('error'));
+  });
+
   it('should handle disconnect close-session failures', async () => {
     signalingServer.clients.set(mockWs as WebSocket, {
       sessionId: 'session-close-error',
       agentId: '1',
       startTime: Date.now(),
       audioChunksRelayed: 2,
+      modelAudioChunksRelayed: 0,
+      proactiveGreetingSent: false,
     });
 
     (geminiLiveService.closeSession as any).mockRejectedValueOnce(new Error('CLOSE_FAIL'));
@@ -217,6 +257,11 @@ describe('SignalingServer', () => {
       headers: { cookie: 'token=badtoken' },
     });
     expect(invalidToken).toBeNull();
+
+    const emptyToken = (signalingServer as any)._resolveRequesterUserId({
+      headers: { cookie: 'token=' },
+    });
+    expect(emptyToken).toBeNull();
 
     const token = generateToken('user-1', 'user@example.com');
     const validToken = (signalingServer as any)._resolveRequesterUserId({

@@ -32,6 +32,16 @@ export const LOGGING = {
   THROTTLE_CHUNKS: 50,
 } as const;
 
+export const LIVE_CALL = {
+  PROACTIVE_GREETING_PROMPT:
+    'Start the call now. Greet the user briefly in the configured language and ask one short opening question.',
+  FIRST_RESPONSE_WARN_THRESHOLD_MS: 2500,
+  VAD_PREFIX_PADDING_MS: 120,
+  VAD_SILENCE_DURATION_MS: 260,
+  VAD_START_SENSITIVITY: 'START_SENSITIVITY_HIGH',
+  VAD_END_SENSITIVITY: 'END_SENSITIVITY_HIGH',
+} as const;
+
 export const MESSAGE_TYPE = {
   START_CALL: 'start-call',
   AUDIO_DATA: 'audio-data',
