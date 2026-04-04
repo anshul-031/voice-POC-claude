@@ -56,6 +56,7 @@ class GeminiLiveService {
       systemPrompt,
       voiceName,
       modelName,
+      correlationId,
       onAudio,
       onTranscript,
       onInterrupted,
@@ -65,6 +66,7 @@ class GeminiLiveService {
       systemPrompt?: string;
       voiceName?: string;
       modelName?: string;
+      correlationId?: string;
       onAudio?: (audioBase64: string) => void;
       onTranscript?: (transcript: Transcript) => void;
       onInterrupted?: () => void;
@@ -80,6 +82,7 @@ class GeminiLiveService {
         model,
         voice: voiceName || 'Puck',
         systemPromptSnippet: (systemPrompt || '').substring(0, 80),
+        correlationId,
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -101,6 +104,11 @@ class GeminiLiveService {
       }
 
       const startTime = Date.now();
+      logger.debug('Connecting to Gemini Live API', {
+        sessionId,
+        model,
+        correlationId,
+      });
 
       const session = await this.ai.live.connect({
         model,
@@ -111,6 +119,7 @@ class GeminiLiveService {
             logger.info('Gemini Live session opened', {
               sessionId,
               elapsedMs: elapsed,
+              correlationId,
             });
           },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,6 +133,7 @@ class GeminiLiveService {
               sessionId,
               error: errorMsg,
               stack: e.stack,
+              correlationId,
             });
             if (onError) onError(new Error(errorMsg));
           },
@@ -132,6 +142,7 @@ class GeminiLiveService {
             logger.info('Gemini Live session closed', {
               sessionId,
               reason: e?.reason || e?.code || 'unknown',
+              correlationId,
             });
             this.sessions.delete(sessionId);
             if (onClose) onClose(e);
@@ -143,18 +154,20 @@ class GeminiLiveService {
         session,
         voiceName: voiceName || 'Puck',
         model,
+        correlationId,
         startTime: Date.now(),
         audioChunksSent: 0,
         audioChunksReceived: 0,
       };
       this.sessions.set(sessionId, sessionEntry);
-      logger.debug('Gemini Live session registered', { sessionId });
+      logger.debug('Gemini Live session registered', { sessionId, correlationId });
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Failed to create Gemini Live session', {
         sessionId,
         error: errMsg,
         stack: error instanceof Error ? error.stack : undefined,
+        correlationId,
       });
       throw error;
     }
@@ -171,7 +184,12 @@ class GeminiLiveService {
     onTranscript?: (transcript: Transcript) => void,
     onInterrupted?: () => void,
   ): void {
-    logger.info('Gemini Message received', { keys: Object.keys(message), sample: JSON.stringify(message).substring(0, 500) });
+    logger.debug('Gemini message received', {
+      sessionId,
+      keys: message && typeof message === 'object' ? Object.keys(message) : [],
+      hasServerContent: !!message?.serverContent,
+      hasDirectData: !!message?.data,
+    });
     const entry = this.sessions.get(sessionId);
     if (!entry) return;
 
@@ -240,7 +258,18 @@ class GeminiLiveService {
   private _processDirectAudio(sessionId: string, data: string, onAudio?: (audio: string) => void): void {
     const entry = this.sessions.get(sessionId);
     if (entry) entry.audioChunksReceived++;
-    logger.debug('Audio data received', { sessionId, totalReceived: entry?.audioChunksReceived });
+    if (entry?.audioChunksReceived === 1) {
+      logger.info('First model audio chunk received from Gemini', {
+        sessionId,
+        correlationId: entry.correlationId,
+        elapsedMs: Date.now() - entry.startTime,
+      });
+    }
+    logger.debug('Audio data received', {
+      sessionId,
+      totalReceived: entry?.audioChunksReceived,
+      correlationId: entry?.correlationId,
+    });
     if (onAudio) onAudio(data);
   }
 

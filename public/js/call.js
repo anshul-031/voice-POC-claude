@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import { CONFIG, MESSAGE_TYPE } from './constants/config.js';
 import { UI_STRINGS } from './constants/uiStrings.js';
 import { showToast, uint8ToBase64 } from './utils.js';
@@ -19,18 +20,68 @@ import {
 /** @type {ScriptProcessorNode | null} */ let audioProcessor = null;
 /** @type {WebSocket | null} */ let ws = null;
 /** @type {AnalyserNode | null} */ let analyserNode = null;
+
+/**
+ * @typedef {Object} CallCallbacks
+ * @property {Function} onStatusChange
+ * @property {Function} onTimerUpdate
+ * @property {Function} [onTranscript]
+ */
+
+/**
+ * @typedef {Object} StartupTrace
+ * @property {string} runId
+ * @property {number} startAt
+ * @property {boolean} firstAudioRelayedLogged
+ * @property {boolean} firstInboundAudioLogged
+ * @property {boolean} firstPlaybackLogged
+ */
+
+/** @type {StartupTrace | null} */
+let startupTrace = null;
+
 let isInCall = false;
 let isMuted = false;
 /** @type {number | null} */ let callTimer = null;
 let callSeconds = 0;
 let audioChunksSent = 0;
 
+/** @returns {string} */
+function createRunId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** @returns {number} */
+function getStartupElapsedMs() {
+  if (!startupTrace) return 0;
+  return Date.now() - startupTrace.startAt;
+}
+
+/** @template T @param {Promise<T>} promise @param {number} timeoutMs @param {Error} timeoutError @returns {Promise<T>} */
+function withTimeout(promise, timeoutMs, timeoutError) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(timeoutError), timeoutMs);
+    promise
+      .then((result) => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
+
 /** @returns {{isInCall: boolean, isMuted: boolean, callSeconds: number}} */
 export function getCallState() {
   return { isInCall, isMuted, callSeconds };
 }
 
-/** @param {string | null} agentId @param {any} callbacks @returns {Promise<void>} */
+/** @param {string | null} agentId @param {CallCallbacks} callbacks @returns {Promise<void>} */
 export async function toggleCall(agentId, callbacks) {
   if (isInCall) await endCall();
   else await startCall(agentId, callbacks);
@@ -45,6 +96,10 @@ function relayAudioChunk(inputData) {
   }
   if (ws?.readyState !== WebSocket.OPEN) return;
   audioChunksSent++;
+  if (audioChunksSent === 1 && startupTrace && !startupTrace.firstAudioRelayedLogged) {
+    startupTrace.firstAudioRelayedLogged = true;
+    appendDebugLog(UI_STRINGS.signaling.logs.firstAudioRelayElapsed(getStartupElapsedMs()), 'info');
+  }
   if (audioChunksSent % CONFIG.AUDIO_LOG_THROTTLE === 1) {
     appendDebugLog(UI_STRINGS.signaling.logs.audioRelay(audioChunksSent), 'info');
   }
@@ -75,53 +130,97 @@ function setupAudioGraph() {
   };
 }
 
-/** @param {string} agentId @param {any} callbacks @returns {void} */
+/** @param {string} agentId @param {CallCallbacks} callbacks @returns {Promise<void>} */
 function setupSocket(agentId, callbacks) {
+  const wsConnectStart = Date.now();
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   appendDebugLog(UI_STRINGS.signaling.logs.wsConnecting, 'info');
-  ws = new WebSocket(`${wsProtocol}//${window.location.host}${CONFIG.WS_PATH}`);
+  const socket = new WebSocket(`${wsProtocol}//${window.location.host}${CONFIG.WS_PATH}`);
+  ws = socket;
 
-  ws.onopen = () => {
-    appendDebugLog(UI_STRINGS.signaling.logs.wsOpen, 'info');
-    appendDebugLog(UI_STRINGS.signaling.logs.sendingStart(agentId), 'info');
-    ws?.send(JSON.stringify({ type: MESSAGE_TYPE.START_CALL, agentId }));
-  };
+  return new Promise((resolve, reject) => {
+    let didResolveOpen = false;
+    const timeoutId = window.setTimeout(() => {
+      appendDebugLog(UI_STRINGS.signaling.logs.wsTimeout(CONFIG.WS_CONNECT_TIMEOUT_MS), 'error');
+      reject(new Error(UI_STRINGS.signaling.errors.wsConnectTimeout));
+      try {
+        ws?.close();
+      } catch (_e) { /* ignore */ }
+    }, CONFIG.WS_CONNECT_TIMEOUT_MS);
 
-  ws.onmessage = (event) => {
-    try {
-      const message = JSON.parse(event.data);
-      const messageParse = WS_INBOUND_MESSAGE_SCHEMA.safeParse(message);
-      if (!messageParse.success) {
-        showToast(UI_STRINGS.signaling.errors.invalidMessageFormat, 'error');
-        appendDebugLog(UI_STRINGS.signaling.logs.inboundValidationFailed, 'error');
-        return;
+    socket.onopen = () => {
+      clearTimeout(timeoutId);
+      didResolveOpen = true;
+      appendDebugLog(UI_STRINGS.signaling.logs.wsOpen, 'info');
+      appendDebugLog(UI_STRINGS.signaling.logs.wsOpenElapsed(Date.now() - wsConnectStart), 'info');
+      appendDebugLog(UI_STRINGS.signaling.logs.sendingStart(agentId), 'info');
+      socket.send(JSON.stringify({ type: MESSAGE_TYPE.START_CALL, agentId }));
+      appendDebugLog(UI_STRINGS.signaling.logs.startSentElapsed(getStartupElapsedMs()), 'info');
+      appendDebugLog(UI_STRINGS.signaling.logs.startupComplete(getStartupElapsedMs()), 'info');
+      resolve();
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        const messageParse = WS_INBOUND_MESSAGE_SCHEMA.safeParse(message);
+        if (!messageParse.success) {
+          showToast(UI_STRINGS.signaling.errors.invalidMessageFormat, 'error');
+          appendDebugLog(UI_STRINGS.signaling.logs.inboundValidationFailed, 'error');
+          return;
+        }
+        if (
+          messageParse.data.type === MESSAGE_TYPE.AUDIO_RESPONSE
+          && startupTrace
+          && !startupTrace.firstInboundAudioLogged
+        ) {
+          startupTrace.firstInboundAudioLogged = true;
+          appendDebugLog(UI_STRINGS.signaling.logs.firstInboundAudioElapsed(getStartupElapsedMs()), 'info');
+        }
+        appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageParse.data.type), 'info');
+        handleWsMessage(messageParse.data, callbacks);
+      } catch {
+        appendDebugLog(UI_STRINGS.signaling.logs.inboundParseFailed, 'error');
       }
-      appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageParse.data.type), 'info');
-      handleWsMessage(messageParse.data, callbacks);
-    } catch {
-      appendDebugLog(UI_STRINGS.signaling.logs.inboundParseFailed, 'error');
-    }
-  };
+    };
 
-  ws.onerror = () => {
-    showToast(UI_STRINGS.toasts.connectionError, 'error');
-    appendDebugLog(UI_STRINGS.signaling.logs.wsError, 'error');
-    endCall();
-  };
+    socket.onerror = () => {
+      clearTimeout(timeoutId);
+      showToast(UI_STRINGS.toasts.connectionError, 'error');
+      appendDebugLog(UI_STRINGS.signaling.logs.wsError, 'error');
+      if (!didResolveOpen) {
+        reject(new Error(UI_STRINGS.toasts.connectionError));
+      }
+      endCall();
+    };
 
-  ws.onclose = (event) => {
-    appendDebugLog(UI_STRINGS.signaling.logs.wsClosed(event.code), 'warn');
-    if (isInCall) endCall();
-  };
+    socket.onclose = (event) => {
+      clearTimeout(timeoutId);
+      appendDebugLog(UI_STRINGS.signaling.logs.wsClosed(event.code), 'warn');
+      if (isInCall) endCall();
+    };
+  });
 }
 
-/** @param {string | null} agentId @param {any} callbacks @returns {Promise<void>} */
+/** @param {string | null} agentId @param {CallCallbacks} callbacks @returns {Promise<void>} */
 export async function startCall(agentId, callbacks) {
+  const runId = createRunId();
+  startupTrace = {
+    runId,
+    startAt: Date.now(),
+    firstAudioRelayedLogged: false,
+    firstInboundAudioLogged: false,
+    firstPlaybackLogged: false,
+  };
   appendDebugLog(UI_STRINGS.signaling.logs.callInit, 'info');
+  appendDebugLog(UI_STRINGS.signaling.logs.callRunId(runId), 'info');
+  appendDebugLog(UI_STRINGS.signaling.logs.startupBegin, 'info');
+
   const callInputParse = START_CALL_INPUT_SCHEMA.safeParse({ agentId });
   if (!callInputParse.success) {
     showToast(UI_STRINGS.api.errors.invalidInput, 'error');
     appendDebugLog(UI_STRINGS.api.errors.invalidInput, 'error');
+    startupTrace = null;
     return;
   }
 
@@ -130,21 +229,42 @@ export async function startCall(agentId, callbacks) {
   try {
     const ContextCtor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
     audioContext = new ContextCtor({ sampleRate: CONFIG.SAMPLE_RATE_INPUT });
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: CONFIG.SAMPLE_RATE_INPUT,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+    appendDebugLog(UI_STRINGS.signaling.logs.micRequesting, 'info');
+
+    const micReadyStart = Date.now();
+    const mediaPromise = withTimeout(
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: CONFIG.SAMPLE_RATE_INPUT,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      }),
+      CONFIG.MEDIA_ACCESS_TIMEOUT_MS,
+      new Error(UI_STRINGS.signaling.errors.micAccessTimeout),
+    );
+    const socketPromise = setupSocket(callInputParse.data.agentId, callbacks);
+    socketPromise.catch((socketError) => {
+      const socketErrMsg = socketError instanceof Error ? socketError.message : String(socketError);
+      appendDebugLog(UI_STRINGS.signaling.logs.startupFailed(getStartupElapsedMs()), 'error');
+      showToast(UI_STRINGS.toasts.callStartFailed(socketErrMsg), 'error');
+      appendDebugLog(UI_STRINGS.signaling.logs.startCallFailed(socketErrMsg), 'error');
+      endCall();
     });
+
+    mediaStream = await mediaPromise;
     appendDebugLog(UI_STRINGS.signaling.logs.micReady, 'info');
+    appendDebugLog(UI_STRINGS.signaling.logs.micReadyElapsed(Date.now() - micReadyStart), 'info');
     setupAudioGraph();
-    setupSocket(callInputParse.data.agentId, callbacks);
   } catch (_err) {
     const errMsg = _err instanceof Error ? _err.message : String(_err);
-    showToast(`Failed to start call: ${errMsg}`, 'error');
+    appendDebugLog(UI_STRINGS.signaling.logs.startupFailed(getStartupElapsedMs()), 'error');
+    showToast(UI_STRINGS.toasts.callStartFailed(errMsg), 'error');
     appendDebugLog(UI_STRINGS.signaling.logs.startCallFailed(errMsg), 'error');
     endCall();
   }
@@ -201,7 +321,13 @@ export function playAudioResponse(base64Data) {
 
 /** @returns {Promise<void>} */
 export async function processAudioQueue() {
-  await processPlaybackQueue(audioContext, analyserNode);
+  await processPlaybackQueue(audioContext, analyserNode, {
+    onPlaybackStarted: () => {
+      if (!startupTrace || startupTrace.firstPlaybackLogged) return;
+      startupTrace.firstPlaybackLogged = true;
+      appendDebugLog(UI_STRINGS.signaling.logs.firstPlaybackElapsed(getStartupElapsedMs()), 'info');
+    },
+  });
 }
 
 /** @returns {Promise<void>} */
@@ -240,6 +366,7 @@ export async function endCall() {
   updateCallUI(false);
   stopWaveformAnimation();
   isMuted = false;
+  startupTrace = null;
   appendDebugLog(UI_STRINGS.signaling.logs.callEndComplete, 'info');
 }
 
@@ -278,6 +405,7 @@ export function resetState() {
   audioProcessor = null;
   mediaStream = null;
   analyserNode = null;
+  startupTrace = null;
   if (callTimer) {
     clearInterval(callTimer);
     callTimer = null;

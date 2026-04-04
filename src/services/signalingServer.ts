@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import WebSocket, { WebSocketServer } from 'ws';
 import type { WebSocket as WSWebSocket, WebSocketServer as WSWebSocketServer } from 'ws';
 import type { IncomingMessage, Server } from 'http';
@@ -31,11 +32,13 @@ class SignalingServer {
     this.wss = wss;
 
     wss.on('connection', (socket: WSWebSocket, req: IncomingMessage) => {
+      const correlationId = uuidv4();
       const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-      logger.info('New WebSocket connection', { clientIp });
+      logger.info('New WebSocket connection', { clientIp, correlationId });
 
       socket.on('message', async (data: Buffer | string | ArrayBuffer | Buffer[]) => {
         try {
+          const messageStart = Date.now();
           const requesterUserId = this._resolveRequesterUserId(req);
           const dataString = data.toString();
           const rawMessage = JSON.parse(dataString);
@@ -43,6 +46,7 @@ class SignalingServer {
           if (!messageParse.success) {
             logger.warn('Invalid signaling message payload', {
               clientIp,
+              correlationId,
               issues: messageParse.error.issues,
               payloadPreview: dataString.slice(0, 400),
             });
@@ -54,14 +58,25 @@ class SignalingServer {
           }
 
           const message = messageParse.data;
-          logger.debug('Signaling message received', { type: message.type, clientIp });
-          await this._handleMessage(socket, message, requesterUserId);
+          logger.debug('Signaling message received', {
+            type: message.type,
+            clientIp,
+            correlationId,
+            payloadBytes: dataString.length,
+          });
+          await this._handleMessage(socket, message, requesterUserId, correlationId);
+          logger.debug('Signaling message handled', {
+            type: message.type,
+            correlationId,
+            elapsedMs: Date.now() - messageStart,
+          });
         } catch (error: unknown) {
           const isJsonParseError = error instanceof SyntaxError;
           const errMsg = error instanceof Error ? error.message : String(error);
           logger.error('Error handling signaling message', {
             error: errMsg, 
             clientIp,
+            correlationId,
           });
           socket.send(JSON.stringify({
             type: MESSAGE_TYPE.ERROR,
@@ -75,6 +90,7 @@ class SignalingServer {
           code, 
           reason: reason.toString() || 'none', 
           clientIp,
+          correlationId,
         });
         this._handleDisconnect(socket);
       });
@@ -83,6 +99,7 @@ class SignalingServer {
         logger.error('WebSocket error', { 
           error: error.message, 
           clientIp,
+          correlationId,
         });
         this._handleDisconnect(socket);
       });
@@ -111,16 +128,17 @@ class SignalingServer {
     socket: WSWebSocket,
     message: SignalingMessage,
     requesterUserId: string | null,
+    correlationId: string,
   ): Promise<void> {
     switch (message.type) {
       case MESSAGE_TYPE.START_CALL:
-        await this._handleStartCall(socket, message, requesterUserId);
+        await this._handleStartCall(socket, message, requesterUserId, correlationId);
         break;
       case MESSAGE_TYPE.AUDIO_DATA:
-        await this._handleAudioData(socket, message);
+        await this._handleAudioData(socket, message, correlationId);
         break;
       case MESSAGE_TYPE.END_CALL:
-        await this._handleEndCall(socket);
+        await this._handleEndCall(socket, correlationId);
         break;
     }
   }
@@ -142,7 +160,9 @@ class SignalingServer {
     socket: WSWebSocket,
     message: { agentId: string },
     requesterUserId: string | null = null,
+    correlationId = uuidv4(),
   ): Promise<void> {
+    const startCallAt = Date.now();
     const parseResult = SIGNALING_START_CALL_MESSAGE_SCHEMA.safeParse({
       type: MESSAGE_TYPE.START_CALL,
       agentId: message.agentId,
@@ -153,13 +173,20 @@ class SignalingServer {
     }
 
     const { agentId } = parseResult.data;
-    logger.info('Start call request', { agentId });
+    logger.info('Start call request', { agentId, correlationId });
 
     // Fetch agent config
-    logger.debug('Fetching agent config', { agentId });
+    logger.debug('Fetching agent config', { agentId, correlationId });
+    const agentLookupStart = Date.now();
     const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } });
+    logger.info('Agent lookup completed', {
+      agentId,
+      correlationId,
+      elapsedMs: Date.now() - agentLookupStart,
+      found: !!agent,
+    });
     if (!agent) {
-      logger.warn('Agent not found', { agentId });
+      logger.warn('Agent not found', { agentId, correlationId });
       this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentNotFound);
       return;
     }
@@ -168,6 +195,7 @@ class SignalingServer {
       logger.warn('Blocked unauthorized call start for private agent', {
         agentId,
         requesterUserId,
+        correlationId,
       });
       this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentNotPublic);
       return;
@@ -178,6 +206,7 @@ class SignalingServer {
       name: agent.name, 
       voice: agent.voiceName, 
       model: agent.modelName, 
+      correlationId,
     });
 
     const sessionId = uuidv4();
@@ -191,14 +220,24 @@ class SignalingServer {
 
     // Create Gemini Live session
     try {
-      logger.info('Creating Gemini Live session', { sessionId });
+      const geminiConnectStart = Date.now();
+      logger.info('Creating Gemini Live session', { sessionId, correlationId });
 
       await geminiLiveService.createSession(sessionId, {
         systemPrompt: agent.systemPrompt,
         voiceName: agent.voiceName,
         modelName: agent.modelName || undefined,
+        correlationId,
         onAudio: (audioData: string) => {
           if (socket.readyState === WebSocket.OPEN) {
+            const client = this.clients.get(socket);
+            if (client && client.audioChunksRelayed > 0 && client.audioChunksRelayed === 1) {
+              logger.info('First model audio relayed to client', {
+                sessionId,
+                correlationId: client.correlationId,
+                elapsedMs: Date.now() - client.startTime,
+              });
+            }
             socket.send(JSON.stringify({
               type: MESSAGE_TYPE.AUDIO_RESPONSE,
               data: audioData,
@@ -206,7 +245,12 @@ class SignalingServer {
           }
         },
         onTranscript: (transcript: { role: 'user' | 'model'; text: string }) => {
-          logger.debug('Relaying transcript', { role: transcript.role, sessionId });
+          logger.debug('Relaying transcript', {
+            role: transcript.role,
+            sessionId,
+            correlationId,
+            chars: transcript.text.length,
+          });
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({
               type: MESSAGE_TYPE.TRANSCRIPT,
@@ -216,7 +260,7 @@ class SignalingServer {
           }
         },
         onInterrupted: (): void => {
-          logger.info('Model interrupted, relaying to client', { sessionId });
+          logger.info('Model interrupted, relaying to client', { sessionId, correlationId });
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
           }
@@ -225,13 +269,14 @@ class SignalingServer {
           logger.error('Gemini session error, relaying to client', { 
             sessionId, 
             error: error.message, 
+            correlationId,
           });
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: MESSAGE_TYPE.ERROR, message: error.message }));
           }
         },
         onClose: (): void => {
-          logger.info('Gemini session closed, notifying client', { sessionId });
+          logger.info('Gemini session closed, notifying client', { sessionId, correlationId });
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ 
               type: MESSAGE_TYPE.CALL_ENDED, 
@@ -242,7 +287,20 @@ class SignalingServer {
         },
       });
 
-      this.clients.set(socket, { sessionId, agentId, audioChunksRelayed: 0, startTime: Date.now() });
+      const callStartedAt = Date.now();
+      this.clients.set(socket, {
+        sessionId,
+        agentId,
+        correlationId,
+        audioChunksRelayed: 0,
+        startTime: callStartedAt,
+      });
+
+      logger.info('Gemini session created', {
+        sessionId,
+        correlationId,
+        elapsedMs: callStartedAt - geminiConnectStart,
+      });
 
       socket.send(JSON.stringify({
         type: MESSAGE_TYPE.CALL_STARTED,
@@ -250,20 +308,29 @@ class SignalingServer {
         agentName: agent.name,
         voiceName: agent.voiceName,
         modelName: agent.modelName,
+        correlationId,
       }));
       logger.debug('Sent call-started payload', {
         sessionId,
         agentName: agent.name,
         voiceName: agent.voiceName,
         modelName: agent.modelName,
+        correlationId,
       });
 
-      logger.info('Call started successfully', { sessionId, agentName: agent.name });
+      logger.info('Call started successfully', {
+        sessionId,
+        agentName: agent.name,
+        correlationId,
+        totalStartupMs: Date.now() - startCallAt,
+      });
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Failed to start call', { 
         agentId, 
         error: errMsg, 
+        correlationId,
+        totalStartupMs: Date.now() - startCallAt,
       });
       socket.send(JSON.stringify({
         type: MESSAGE_TYPE.ERROR,
@@ -273,7 +340,11 @@ class SignalingServer {
   }
 
   /** @internal */
-  public async _handleAudioData(socket: WSWebSocket, message: { data: string }): Promise<void> {
+  public async _handleAudioData(
+    socket: WSWebSocket,
+    message: { data: string },
+    correlationId: string,
+  ): Promise<void> {
     const parseResult = SIGNALING_AUDIO_DATA_MESSAGE_SCHEMA.safeParse({
       type: MESSAGE_TYPE.AUDIO_DATA,
       data: message.data,
@@ -290,10 +361,18 @@ class SignalingServer {
     if (!client) return;
 
     client.audioChunksRelayed++;
+    if (client.audioChunksRelayed === 1) {
+      logger.info('First client audio chunk relayed to Gemini', {
+        sessionId: client.sessionId,
+        correlationId,
+        elapsedMs: Date.now() - client.startTime,
+      });
+    }
     if (client.audioChunksRelayed % 50 === 1) {
       logger.debug('Relaying audio chunks to Gemini', { 
         sessionId: client.sessionId, 
         chunkCount: client.audioChunksRelayed, 
+        correlationId,
       });
     }
 
@@ -301,7 +380,7 @@ class SignalingServer {
   }
 
   /** @internal */
-  public async _handleEndCall(socket: WSWebSocket): Promise<void> {
+  public async _handleEndCall(socket: WSWebSocket, correlationId: string): Promise<void> {
     const client = this.clients.get(socket);
     if (client) {
       const duration = Math.round((Date.now() - client.startTime) / TIME.MS_TO_SEC);
@@ -309,6 +388,7 @@ class SignalingServer {
         sessionId: client.sessionId, 
         durationSeconds: duration, 
         audioChunks: client.audioChunksRelayed, 
+        correlationId,
       });
       await geminiLiveService.closeSession(client.sessionId);
       this.clients.delete(socket);
@@ -327,6 +407,7 @@ class SignalingServer {
       logger.info('Client disconnected', { 
         sessionId: client.sessionId, 
         durationSeconds: duration, 
+        correlationId: client.correlationId,
       });
       geminiLiveService.closeSession(client.sessionId).catch((err: Error) => {
         logger.error('Error closing session on disconnect', { error: err.message });

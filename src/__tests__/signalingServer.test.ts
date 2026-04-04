@@ -152,6 +152,12 @@ describe('SignalingServer', () => {
       publicPreviewEnabled: true,
     });
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
+
+    const client = signalingServer.clients.get(mockWs as WebSocket);
+    if (client) {
+      client.audioChunksRelayed = 1;
+      client.startTime = Date.now() - 25;
+    }
     
     // Trigger each callback when OPEN
     capturedCallbacks.onAudio('chunk');

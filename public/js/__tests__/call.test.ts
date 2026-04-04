@@ -114,6 +114,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     it('should handle ws.onmessage success and parse fail', async () => {
       await startCall('a1', mockCallbacks);
       const ws = getWs() as any;
+      ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.AUDIO_RESPONSE, data: 'audio' }) });
       ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.CALL_STARTED }) });
       expect(getCallState().isInCall).toBe(true);
       
@@ -122,6 +123,14 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
 
       // Invalid JSON
       ws?.onmessage?.({ data: 'invalid-json' });
+    });
+
+    it('should handle signaling websocket open timeout', async () => {
+      await startCall('a1', mockCallbacks);
+      vi.advanceTimersByTime(10001);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(getWs()).toBeNull();
     });
 
     it('should handle ws.onerror', async () => {
@@ -201,6 +210,38 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
         mediaDevices: {
           getUserMedia: vi.fn().mockRejectedValue('string error fallback')
         }
+      });
+      await startCall('a1', mockCallbacks);
+
+      // test createRunId fallback when randomUUID is unavailable
+      const originalCrypto = globalThis.crypto;
+      vi.stubGlobal('crypto', {} as Crypto);
+      await startCall('a1', mockCallbacks);
+      vi.stubGlobal('crypto', originalCrypto);
+
+      // test setupAudioGraph early return when media stream is not available
+      vi.stubGlobal('navigator', {
+        mediaDevices: {
+          getUserMedia: vi.fn().mockResolvedValue(null),
+        },
+      });
+      await startCall('a1', mockCallbacks);
+
+      // test audioContext suspended state branch
+      class SuspendedAudioContext {
+        createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn() });
+        createAnalyser = vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256 });
+        createScriptProcessor = vi.fn().mockReturnValue({ connect: vi.fn(), onaudioprocess: null, disconnect: vi.fn() });
+        destination = {};
+        close = vi.fn().mockResolvedValue(undefined);
+        state = 'suspended';
+        resume = vi.fn().mockResolvedValue(undefined);
+      }
+      vi.stubGlobal('AudioContext', SuspendedAudioContext as unknown as typeof AudioContext);
+      vi.stubGlobal('navigator', {
+        mediaDevices: {
+          getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn(), enabled: true }] }),
+        },
       });
       await startCall('a1', mockCallbacks);
       
