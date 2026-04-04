@@ -1,5 +1,5 @@
 /**
- * Main entry point for the VoiceForge frontend.
+ * Main entry point for the AIPhonceCaller.in frontend.
  */
 import { UI_STRINGS } from './constants/uiStrings.js';
 import { CONFIG } from './constants/config.js';

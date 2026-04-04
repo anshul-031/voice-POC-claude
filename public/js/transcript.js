@@ -1,5 +1,5 @@
 /**
- * Transcript rendering logic for the VoiceForge frontend.
+ * Transcript rendering logic for the AIPhonceCaller.in frontend.
  */
 import { UI_STRINGS } from './constants/uiStrings.js';
 import { CONFIG } from './constants/config.js';

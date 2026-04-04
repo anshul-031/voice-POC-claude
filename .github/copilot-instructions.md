@@ -1,4 +1,4 @@
-To maintain high code quality and consistency across the VoiceForge platform, please follow these rules:
+To maintain high code quality and consistency across the AIPhonceCaller.in platform, please follow these rules:
 
 ## 0. Strictest Code Quality Standards
 - **ESLint Strictness**: The project reflects the strictest ESLint settings. Always ensure:

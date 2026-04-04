@@ -17,7 +17,7 @@ export const UI_STRINGS = {
     info: 'Info',
   },
   header: {
-    title: 'VoiceForge',
+    title: 'AIPhonceCaller.in',
     apiStatus: {
       checking: 'Checking API...',
       connected: 'Connected',

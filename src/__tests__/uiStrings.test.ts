@@ -3,7 +3,7 @@ import { UI_STRINGS } from '../constants/uiStrings.js';
 
 describe('UI_STRINGS', () => {
   it('should have a title', () => {
-    expect(UI_STRINGS.header.title).toBe('VoiceForge');
+    expect(UI_STRINGS.header.title).toBe('AIPhonceCaller.in');
   });
 
   it('agentList.card.createdAt should format dates', () => {
