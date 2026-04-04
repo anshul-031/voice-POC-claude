@@ -276,5 +276,48 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       window.atob = () => { throw new Error('Test Error parsing'); };
       await processAudioQueue();
     });
+
+    it('should stop active playback on server interrupted event', async () => {
+      vi.stubGlobal('atob', () => 'abcdabcd');
+      window.atob = () => 'abcdabcd';
+
+      await startCall('a1', mockCallbacks);
+      handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
+
+      playAudioResponse('base64data');
+      await Promise.resolve();
+
+      const ctx = getAudioContext() as any;
+      const source = ctx.createBufferSource.mock.results[0]?.value;
+      expect(source).toBeDefined();
+
+      handleWsMessage({ type: MESSAGE_TYPE.INTERRUPTED } as any, mockCallbacks);
+      handleWsMessage({ type: MESSAGE_TYPE.INTERRUPTED } as any, mockCallbacks);
+
+      expect(source.stop).toHaveBeenCalled();
+    });
+
+    it('should barge-in locally when user speech starts during model playback', async () => {
+      vi.stubGlobal('atob', () => 'abcdabcd');
+      window.atob = () => 'abcdabcd';
+
+      await startCall('a1', mockCallbacks);
+      handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
+
+      playAudioResponse('base64data');
+      await Promise.resolve();
+
+      const ctx = getAudioContext() as any;
+      const source = ctx.createBufferSource.mock.results[0]?.value;
+      const sp = getAudioProcessor() as any;
+      expect(source).toBeDefined();
+      expect(sp).toBeDefined();
+
+      const loudFrame = new Float32Array(1024).fill(0.6);
+      sp.onaudioprocess({ inputBuffer: { getChannelData: () => loudFrame } });
+      sp.onaudioprocess({ inputBuffer: { getChannelData: () => loudFrame } });
+
+      expect(source.stop).toHaveBeenCalled();
+    });
   });
 });

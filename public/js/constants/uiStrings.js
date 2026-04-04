@@ -131,6 +131,7 @@ export const UI_STRINGS = {
       callEndComplete: 'Call cleanup completed',
       startCallFailed: (/** @type {string} */ msg) => `Start call failed: ${msg}`,
       interrupted: 'Model response interrupted',
+      bargeInDetected: 'User speech detected, interrupting model playback',
       callStarted: 'Call established',
       callEnded: (/** @type {string} */ reason) => `Call ended: ${reason}`,
       callError: (/** @type {string} */ msg) => `Call error: ${msg}`,
