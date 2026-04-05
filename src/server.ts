@@ -40,7 +40,11 @@ app.use(express.static(PUBLIC_DIR));
 
 // API Routes
 app.use('/api/auth', authRoutes);
+// Compatibility alias for deployments where upstream rewrites strip `/api`.
+app.use('/auth', authRoutes);
 app.use(ROUTES.API_PREFIX, agentRoutes);
+// Compatibility alias for deployments where upstream rewrites strip `/api`.
+app.use('/', agentRoutes);
 
 // Static Constants for Frontend
 app.get(ROUTES.CONSTANTS_UI_STRINGS, (req: Request, res: Response) => {

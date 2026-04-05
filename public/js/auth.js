@@ -57,8 +57,13 @@ export async function apiPost(endpoint, body) {
 export async function checkAuth() {
   try {
     const res = await fetch(`${API_BASE}/me`, { credentials: 'same-origin' });
-    if (res.ok) {
-      // Already authenticated — redirect to dashboard
+    if (!res.ok) return false;
+
+    // Guard against HTML fallback responses (e.g. mis-routed API calls).
+    // Redirect only when `/me` returns a valid JSON payload with `user`.
+    const data = await res.json().catch(() => null);
+    const hasUser = !!(data && typeof data === 'object' && 'user' in data && data.user);
+    if (hasUser) {
       window.location.href = '/index.html';
       return true;
     }

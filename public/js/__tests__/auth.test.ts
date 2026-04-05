@@ -108,9 +108,28 @@ describe('Auth Logic (auth.js) — 90%+ Exclusive Coverage', () => {
 
   describe('API Operations', () => {
     it('should handle checkAuth redirect and fail cases', async () => {
-      vi.mocked(fetch).mockResolvedValue({ ok: true } as unknown as Response);
-      await checkAuth();
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          user: {
+            id: 'u_1',
+            email: 'test@test.com',
+            name: 'Test User',
+          },
+        }),
+      } as unknown as Response);
+      const successResult = await checkAuth();
+      expect(successResult).toBe(true);
       expect(window.location.href).toBe('/index.html');
+
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new Error('not-json');
+        },
+      } as unknown as Response);
+      const malformedPayloadResult = await checkAuth();
+      expect(malformedPayloadResult).toBe(false);
       
       vi.mocked(fetch).mockRejectedValue(new Error('Network fail'));
       const result = await checkAuth();
