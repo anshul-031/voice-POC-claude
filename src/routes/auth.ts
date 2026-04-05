@@ -12,6 +12,7 @@ import {
 } from '../services/auth.js';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { z } from 'zod';
+import { ROUTES } from '../types/index.js';
 
 const router = Router();
 
@@ -138,7 +139,7 @@ router.post('/forgot-password', async (req: Request, res: Response): Promise<any
     });
 
     // PLACEHOLDER: Log reset link to console (replace with email service)
-    const resetUrl = `${req.protocol}://${req.get('host')}/reset-password.html?token=${token}`;
+    const resetUrl = `${req.protocol}://${req.get('host')}${ROUTES.RESET_PASSWORD_PAGE}?token=${token}`;
     logger.info('Password reset requested', { userId: user.id, resetUrl });
     console.log(`\n🔐 Password Reset Link for ${email}:\n   ${resetUrl}\n`);
 

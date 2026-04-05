@@ -22,7 +22,7 @@ export async function checkAuthAndInit() {
   try {
     const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
     if (!res.ok) {
-      window.location.href = '/login.html';
+      window.location.href = CONFIG.PAGE_PATHS.LOGIN;
       return;
     }
     const data = await res.json();
@@ -32,7 +32,7 @@ export async function checkAuthAndInit() {
     const nameEl = document.getElementById('user-name');
     if (nameEl && data.user) nameEl.textContent = data.user.name;
   } catch (_e) {
-    window.location.href = '/login.html';
+    window.location.href = CONFIG.PAGE_PATHS.LOGIN;
     return;
   }
   
@@ -44,7 +44,7 @@ export async function handleLogout() {
   try {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
   } catch (_e) { /* ignore */ }
-  window.location.href = '/login.html';
+  window.location.href = CONFIG.PAGE_PATHS.LOGIN;
 }
 
 /** @type {any[]} */

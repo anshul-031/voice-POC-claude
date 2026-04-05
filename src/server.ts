@@ -35,12 +35,17 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Serve static frontend
-app.use(express.static(PUBLIC_DIR));
-
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use(ROUTES.API_PREFIX, agentRoutes);
+
+const sendPublicPage = (res: Response, pageFile: string): void => {
+  res.sendFile(join(PUBLIC_DIR, pageFile));
+};
+
+const redirectTo = (res: Response, path: string): void => {
+  res.redirect(301, path);
+};
 
 // Static Constants for Frontend
 app.get(ROUTES.CONSTANTS_UI_STRINGS, (req: Request, res: Response) => {
@@ -57,19 +62,71 @@ app.get(ROUTES.HEALTH_CHECK, (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Landing page as default
-app.get('/', (req: Request, res: Response) => {
-  res.sendFile(join(PUBLIC_DIR, 'landing.html'));
+// Canonical page routes
+app.get(ROUTES.LANDING_PAGE, (req: Request, res: Response) => {
+  sendPublicPage(res, 'landing.html');
+});
+
+app.get(ROUTES.LANDING_ALIAS_PAGE, (req: Request, res: Response) => {
+  redirectTo(res, ROUTES.LANDING_PAGE);
+});
+
+app.get(ROUTES.DASHBOARD_PAGE, (req: Request, res: Response) => {
+  sendPublicPage(res, 'index.html');
+});
+
+app.get(ROUTES.LOGIN_PAGE, (req: Request, res: Response) => {
+  sendPublicPage(res, 'login.html');
+});
+
+app.get(ROUTES.SIGNUP_PAGE, (req: Request, res: Response) => {
+  sendPublicPage(res, 'signup.html');
+});
+
+app.get(ROUTES.FORGOT_PASSWORD_PAGE, (req: Request, res: Response) => {
+  sendPublicPage(res, 'forgot-password.html');
+});
+
+app.get(ROUTES.RESET_PASSWORD_PAGE, (req: Request, res: Response) => {
+  sendPublicPage(res, 'reset-password.html');
+});
+
+// Legacy page URLs
+app.get(ROUTES.LEGACY_LANDING_PAGE, (req: Request, res: Response) => {
+  redirectTo(res, ROUTES.LANDING_PAGE);
+});
+
+app.get(ROUTES.LEGACY_DASHBOARD_PAGE, (req: Request, res: Response) => {
+  redirectTo(res, ROUTES.DASHBOARD_PAGE);
+});
+
+app.get(ROUTES.LEGACY_LOGIN_PAGE, (req: Request, res: Response) => {
+  redirectTo(res, ROUTES.LOGIN_PAGE);
+});
+
+app.get(ROUTES.LEGACY_SIGNUP_PAGE, (req: Request, res: Response) => {
+  redirectTo(res, ROUTES.SIGNUP_PAGE);
+});
+
+app.get(ROUTES.LEGACY_FORGOT_PASSWORD_PAGE, (req: Request, res: Response) => {
+  redirectTo(res, ROUTES.FORGOT_PASSWORD_PAGE);
+});
+
+app.get(ROUTES.LEGACY_RESET_PASSWORD_PAGE, (req: Request, res: Response) => {
+  redirectTo(res, ROUTES.RESET_PASSWORD_PAGE);
 });
 
 // Public preview page with agent id path parameter
 app.get(`${ROUTES.PREVIEW_PAGE}/:agentId`, (req: Request, res: Response) => {
-  res.sendFile(join(PUBLIC_DIR, 'preview.html'));
+  sendPublicPage(res, 'preview.html');
 });
+
+// Serve static frontend assets
+app.use(express.static(PUBLIC_DIR));
 
 // Fallback to SPA (dashboard)
 app.get('*', (req: Request, res: Response) => {
-  res.sendFile(join(PUBLIC_DIR, 'index.html'));
+  sendPublicPage(res, 'index.html');
 });
 
 // Attach WebSocket signaling server

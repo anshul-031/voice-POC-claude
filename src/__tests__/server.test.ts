@@ -96,6 +96,7 @@ describe('Server initialization and Routes', () => {
     const res: any = { 
       json: vi.fn(), 
       sendFile: vi.fn(), 
+      redirect: vi.fn(),
       status: vi.fn().mockReturnThis(),
     };
     
@@ -105,17 +106,40 @@ describe('Server initialization and Routes', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }));
     }
 
-    // Test Landing Page
-    if (routes['/']) {
-      routes['/']({}, res);
-      expect(res.sendFile).toHaveBeenCalled();
-    }
+    // Test canonical page routes + preview + fallback route
+    const sendFileRoutes = [
+      ROUTES.LANDING_PAGE,
+      ROUTES.DASHBOARD_PAGE,
+      ROUTES.LOGIN_PAGE,
+      ROUTES.SIGNUP_PAGE,
+      ROUTES.FORGOT_PASSWORD_PAGE,
+      ROUTES.RESET_PASSWORD_PAGE,
+      `${ROUTES.PREVIEW_PAGE}/:agentId`,
+      '*',
+    ];
+    sendFileRoutes.forEach((path) => {
+      if (routes[path]) {
+        routes[path]({ params: { agentId: 'abc' } }, res);
+      }
+    });
+    expect(res.sendFile).toHaveBeenCalled();
 
-    // Test Public Preview Page Route
-    if (routes[`${ROUTES.PREVIEW_PAGE}/:agentId`]) {
-      routes[`${ROUTES.PREVIEW_PAGE}/:agentId`]({ params: { agentId: 'abc' } }, res);
-      expect(res.sendFile).toHaveBeenCalled();
-    }
+    // Test alias + legacy redirects
+    const redirectRoutes: Array<[string, string]> = [
+      [ROUTES.LANDING_ALIAS_PAGE, ROUTES.LANDING_PAGE],
+      [ROUTES.LEGACY_LANDING_PAGE, ROUTES.LANDING_PAGE],
+      [ROUTES.LEGACY_DASHBOARD_PAGE, ROUTES.DASHBOARD_PAGE],
+      [ROUTES.LEGACY_LOGIN_PAGE, ROUTES.LOGIN_PAGE],
+      [ROUTES.LEGACY_SIGNUP_PAGE, ROUTES.SIGNUP_PAGE],
+      [ROUTES.LEGACY_FORGOT_PASSWORD_PAGE, ROUTES.FORGOT_PASSWORD_PAGE],
+      [ROUTES.LEGACY_RESET_PASSWORD_PAGE, ROUTES.RESET_PASSWORD_PAGE],
+    ];
+    redirectRoutes.forEach(([path, target]) => {
+      if (routes[path]) {
+        routes[path]({}, res);
+        expect(res.redirect).toHaveBeenCalledWith(301, target);
+      }
+    });
 
     const next = vi.fn();
     const reqGet = vi.fn(() => 'vitest-agent');
@@ -143,12 +167,6 @@ describe('Server initialization and Routes', () => {
     }
     if (routes[ROUTES.CONSTANTS_CONFIG]) {
       routes[ROUTES.CONSTANTS_CONFIG]({}, res);
-      expect(res.sendFile).toHaveBeenCalled();
-    }
-
-    // Test Fallback (path '*')
-    if (routes['*']) {
-      routes['*']({}, res);
       expect(res.sendFile).toHaveBeenCalled();
     }
 

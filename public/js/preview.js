@@ -2,6 +2,7 @@
  * Public preview page logic for an agent web call.
  */
 import { UI_STRINGS } from './constants/uiStrings.js';
+import { CONFIG } from './constants/config.js';
 import { applyI18n } from './ui.js';
 import { api } from './api.js';
 import { initWaveform } from './waveform.js';
@@ -125,7 +126,7 @@ function initPreviewPage() {
 
   document.getElementById('btn-back-call')?.addEventListener('click', async () => {
     await endCall();
-    window.location.href = '/landing.html';
+    window.location.href = CONFIG.PAGE_PATHS.LANDING;
   });
 
   window.addEventListener('beforeunload', () => {

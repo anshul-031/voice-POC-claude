@@ -110,7 +110,7 @@ describe('Auth Logic (auth.js) — 90%+ Exclusive Coverage', () => {
     it('should handle checkAuth redirect and fail cases', async () => {
       vi.mocked(fetch).mockResolvedValue({ ok: true } as unknown as Response);
       await checkAuth();
-      expect(window.location.href).toBe('/index.html');
+      expect(window.location.href).toBe('/dashboard');
       
       vi.mocked(fetch).mockRejectedValue(new Error('Network fail'));
       const result = await checkAuth();
@@ -163,7 +163,7 @@ describe('Auth Logic (auth.js) — 90%+ Exclusive Coverage', () => {
       
       document.getElementById('login-form')?.dispatchEvent(new Event('submit'));
       await vi.waitFor(() => {
-        expect(window.location.href).toBe('/index.html');
+        expect(window.location.href).toBe('/dashboard');
       });
     });
 
@@ -223,7 +223,7 @@ describe('Auth Logic (auth.js) — 90%+ Exclusive Coverage', () => {
       
       document.getElementById('signup-form')?.dispatchEvent(new Event('submit'));
       await vi.waitFor(() => {
-        expect(window.location.href).toBe('/index.html');
+        expect(window.location.href).toBe('/dashboard');
       });
     });
 
@@ -320,7 +320,7 @@ describe('Auth Logic (auth.js) — 90%+ Exclusive Coverage', () => {
       });
 
       vi.advanceTimersByTime(2500);
-      expect(window.location.href).toBe('/login.html');
+      expect(window.location.href).toBe('/login');
     });
   });
 });

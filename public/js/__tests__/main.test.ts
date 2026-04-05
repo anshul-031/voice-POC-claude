@@ -82,11 +82,11 @@ describe('Dashboard Logic (main.js) — 90%+ Exclusive Coverage', () => {
       
       vi.mocked(fetch).mockResolvedValue({ ok: false } as unknown as Response);
       await checkAuthAndInit();
-      expect(window.location.href).toBe('/login.html');
+      expect(window.location.href).toBe('/login');
 
       vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
       await checkAuthAndInit();
-      expect(window.location.href).toBe('/login.html');
+      expect(window.location.href).toBe('/login');
     });
 
     it('should handle initDashboard and DOMContentLoaded', () => {
@@ -95,7 +95,7 @@ describe('Dashboard Logic (main.js) — 90%+ Exclusive Coverage', () => {
 
     it('should handle logout', async () => {
       await handleLogout();
-      expect(window.location.href).toBe('/login.html');
+      expect(window.location.href).toBe('/login');
     });
 
     it('should initApp and trigger listeners', async () => {

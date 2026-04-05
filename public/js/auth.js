@@ -2,8 +2,8 @@
  * Auth page handler — login, signup, forgot-password, reset-password.
  * Detects which form is present on the page and wires up the appropriate handler.
  */
-
-const API_BASE = '/api/auth';
+import { CONFIG } from './constants/config.js';
+const API_BASE = `${CONFIG.API_PREFIX}/auth`;
 
 /**
  * @param {string} text 
@@ -59,7 +59,7 @@ export async function checkAuth() {
     const res = await fetch(`${API_BASE}/me`, { credentials: 'same-origin' });
     if (res.ok) {
       // Already authenticated — redirect to dashboard
-      window.location.href = '/index.html';
+      window.location.href = CONFIG.PAGE_PATHS.DASHBOARD;
       return true;
     }
   } catch (_e) { /* not logged in */ }
@@ -120,7 +120,7 @@ export function initLogin() {
 
     try {
       await apiPost('/login', { email, password });
-      window.location.href = '/index.html';
+      window.location.href = CONFIG.PAGE_PATHS.DASHBOARD;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       showMessage(errMsg);
@@ -180,7 +180,7 @@ export function initSignup() {
 
     try {
       await apiPost('/signup', { name, email, password });
-      window.location.href = '/index.html';
+      window.location.href = CONFIG.PAGE_PATHS.DASHBOARD;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       showMessage(errMsg);
@@ -271,7 +271,7 @@ export function initReset() {
     try {
       const data = await apiPost('/reset-password', { token, password });
       showMessage(data.message, 'success');
-      setTimeout(() => { window.location.href = '/login.html'; }, 2000);
+      setTimeout(() => { window.location.href = CONFIG.PAGE_PATHS.LOGIN; }, 2000);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       showMessage(errMsg);
