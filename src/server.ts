@@ -72,12 +72,19 @@ app.get('*', (req: Request, res: Response) => {
   res.sendFile(join(PUBLIC_DIR, 'index.html'));
 });
 
-// Attach WebSocket signaling server
-signalingServer.attach(server);
+// When running on Vercel (serverless), do NOT start a persistent HTTP server
+// or attach WebSocket handlers. Instead export the Express `app` so the
+// serverless runtime can call it per-request. Locally (development / when
+// not on Vercel) we start the HTTP server and attach the WebSocket signaling.
+if (process.env.VERCEL === '1') {
+  // Vercel environment: export `app` (below) and skip listen/attach
+} else {
+  // Attach WebSocket signaling server
+  signalingServer.attach(server);
 
-// Start server
-server.listen(PORT, () => {
-  const startupMsg = `
+  // Start server locally
+  server.listen(PORT, () => {
+    const startupMsg = `
 ${'━'.repeat(56)}
 🎙️  ${UI_STRINGS.header.title} — AI Voice Agent Platform
 ${'━'.repeat(56)}
@@ -92,11 +99,15 @@ ${'─'.repeat(56)}
   📅  Started:    ${new Date().toLocaleString()}
 ${'━'.repeat(56)}
 `;
-  logger.info('Server started', {
-    port: PORT,
-    nodeVersion: process.version,
-    env: process.env.NODE_ENV || 'development',
+    logger.info('Server started', {
+      port: PORT,
+      nodeVersion: process.version,
+      env: process.env.NODE_ENV || 'development',
+    });
+    
+    console.log(startupMsg);
   });
-   
-  console.log(startupMsg);
-});
+}
+
+// Export the Express app so serverless runtimes (Vercel) can consume it.
+export default app;
