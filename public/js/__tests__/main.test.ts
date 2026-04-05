@@ -82,11 +82,11 @@ describe('Dashboard Logic (main.js) — 90%+ Exclusive Coverage', () => {
       
       vi.mocked(fetch).mockResolvedValue({ ok: false } as unknown as Response);
       await checkAuthAndInit();
-      expect(window.location.href).toBe('/login.html');
+      expect(window.location.href).toBe('/login.html?authRedirect=1');
 
       vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
       await checkAuthAndInit();
-      expect(window.location.href).toBe('/login.html');
+      expect(window.location.href).toBe('/login.html?authRedirect=1');
     });
 
     it('should handle initDashboard and DOMContentLoaded', () => {

@@ -4,6 +4,8 @@
  */
 
 const API_BASE = '/api/auth';
+const AUTH_REDIRECT_QUERY_KEY = 'authRedirect';
+const AUTH_REDIRECT_QUERY_VALUE = '1';
 
 /**
  * @param {string} text 
@@ -286,9 +288,12 @@ export function initReset() {
 }
 
 export async function initAuth() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const isAuthRedirectBounce = searchParams.get(AUTH_REDIRECT_QUERY_KEY) === AUTH_REDIRECT_QUERY_VALUE;
+
   // If on login/signup page and already authenticated, redirect
   const isAuthPage = document.getElementById('login-form') || document.getElementById('signup-form');
-  if (isAuthPage) {
+  if (isAuthPage && !isAuthRedirectBounce) {
     const alreadyAuth = await checkAuth();
     if (alreadyAuth) return;
   }

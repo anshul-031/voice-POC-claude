@@ -17,12 +17,14 @@ import {
 } from './previewLinks.js';
 import { renderCallPanelTemplate } from './components/callPanel.js';
 
+const AUTH_REDIRECT_LOGIN_URL = '/login.html?authRedirect=1';
+
 // ── Auth Check ──
 export async function checkAuthAndInit() {
   try {
     const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
     if (!res.ok) {
-      window.location.href = '/login.html';
+      window.location.href = AUTH_REDIRECT_LOGIN_URL;
       return;
     }
     const data = await res.json();
@@ -32,7 +34,7 @@ export async function checkAuthAndInit() {
     const nameEl = document.getElementById('user-name');
     if (nameEl && data.user) nameEl.textContent = data.user.name;
   } catch (_e) {
-    window.location.href = '/login.html';
+    window.location.href = AUTH_REDIRECT_LOGIN_URL;
     return;
   }
   

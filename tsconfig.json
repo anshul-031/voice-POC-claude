@@ -17,6 +17,6 @@
     },
     "types": ["node", "express", "ws", "uuid", "cors", "react", "react-dom"]
   },
-  "include": ["src/**/*.ts", "src/**/*.js", "public/**/*.ts", "public/**/*.js"],
+  "include": ["src/**/*.ts", "src/**/*.js", "public/**/*.ts", "public/**/*.js", "api/**/*.ts"],
   "exclude": ["node_modules", "coverage", "dist"]
 }

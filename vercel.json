@@ -1,21 +1,8 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "src/server.ts",
-      "use": "@vercel/node"
+  "functions": {
+    "api/[...path].ts": {
+      "maxDuration": 30
     }
-  ],
-  "routes": [
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "src/server.ts"
-    }
-  ],
-  "env": {
-    "NODE_ENV": "production"
   }
 }
