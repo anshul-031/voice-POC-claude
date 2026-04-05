@@ -20,6 +20,13 @@ const PUBLIC_DIR = join(process.cwd(), 'public');
 const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || DEFAULT_PORT;
+const IS_SERVERLESS_RUNTIME = Boolean(
+  process.env.VERCEL ||
+    process.env.VERCEL_REGION ||
+    process.env.NOW_REGION ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT,
+);
 
 // Middleware
 app.use(cors());
@@ -76,13 +83,8 @@ app.get('*', (req: Request, res: Response) => {
   res.sendFile(join(PUBLIC_DIR, 'index.html'));
 });
 
-// When running on Vercel (serverless), do NOT start a persistent HTTP server
-// or attach WebSocket handlers. Instead export the Express `app` so the
-// serverless runtime can call it per-request. Locally (development / when
-// not on Vercel) we start the HTTP server and attach the WebSocket signaling.
-if (process.env.VERCEL === '1') {
-  // Vercel environment: export `app` (below) and skip listen/attach
-} else {
+// In serverless runtimes we must not start a long-lived HTTP listener.
+if (!IS_SERVERLESS_RUNTIME) {
   // Attach WebSocket signaling server
   signalingServer.attach(server);
 

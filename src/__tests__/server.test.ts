@@ -55,10 +55,19 @@ vi.mock('../routes/agents.js', () => ({
 
 const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
+function clearServerlessEnv(): void {
+  delete process.env.VERCEL;
+  delete process.env.VERCEL_REGION;
+  delete process.env.NOW_REGION;
+  delete process.env.AWS_LAMBDA_FUNCTION_NAME;
+  delete process.env.LAMBDA_TASK_ROOT;
+}
+
 describe('Server initialization and Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    clearServerlessEnv();
     // Clear routes object
     for (const key in routes) delete routes[key];
     middlewares.length = 0;
@@ -76,6 +85,7 @@ describe('Server initialization and Routes', () => {
 
     // 2. Without any env vars (testing defaults for PORT and NODE_ENV)
     vi.unstubAllEnvs();
+    clearServerlessEnv();
     delete process.env.PORT;
     delete process.env.NODE_ENV;
     delete process.env.GEMINI_API_KEY;
