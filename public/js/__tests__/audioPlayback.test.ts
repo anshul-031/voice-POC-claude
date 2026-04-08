@@ -94,4 +94,71 @@ describe('audioPlayback module', () => {
     await processAudioQueue(context as any, null);
     expect(getIsPlayingAudio()).toBe(false);
   });
+
+  it('resumes suspended audio context before playback', async () => {
+    enqueueAudio('z');
+
+    const sourceNode: any = {
+      buffer: null,
+      connect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      disconnect: vi.fn(),
+      onended: null,
+    };
+
+    const context = {
+      state: 'suspended',
+      destination: {},
+      resume: vi.fn().mockImplementation(async () => {
+        context.state = 'running';
+      }),
+      createBuffer: vi.fn().mockReturnValue({
+        getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),
+      }),
+      createBufferSource: vi.fn().mockReturnValue(sourceNode),
+    };
+
+    await processAudioQueue(context as any, null);
+
+    expect(context.resume).toHaveBeenCalled();
+    expect(sourceNode.start).toHaveBeenCalled();
+  });
+
+  it('requeues chunk when suspended-context resume fails', async () => {
+    enqueueAudio('resume-fail');
+
+    const failingContext = {
+      state: 'suspended',
+      destination: {},
+      resume: vi.fn().mockRejectedValue(new Error('resume blocked')),
+      createBuffer: vi.fn(),
+      createBufferSource: vi.fn(),
+    };
+
+    await processAudioQueue(failingContext as any, null);
+    expect(getIsPlayingAudio()).toBe(false);
+
+    const sourceNode: any = {
+      buffer: null,
+      connect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      disconnect: vi.fn(),
+      onended: null,
+    };
+    const runningContext = {
+      state: 'running',
+      destination: {},
+      resume: vi.fn().mockResolvedValue(undefined),
+      createBuffer: vi.fn().mockReturnValue({
+        getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),
+      }),
+      createBufferSource: vi.fn().mockReturnValue(sourceNode),
+    };
+
+    await processAudioQueue(runningContext as any, null);
+    expect(sourceNode.start).toHaveBeenCalled();
+  });
+
 });

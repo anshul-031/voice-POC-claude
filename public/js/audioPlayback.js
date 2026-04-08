@@ -8,6 +8,74 @@ let currentPlaybackSource = null;
 let speechFrameStreak = 0;
 let lastBargeInAtMs = 0;
 
+/** @param {string | undefined} base64Data @returns {void} */
+function requeueChunkAndStop(base64Data) {
+  if (base64Data) {
+    audioQueue.unshift(base64Data);
+  }
+  isPlayingAudio = false;
+  currentPlaybackSource = null;
+}
+
+/** @returns {void} */
+function clearPlaybackState() {
+  isPlayingAudio = false;
+  currentPlaybackSource = null;
+}
+
+/** @returns {string} */
+function dequeueChunk() {
+  return /** @type {string} */ (audioQueue.shift());
+}
+
+/** @param {AudioContext | null} audioContext @param {string} base64Data @returns {Promise<boolean>} */
+async function ensureAudioContextReady(audioContext, base64Data) {
+  if (!audioContext || audioContext.state === 'closed') {
+    requeueChunkAndStop(base64Data);
+    return false;
+  }
+
+  if (audioContext.state === 'running') {
+    return true;
+  }
+
+  try {
+    await audioContext.resume();
+  } catch (_e) {
+    requeueChunkAndStop(base64Data);
+    return false;
+  }
+
+  return true;
+}
+
+/** @param {string} base64Data @returns {Float32Array} */
+function decodePcmBase64(base64Data) {
+  const binaryString = window.atob(base64Data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+  const int16 = new Int16Array(bytes.buffer);
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
+  return float32;
+}
+
+/** @param {AudioContext} audioContext @param {Float32Array} float32 @returns {AudioBuffer} */
+function createAudioBuffer(audioContext, float32) {
+  const audioBuffer = audioContext.createBuffer(1, float32.length, CONFIG.SAMPLE_RATE_OUTPUT);
+  audioBuffer.getChannelData(0).set(float32);
+  return audioBuffer;
+}
+
+/** @param {AudioContext} audioContext @param {AudioBuffer} audioBuffer @param {AnalyserNode | null} analyserNode @returns {AudioBufferSourceNode} */
+function createPlaybackSource(audioContext, audioBuffer, analyserNode) {
+  const bufferSource = audioContext.createBufferSource();
+  bufferSource.buffer = audioBuffer;
+  bufferSource.connect(audioContext.destination);
+  if (analyserNode) bufferSource.connect(analyserNode);
+  return bufferSource;
+}
+
 /** @returns {boolean} */
 export function hasModelPlayback() {
   return !!currentPlaybackSource || isPlayingAudio || audioQueue.length > 0;
@@ -81,35 +149,20 @@ export function getIsPlayingAudio() {
  */
 export async function processAudioQueue(audioContext, analyserNode, options = {}) {
   if (audioQueue.length === 0) {
-    isPlayingAudio = false;
-    currentPlaybackSource = null;
+    clearPlaybackState();
     return;
   }
 
   isPlayingAudio = true;
-  const base64Data = /** @type {string} */ (audioQueue.shift());
+  const base64Data = dequeueChunk();
 
   try {
-    if (!audioContext || audioContext.state === 'closed') {
-      isPlayingAudio = false;
-      currentPlaybackSource = null;
-      return;
-    }
+    const contextReady = await ensureAudioContextReady(audioContext, base64Data);
+    if (!contextReady || !audioContext) return;
 
-    const binaryString = window.atob(base64Data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-    const int16 = new Int16Array(bytes.buffer);
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
-
-    const audioBuffer = audioContext.createBuffer(1, float32.length, CONFIG.SAMPLE_RATE_OUTPUT);
-    audioBuffer.getChannelData(0).set(float32);
-
-    const bufferSource = audioContext.createBufferSource();
-    bufferSource.buffer = audioBuffer;
-    bufferSource.connect(audioContext.destination);
-    if (analyserNode) bufferSource.connect(analyserNode);
+    const float32 = decodePcmBase64(base64Data);
+    const audioBuffer = createAudioBuffer(audioContext, float32);
+    const bufferSource = createPlaybackSource(audioContext, audioBuffer, analyserNode);
 
     currentPlaybackSource = bufferSource;
     bufferSource.onended = () => {

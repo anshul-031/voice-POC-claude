@@ -15,11 +15,14 @@ import {
   resetAudioPlaybackState,
 } from './audioPlayback.js';
 
+/** @typedef {Window & { webkitAudioContext?: typeof AudioContext }} WindowWithWebkitAudio */
+
 /** @type {AudioContext | null} */ let audioContext = null;
 /** @type {MediaStream | null} */ let mediaStream = null;
 /** @type {ScriptProcessorNode | null} */ let audioProcessor = null;
 /** @type {WebSocket | null} */ let ws = null;
 /** @type {AnalyserNode | null} */ let analyserNode = null;
+let hasPrimedAudioOutput = false;
 
 /**
  * @typedef {Object} CallCallbacks
@@ -46,6 +49,61 @@ let isMuted = false;
 /** @type {number | null} */ let callTimer = null;
 let callSeconds = 0;
 let audioChunksSent = 0;
+
+/** @returns {typeof AudioContext | null} */
+function getAudioContextCtor() {
+  const browserWindow = /** @type {WindowWithWebkitAudio} */ (window);
+  const ContextCtor = globalThis.AudioContext || browserWindow.webkitAudioContext;
+  return ContextCtor || null;
+}
+
+/** @returns {AudioContext | null} */
+function getOrCreateAudioContext() {
+  if (audioContext && audioContext.state !== 'closed') {
+    return audioContext;
+  }
+
+  const ContextCtor = getAudioContextCtor();
+  if (!ContextCtor) return null;
+
+  audioContext = new ContextCtor({ sampleRate: CONFIG.SAMPLE_RATE_INPUT });
+  hasPrimedAudioOutput = false;
+  return audioContext;
+}
+
+/** @param {AudioContext} context @returns {void} */
+function primeAudioOutput(context) {
+  if (hasPrimedAudioOutput) return;
+
+  try {
+    const sampleRate = context.sampleRate || CONFIG.SAMPLE_RATE_INPUT;
+    const unlockBuffer = context.createBuffer(1, CONFIG.AUDIO_UNLOCK_SILENT_FRAME_COUNT, sampleRate);
+    const unlockSource = context.createBufferSource();
+    unlockSource.buffer = unlockBuffer;
+    unlockSource.connect(context.destination);
+    unlockSource.onended = () => {
+      try {
+        unlockSource.disconnect();
+      } catch (_e) { /* ignore */ }
+    };
+    unlockSource.start(0);
+    hasPrimedAudioOutput = true;
+  } catch (_e) { /* ignore */ }
+}
+
+/** @returns {void} */
+function primeAudioOutputOnUserGesture() {
+  const context = getOrCreateAudioContext();
+  if (!context) return;
+
+  if (context.state !== 'running') {
+    context.resume().catch(() => {
+      // Ignore resume failures; playback path retries resume before starting buffers.
+    });
+  }
+
+  primeAudioOutput(context);
+}
 
 /** @returns {string} */
 function createRunId() {
@@ -85,7 +143,10 @@ export function getCallState() {
 /** @param {string | null} agentId @param {CallCallbacks} callbacks @returns {Promise<void>} */
 export async function toggleCall(agentId, callbacks) {
   if (isInCall) await endCall();
-  else await startCall(agentId, callbacks);
+  else {
+    primeAudioOutputOnUserGesture();
+    await startCall(agentId, callbacks);
+  }
 }
 
 /** @param {Float32Array} inputData @returns {void} */
@@ -237,11 +298,14 @@ export async function startCall(agentId, callbacks) {
   callbacks.onStatusChange(UI_STRINGS.callPanel.connecting, 'connecting');
 
   try {
-    const ContextCtor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-    audioContext = new ContextCtor({ sampleRate: CONFIG.SAMPLE_RATE_INPUT });
-    if (audioContext.state === 'suspended') {
+    audioContext = getOrCreateAudioContext();
+    if (!audioContext) {
+      throw new Error(UI_STRINGS.toasts.connectionError);
+    }
+    if (audioContext.state !== 'running') {
       await audioContext.resume();
     }
+    primeAudioOutput(audioContext);
     appendDebugLog(UI_STRINGS.signaling.logs.micRequesting, 'info');
 
     const micReadyStart = Date.now();
@@ -370,6 +434,7 @@ export async function endCall() {
   }
   await closeAudioContextIfNeeded();
   audioContext = null;
+  hasPrimedAudioOutput = false;
   analyserNode = null;
   audioChunksSent = 0;
   stopTimer();
@@ -412,6 +477,7 @@ export function resetState() {
   resetAudioPlaybackState();
   ws = null;
   audioContext = null;
+  hasPrimedAudioOutput = false;
   audioProcessor = null;
   mediaStream = null;
   analyserNode = null;

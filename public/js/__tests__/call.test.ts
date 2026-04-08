@@ -197,6 +197,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       expect(getWs()).toBe(null);
 
       // test webkitAudioContext fallback branch
+      resetState();
       vi.stubGlobal('navigator', {
         mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn(), enabled: true }] }) }
       });
@@ -206,6 +207,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       window.AudioContext = tempAudio;
 
       // test getUserMedia rejection
+      resetState();
       vi.stubGlobal('navigator', {
         mediaDevices: {
           getUserMedia: vi.fn().mockRejectedValue('string error fallback')
@@ -214,12 +216,14 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       await startCall('a1', mockCallbacks);
 
       // test createRunId fallback when randomUUID is unavailable
+      resetState();
       const originalCrypto = globalThis.crypto;
       vi.stubGlobal('crypto', {} as Crypto);
       await startCall('a1', mockCallbacks);
       vi.stubGlobal('crypto', originalCrypto);
 
       // test setupAudioGraph early return when media stream is not available
+      resetState();
       vi.stubGlobal('navigator', {
         mediaDevices: {
           getUserMedia: vi.fn().mockResolvedValue(null),
@@ -228,6 +232,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       await startCall('a1', mockCallbacks);
 
       // test audioContext suspended state branch
+      resetState();
       class SuspendedAudioContext {
         createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn() });
         createAnalyser = vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256 });
@@ -246,6 +251,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       await startCall('a1', mockCallbacks);
       
       // test again with Error
+      resetState();
       vi.stubGlobal('navigator', {
         mediaDevices: {
           getUserMedia: vi.fn().mockRejectedValue(new Error('fail'))
