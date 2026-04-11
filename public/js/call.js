@@ -16,6 +16,7 @@ import {
 } from './audioPlayback.js';
 
 /** @typedef {Window & { webkitAudioContext?: typeof AudioContext }} WindowWithWebkitAudio */
+/** @typedef {Navigator & { audioSession?: { type?: string } }} NavigatorWithAudioSession */
 
 /** @type {AudioContext | null} */ let audioContext = null;
 /** @type {MediaStream | null} */ let mediaStream = null;
@@ -23,6 +24,8 @@ import {
 /** @type {WebSocket | null} */ let ws = null;
 /** @type {AnalyserNode | null} */ let analyserNode = null;
 let hasPrimedAudioOutput = false;
+let audioContextResumeFailures = 0;
+let hasShownAudioRecoveryToast = false;
 
 /**
  * @typedef {Object} CallCallbacks
@@ -77,6 +80,74 @@ function getOrCreateAudioContext() {
   return audioContext;
 }
 
+/** @returns {Promise<void>} */
+function waitForAudioContextResumeRetry() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, CONFIG.AUDIO_CONTEXT_RESUME_RETRY_DELAY_MS);
+  });
+}
+
+/** @param {unknown} error @returns {string} */
+function getErrorMessage(error) {
+  if (error instanceof Error) {
+    return error.message || UI_STRINGS.toasts.connectionError;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  return UI_STRINGS.toasts.connectionError;
+}
+
+/** @param {AudioContext} context @returns {boolean} */
+function isAudioContextRunning(context) {
+  return /** @type {string} */ (context.state) === 'running';
+}
+
+/** @param {AudioContext} context @returns {Promise<boolean>} */
+async function resumeAudioContextWithRetries(context) {
+  if (isAudioContextRunning(context)) {
+    appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeSuccess(context.state), 'info');
+    return true;
+  }
+
+  for (let attempt = 1; attempt <= CONFIG.AUDIO_CONTEXT_RESUME_MAX_ATTEMPTS; attempt++) {
+    appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeAttempt(attempt), 'info');
+    try {
+      await context.resume();
+      if (isAudioContextRunning(context)) {
+        appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeSuccess(context.state), 'info');
+        return true;
+      }
+      appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeFailed('AudioContext remained suspended'), 'warn');
+    } catch (error) {
+      appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeFailed(getErrorMessage(error)), 'warn');
+    }
+
+    if (attempt < CONFIG.AUDIO_CONTEXT_RESUME_MAX_ATTEMPTS) {
+      await waitForAudioContextResumeRetry();
+    }
+  }
+
+  return false;
+}
+
+/** @returns {void} */
+function configureAudioSessionForCall() {
+  const browserNavigator = /** @type {NavigatorWithAudioSession} */ (navigator);
+  if (!browserNavigator.audioSession) {
+    return;
+  }
+
+  try {
+    browserNavigator.audioSession.type = CONFIG.IOS_AUDIO_SESSION_TYPE;
+    appendDebugLog(UI_STRINGS.signaling.logs.audioSessionConfigured(CONFIG.IOS_AUDIO_SESSION_TYPE), 'info');
+  } catch (error) {
+    appendDebugLog(UI_STRINGS.signaling.logs.audioSessionConfigFailed(getErrorMessage(error)), 'warn');
+  }
+}
+
 /** @param {AudioContext} context @returns {void} */
 function primeAudioOutput(context) {
   if (hasPrimedAudioOutput) return;
@@ -102,13 +173,16 @@ function primeAudioOutputOnUserGesture() {
   const context = getOrCreateAudioContext();
   if (!context) return;
 
-  if (context.state !== 'running') {
-    context.resume().catch(() => {
-      // Ignore resume failures; playback path retries resume before starting buffers.
-    });
-  }
+  appendDebugLog(UI_STRINGS.signaling.logs.audioContextInitState(context.state), 'info');
+  void resumeAudioContextWithRetries(context);
 
   primeAudioOutput(context);
+  appendDebugLog(UI_STRINGS.signaling.logs.audioOutputPrimed, 'info');
+}
+
+/** @returns {void} */
+export function prepareAudioPlaybackOnGesture() {
+  primeAudioOutputOnUserGesture();
 }
 
 /** @returns {string} */
@@ -205,7 +279,7 @@ export function getCallState() {
 export async function toggleCall(agentId, callbacks) {
   if (isInCall) await endCall();
   else {
-    primeAudioOutputOnUserGesture();
+    prepareAudioPlaybackOnGesture();
     await startCall(agentId, callbacks);
   }
 }
@@ -369,16 +443,22 @@ export async function startCall(agentId, callbacks) {
   }
 
   callbacks.onStatusChange(UI_STRINGS.callPanel.connecting, 'connecting');
+  audioContextResumeFailures = 0;
+  hasShownAudioRecoveryToast = false;
 
   try {
     audioContext = getOrCreateAudioContext();
     if (!audioContext) {
       throw new Error(UI_STRINGS.signaling.errors.audioContextUnsupported);
     }
-    if (audioContext.state !== 'running') {
-      await audioContext.resume();
+    appendDebugLog(UI_STRINGS.signaling.logs.audioContextInitState(audioContext.state), 'info');
+    configureAudioSessionForCall();
+    const contextRunning = await resumeAudioContextWithRetries(audioContext);
+    if (!contextRunning) {
+      appendDebugLog(UI_STRINGS.signaling.logs.playbackResumeBlocked, 'warn');
     }
     primeAudioOutput(audioContext);
+    appendDebugLog(UI_STRINGS.signaling.logs.audioOutputPrimed, 'info');
     appendDebugLog(UI_STRINGS.signaling.logs.micRequesting, 'info');
 
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
@@ -468,9 +548,31 @@ export function playAudioResponse(base64Data) {
 export async function processAudioQueue() {
   await processPlaybackQueue(audioContext, analyserNode, {
     onPlaybackStarted: () => {
+      audioContextResumeFailures = 0;
+      hasShownAudioRecoveryToast = false;
       if (!startupTrace || startupTrace.firstPlaybackLogged) return;
       startupTrace.firstPlaybackLogged = true;
       appendDebugLog(UI_STRINGS.signaling.logs.firstPlaybackElapsed(getStartupElapsedMs()), 'info');
+    },
+    onContextResumeFailure: (attempt, error) => {
+      audioContextResumeFailures++;
+      appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeAttempt(attempt), 'warn');
+      appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeFailed(getErrorMessage(error)), 'warn');
+
+      if (
+        hasShownAudioRecoveryToast
+        || audioContextResumeFailures < CONFIG.AUDIO_CONTEXT_FAILURE_TOAST_THRESHOLD
+      ) {
+        return;
+      }
+
+      hasShownAudioRecoveryToast = true;
+      appendDebugLog(UI_STRINGS.signaling.logs.playbackResumeBlocked, 'warn');
+      appendDebugLog(
+        UI_STRINGS.signaling.logs.startCallRecoveryHint(UI_STRINGS.signaling.recovery.tapCallToEnableAudio),
+        'warn',
+      );
+      showToast(UI_STRINGS.toasts.audioPlaybackNeedsGesture, 'info');
     },
   });
 }
@@ -506,6 +608,8 @@ export async function endCall() {
   await closeAudioContextIfNeeded();
   audioContext = null;
   hasPrimedAudioOutput = false;
+  audioContextResumeFailures = 0;
+  hasShownAudioRecoveryToast = false;
   analyserNode = null;
   audioChunksSent = 0;
   stopTimer();
@@ -549,6 +653,8 @@ export function resetState() {
   ws = null;
   audioContext = null;
   hasPrimedAudioOutput = false;
+  audioContextResumeFailures = 0;
+  hasShownAudioRecoveryToast = false;
   audioProcessor = null;
   mediaStream = null;
   analyserNode = null;

@@ -36,6 +36,11 @@ describe('audioPlayback module', () => {
     const context = {
       state: 'running',
       destination: {},
+      createGain: vi.fn().mockReturnValue({
+        gain: { value: 0 },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      }),
       createBuffer: vi.fn().mockReturnValue({
         getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),
       }),
@@ -98,6 +103,11 @@ describe('audioPlayback module', () => {
     const context = {
       state: 'running',
       destination: {},
+      createGain: vi.fn().mockReturnValue({
+        gain: { value: 0 },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      }),
       createBuffer: vi.fn().mockReturnValue({
         getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),
       }),
@@ -123,6 +133,11 @@ describe('audioPlayback module', () => {
     const context = {
       state: 'suspended',
       destination: {},
+      createGain: vi.fn().mockReturnValue({
+        gain: { value: 0 },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      }),
       resume: vi.fn().mockImplementation(async () => {
         context.state = 'running';
       }),
@@ -144,6 +159,11 @@ describe('audioPlayback module', () => {
     const failingContext = {
       state: 'suspended',
       destination: {},
+      createGain: vi.fn().mockReturnValue({
+        gain: { value: 0 },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      }),
       resume: vi.fn().mockRejectedValue(new Error('resume blocked')),
       createBuffer: vi.fn(),
       createBufferSource: vi.fn(),
@@ -163,6 +183,11 @@ describe('audioPlayback module', () => {
     const runningContext = {
       state: 'running',
       destination: {},
+      createGain: vi.fn().mockReturnValue({
+        gain: { value: 0 },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      }),
       resume: vi.fn().mockResolvedValue(undefined),
       createBuffer: vi.fn().mockReturnValue({
         getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),

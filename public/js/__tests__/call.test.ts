@@ -3,8 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  toggleCall, getCallState, toggleMute, handleWsMessage, startTimer, stopTimer, playAudioResponse, startCall,
-  resetState, getWs, getAudioProcessor, getAudioContext, processAudioQueue,
+  toggleCall, getCallState, toggleMute, handleWsMessage, startTimer, stopTimer, playAudioResponse, startCall, resetState, getWs, getAudioProcessor, getAudioContext, processAudioQueue,
 } from '../call.js';
 import { MESSAGE_TYPE } from '../constants/config.js';
 
@@ -56,6 +55,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
 
     const mockAudioContextInstance = {
       createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
+      createGain: vi.fn().mockReturnValue({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }),
       createBiquadFilter: vi.fn().mockReturnValue({
         type: 'highpass',
         frequency: { value: 0 },
@@ -156,7 +156,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       const ws = getWs() as any;
       expect(ws).not.toBeNull();
       if (ws) ws.readyState = 1;
-      
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
       expect(getCallState().isInCall).toBe(true);
 
@@ -164,7 +163,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
         inputBuffer: { getChannelData: () => new Float32Array(1024) },
       });
       expect(ws?.send).toHaveBeenCalled();
-
       toggleMute();
       vi.mocked(ws?.send).mockClear();
       sp?.onaudioprocess?.({
@@ -173,7 +171,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       expect(ws?.send).not.toHaveBeenCalled();
     });
   });
-
   describe('Edge Cases', () => {
     it('should handle toggleCall', async () => {
       await toggleCall('a1', mockCallbacks);
@@ -224,12 +221,15 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       resetState();
       class SuspendedAudioContext {
         createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn() });
+        createGain = vi.fn().mockReturnValue({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() });
         createAnalyser = vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256 });
         createScriptProcessor = vi.fn().mockReturnValue({ connect: vi.fn(), onaudioprocess: null, disconnect: vi.fn() });
         destination = {};
         close = vi.fn().mockResolvedValue(undefined);
         state = 'suspended';
-        resume = vi.fn().mockResolvedValue(undefined);
+        resume = vi.fn().mockImplementation(async () => {
+          this.state = 'running';
+        });
       }
       vi.stubGlobal('AudioContext', SuspendedAudioContext as unknown as typeof AudioContext);
       vi.stubGlobal('navigator', {

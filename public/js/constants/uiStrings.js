@@ -86,6 +86,7 @@ export const UI_STRINGS = {
     agentDeleted: 'Agent deleted',
     callStarted: (/** @type {string} */ name) => `Call started with ${name}`,
     callStartFailed: (/** @type {string} */ reason) => `Failed to start call: ${reason}`,
+    audioPlaybackNeedsGesture: 'Tap the call button again to re-enable audio playback.',
     connectionError: 'Connection error',
     previewUrlCopied: 'Preview URL copied',
   },
@@ -133,6 +134,8 @@ export const UI_STRINGS = {
         + 'or try another device/browser.',
       generic: 'Please enable required microphone and speaker permissions, then retry. '
         + 'If issue persists, try another mobile browser or use a laptop.',
+      tapCallToEnableAudio: 'Playback was blocked by browser audio policy. '
+        + 'Tap the call button again to re-enable audio output.',
     },
     logs: {
       callInit: 'Initializing call',
@@ -142,6 +145,13 @@ export const UI_STRINGS = {
       startupFailed: (/** @type {number} */ elapsedMs) => `Startup failed after ${elapsedMs}ms`,
       micReady: 'Microphone stream ready',
       micRequesting: 'Requesting microphone access',
+      audioContextInitState: (/** @type {string} */ state) => `Audio context state on init: ${state}`,
+      audioContextResumeAttempt: (/** @type {number} */ attempt) => `Audio context resume attempt ${attempt}`,
+      audioContextResumeSuccess: (/** @type {string} */ state) => `Audio context resumed (${state})`,
+      audioContextResumeFailed: (/** @type {string} */ message) => `Audio context resume failed: ${message}`,
+      audioOutputPrimed: 'Audio output primed from user gesture',
+      audioSessionConfigured: (/** @type {string} */ mode) => `Audio session configured (${mode})`,
+      audioSessionConfigFailed: (/** @type {string} */ message) => `Audio session config failed: ${message}`,
       micReadyElapsed: (/** @type {number} */ elapsedMs) => `Microphone ready in ${elapsedMs}ms`,
       wsConnecting: 'Connecting to signaling server',
       wsOpen: 'Signaling socket connected',
@@ -159,6 +169,7 @@ export const UI_STRINGS = {
       firstInboundAudioElapsed: (/** @type {number} */ elapsedMs) => `First inbound audio received in ${elapsedMs}ms`,
       firstInboundTranscriptElapsed: (/** @type {number} */ elapsedMs) => `First inbound transcript in ${elapsedMs}ms`,
       firstPlaybackElapsed: (/** @type {number} */ elapsedMs) => `First playback started in ${elapsedMs}ms`,
+      playbackResumeBlocked: 'Playback blocked by suspended audio context',
       callEndCleanup: 'Cleaning up call resources',
       callEndComplete: 'Call cleanup completed',
       startCallFailed: (/** @type {string} */ msg) => `Start call failed: ${msg}`,

@@ -6,7 +6,12 @@ import { CONFIG } from './constants/config.js';
 import { applyI18n } from './ui.js';
 import { api } from './api.js';
 import { initWaveform } from './waveform.js';
-import { toggleCall, endCall, toggleMute as callToggleMute } from './call.js';
+import {
+  toggleCall,
+  endCall,
+  toggleMute as callToggleMute,
+  prepareAudioPlaybackOnGesture,
+} from './call.js';
 import { showToast } from './utils.js';
 import { appendTranscript, clearDebugLogs } from './transcript.js';
 import { renderCallPanelTemplate } from './components/callPanel.js';
@@ -117,10 +122,20 @@ function initPreviewPage() {
 
   previewAgentId = getAgentIdFromUrl();
 
-  document.getElementById('btn-call')?.addEventListener('click', () => {
-    if (!previewAgentId) return;
-    toggleCall(previewAgentId, callCallbacks);
-  });
+  const btnCall = document.getElementById('btn-call');
+  if (btnCall) {
+    const primeAudio = () => {
+      prepareAudioPlaybackOnGesture();
+    };
+    btnCall.addEventListener('pointerdown', primeAudio);
+    btnCall.addEventListener('touchstart', primeAudio, { passive: true });
+    btnCall.addEventListener('mousedown', primeAudio);
+    btnCall.addEventListener('click', () => {
+      if (!previewAgentId) return;
+      primeAudio();
+      toggleCall(previewAgentId, callCallbacks);
+    });
+  }
 
   document.getElementById('btn-mute')?.addEventListener('click', toggleMute);
 

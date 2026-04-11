@@ -15,6 +15,7 @@ vi.mock('../call.js', () => ({
   toggleCall: vi.fn(),
   endCall: vi.fn().mockResolvedValue(undefined),
   toggleMute: vi.fn(() => true),
+  prepareAudioPlaybackOnGesture: vi.fn(),
 }));
 
 vi.mock('../api.js', () => ({

@@ -6,15 +6,12 @@ import { CONFIG } from './constants/config.js';
 import { applyI18n, showPanel } from './ui.js';
 import { api, checkApiHealth } from './api.js';
 import { initWaveform } from './waveform.js';
-import { toggleCall, endCall, toggleMute as callToggleMute } from './call.js';
+import { toggleCall, endCall, toggleMute as callToggleMute, prepareAudioPlaybackOnGesture } from './call.js';
 import { showToast } from './utils.js';
 import { appendTranscript, selectVoiceInGrid, clearDebugLogs } from './transcript.js';
 import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
 import { renderVoiceGrid, renderModelSelect, renderAgentList } from './render.js';
-import {
-  copyPreviewUrl as copyPreviewUrlToClipboard,
-  togglePublicPreview as togglePublicPreviewRequest,
-} from './previewLinks.js';
+import { copyPreviewUrl as copyPreviewUrlToClipboard, togglePublicPreview as togglePublicPreviewRequest } from './previewLinks.js';
 import { renderCallPanelTemplate } from './components/callPanel.js';
 
 // ── Auth Check ──
@@ -35,7 +32,6 @@ export async function checkAuthAndInit() {
     window.location.href = CONFIG.PAGE_PATHS.LOGIN;
     return;
   }
-  
   // Continue initialization
   initApp();
 }
@@ -74,24 +70,27 @@ export function initApp() {
   loadModels();
   loadAgents();
   checkApiHealth();
-  
+
   const callPanelContainer = document.getElementById('call-panel');
   if (callPanelContainer) {
     callPanelContainer.innerHTML = renderCallPanelTemplate({ hideDetails: false });
   }
-  
+
   initWaveform();
-  
+
   // Set up event listeners
   document.getElementById('btn-new-agent')?.addEventListener('click', showCreateForm);
   document.getElementById('agent-form')?.addEventListener('submit', handleSubmit);
   document.getElementById('btn-mute')?.addEventListener('click', toggleMute);
   const btnCall = document.getElementById('btn-call');
   if (btnCall) {
+    const primeAudio = () => prepareAudioPlaybackOnGesture();
+    btnCall.addEventListener('pointerdown', primeAudio);
+    btnCall.addEventListener('touchstart', primeAudio, { passive: true });
+    btnCall.addEventListener('mousedown', primeAudio);
     btnCall.addEventListener('click', () => {
-      if (currentCallAgentId) {
-        toggleCall(currentCallAgentId, callCallbacks);
-      }
+      primeAudio();
+      if (currentCallAgentId) toggleCall(currentCallAgentId, callCallbacks);
     });
   }
   document.getElementById('btn-back-call')?.addEventListener('click', hideCallPanel);
@@ -147,8 +146,6 @@ export async function loadAgents() {
     );
   }
 }
-
-
 // ── Callbacks for call.js ──
 export const callCallbacks = {
   /**
@@ -182,7 +179,6 @@ export const callCallbacks = {
    */
   onTranscript: (role, text) => appendTranscript(role, text),
 };
-
 // ── Event Handlers ──
 /**
  * @param {string} id 

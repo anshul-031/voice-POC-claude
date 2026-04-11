@@ -5,6 +5,10 @@ const audioQueue = [];
 let isPlayingAudio = false;
 /** @type {AudioBufferSourceNode | null} */
 let currentPlaybackSource = null;
+/** @type {GainNode | null} */
+let playbackGainNode = null;
+/** @type {AudioContext | null} */
+let playbackGainNodeContext = null;
 let speechFrameStreak = 0;
 let lastBargeInAtMs = 0;
 let adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
@@ -29,8 +33,88 @@ function dequeueChunk() {
   return /** @type {string} */ (audioQueue.shift());
 }
 
-/** @param {AudioContext | null} audioContext @param {string} base64Data @returns {Promise<boolean>} */
-async function ensureAudioContextReady(audioContext, base64Data) {
+/** @returns {Promise<void>} */
+function waitForResumeRetryDelay() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, CONFIG.AUDIO_CONTEXT_RESUME_RETRY_DELAY_MS);
+  });
+}
+
+/** @param {AudioContext} audioContext @returns {GainNode} */
+function getOrCreatePlaybackGainNode(audioContext) {
+  if (playbackGainNode && playbackGainNodeContext === audioContext) {
+    return playbackGainNode;
+  }
+
+  if (playbackGainNode) {
+    try {
+      playbackGainNode.disconnect();
+    } catch (_e) { /* ignore */ }
+  }
+
+  playbackGainNode = audioContext.createGain();
+  playbackGainNode.gain.value = 1;
+  playbackGainNode.connect(audioContext.destination);
+  playbackGainNodeContext = audioContext;
+
+  return playbackGainNode;
+}
+
+/** @returns {void} */
+function resetPlaybackGainNode() {
+  if (playbackGainNode) {
+    try {
+      playbackGainNode.disconnect();
+    } catch (_e) { /* ignore */ }
+  }
+  playbackGainNode = null;
+  playbackGainNodeContext = null;
+}
+
+/**
+ * @typedef {Object} AudioContextReadyOptions
+ * @property {(attempt: number, error: unknown) => void} [onResumeAttemptFailed]
+ */
+
+/**
+ * @param {AudioContextReadyOptions} options
+ * @param {number} attempt
+ * @param {unknown} error
+ * @returns {void}
+ */
+function notifyResumeAttemptFailed(options, attempt, error) {
+  if (options.onResumeAttemptFailed) {
+    options.onResumeAttemptFailed(attempt, error);
+  }
+}
+
+/**
+ * @param {AudioContext} audioContext
+ * @param {number} attempt
+ * @param {AudioContextReadyOptions} options
+ * @returns {Promise<boolean>}
+ */
+async function resumeAudioContextAttempt(audioContext, attempt, options) {
+  try {
+    await audioContext.resume();
+    if (audioContext.state === 'running') {
+      return true;
+    }
+    notifyResumeAttemptFailed(options, attempt, new Error('AudioContext remained suspended'));
+  } catch (error) {
+    notifyResumeAttemptFailed(options, attempt, error);
+  }
+
+  return false;
+}
+
+/**
+ * @param {AudioContext | null} audioContext
+ * @param {string} base64Data
+ * @param {AudioContextReadyOptions} [options]
+ * @returns {Promise<boolean>}
+ */
+async function ensureAudioContextReady(audioContext, base64Data, options = {}) {
   if (!audioContext || audioContext.state === 'closed') {
     requeueChunkAndStop(base64Data);
     return false;
@@ -40,14 +124,17 @@ async function ensureAudioContextReady(audioContext, base64Data) {
     return true;
   }
 
-  try {
-    await audioContext.resume();
-  } catch (_e) {
-    requeueChunkAndStop(base64Data);
-    return false;
+  for (let attempt = 1; attempt <= CONFIG.AUDIO_CONTEXT_RESUME_MAX_ATTEMPTS; attempt++) {
+    const isReady = await resumeAudioContextAttempt(audioContext, attempt, options);
+    if (isReady) return true;
+
+    if (attempt < CONFIG.AUDIO_CONTEXT_RESUME_MAX_ATTEMPTS) {
+      await waitForResumeRetryDelay();
+    }
   }
 
-  return true;
+  requeueChunkAndStop(base64Data);
+  return false;
 }
 
 /** @param {string} base64Data @returns {Float32Array} */
@@ -72,7 +159,8 @@ function createAudioBuffer(audioContext, float32) {
 function createPlaybackSource(audioContext, audioBuffer, analyserNode) {
   const bufferSource = audioContext.createBufferSource();
   bufferSource.buffer = audioBuffer;
-  bufferSource.connect(audioContext.destination);
+  const gainNode = getOrCreatePlaybackGainNode(audioContext);
+  bufferSource.connect(gainNode);
   if (analyserNode) bufferSource.connect(analyserNode);
   return bufferSource;
 }
@@ -163,6 +251,7 @@ export function getIsPlayingAudio() {
 /**
  * @typedef {Object} PlaybackQueueOptions
  * @property {() => void} [onPlaybackStarted]
+ * @property {(attempt: number, error: unknown) => void} [onContextResumeFailure]
  */
 
 /**
@@ -181,7 +270,9 @@ export async function processAudioQueue(audioContext, analyserNode, options = {}
   const base64Data = dequeueChunk();
 
   try {
-    const contextReady = await ensureAudioContextReady(audioContext, base64Data);
+    const contextReady = await ensureAudioContextReady(audioContext, base64Data, {
+      onResumeAttemptFailed: options.onContextResumeFailure,
+    });
     if (!contextReady || !audioContext) return;
 
     const float32 = decodePcmBase64(base64Data);
@@ -208,6 +299,7 @@ export async function processAudioQueue(audioContext, analyserNode, options = {}
 /** @returns {void} */
 export function resetAudioPlaybackState() {
   interruptModelPlayback();
+  resetPlaybackGainNode();
   speechFrameStreak = 0;
   lastBargeInAtMs = 0;
   adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
