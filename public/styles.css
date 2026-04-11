@@ -747,6 +747,19 @@ body::before {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+.call-status.error {
+  width: min(100%, 340px);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fee2e2;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  font-weight: 600;
+  text-align: left;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }

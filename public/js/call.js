@@ -41,6 +41,12 @@ let hasPrimedAudioOutput = false;
  * @property {boolean} firstPlaybackLogged
  */
 
+/**
+ * @typedef {Object} StartupErrorInfo
+ * @property {string} name
+ * @property {string} message
+ */
+
 /** @type {StartupTrace | null} */
 let startupTrace = null;
 
@@ -133,6 +139,61 @@ function withTimeout(promise, timeoutMs, timeoutError) {
         reject(error);
       });
   });
+}
+
+/** @type {Record<string, string>} */
+const CALL_START_RECOVERY_BY_ERROR_NAME = {
+  [CONFIG.CALL_START_ERROR_NAMES.PERMISSION_DENIED]: UI_STRINGS.signaling.recovery.permissionRequired,
+  [CONFIG.CALL_START_ERROR_NAMES.PERMISSION_DISMISSED]: UI_STRINGS.signaling.recovery.permissionRequired,
+  [CONFIG.CALL_START_ERROR_NAMES.DEVICE_NOT_FOUND]: UI_STRINGS.signaling.recovery.noMicrophone,
+  [CONFIG.CALL_START_ERROR_NAMES.DEVICE_NOT_READABLE]: UI_STRINGS.signaling.recovery.microphoneBusy,
+  [CONFIG.CALL_START_ERROR_NAMES.CONSTRAINT_FAILED]: UI_STRINGS.signaling.recovery.noMicrophone,
+  [CONFIG.CALL_START_ERROR_NAMES.SECURITY]: UI_STRINGS.signaling.recovery.secureContextRequired,
+  [CONFIG.CALL_START_ERROR_NAMES.UNSUPPORTED]: UI_STRINGS.signaling.recovery.browserUnsupported,
+};
+
+/** @type {Record<string, string>} */
+const CALL_START_RECOVERY_BY_MESSAGE = {
+  [UI_STRINGS.signaling.errors.wsConnectTimeout]: UI_STRINGS.signaling.recovery.networkIssue,
+  [UI_STRINGS.toasts.connectionError]: UI_STRINGS.signaling.recovery.networkIssue,
+  [UI_STRINGS.signaling.errors.micAccessTimeout]: UI_STRINGS.signaling.recovery.permissionRequired,
+  [UI_STRINGS.signaling.errors.mediaDevicesUnsupported]: UI_STRINGS.signaling.recovery.browserUnsupported,
+  [UI_STRINGS.signaling.errors.audioContextUnsupported]: UI_STRINGS.signaling.recovery.browserUnsupported,
+};
+
+/** @param {unknown} error @returns {StartupErrorInfo} */
+function normalizeStartupError(error) {
+  if (error instanceof Error) {
+    return {
+      name: error.name || '',
+      message: error.message || UI_STRINGS.toasts.connectionError,
+    };
+  }
+
+  if (typeof error === 'string') {
+    return { name: '', message: error };
+  }
+
+  return { name: '', message: UI_STRINGS.toasts.connectionError };
+}
+
+/** @param {StartupErrorInfo} errorInfo @returns {string} */
+function getCallStartRecoveryHint(errorInfo) {
+  return CALL_START_RECOVERY_BY_ERROR_NAME[errorInfo.name]
+    || CALL_START_RECOVERY_BY_MESSAGE[errorInfo.message]
+    || UI_STRINGS.signaling.recovery.generic;
+}
+
+/** @param {unknown} error @param {CallCallbacks} callbacks @returns {void} */
+function handleCallStartFailure(error, callbacks) {
+  const errorInfo = normalizeStartupError(error);
+  const recoveryHint = getCallStartRecoveryHint(errorInfo);
+
+  appendDebugLog(UI_STRINGS.signaling.logs.startupFailed(getStartupElapsedMs()), 'error');
+  appendDebugLog(UI_STRINGS.signaling.logs.startCallFailed(errorInfo.message), 'error');
+  appendDebugLog(UI_STRINGS.signaling.logs.startCallRecoveryHint(recoveryHint), 'warn');
+  callbacks.onStatusChange(UI_STRINGS.toasts.callStartFailed(recoveryHint), 'error');
+  showToast(UI_STRINGS.toasts.callStartFailed(recoveryHint), 'error');
 }
 
 /** @returns {{isInCall: boolean, isMuted: boolean, callSeconds: number}} */
@@ -300,13 +361,17 @@ export async function startCall(agentId, callbacks) {
   try {
     audioContext = getOrCreateAudioContext();
     if (!audioContext) {
-      throw new Error(UI_STRINGS.toasts.connectionError);
+      throw new Error(UI_STRINGS.signaling.errors.audioContextUnsupported);
     }
     if (audioContext.state !== 'running') {
       await audioContext.resume();
     }
     primeAudioOutput(audioContext);
     appendDebugLog(UI_STRINGS.signaling.logs.micRequesting, 'info');
+
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      throw new Error(UI_STRINGS.signaling.errors.mediaDevicesUnsupported);
+    }
 
     const micReadyStart = Date.now();
     const mediaPromise = withTimeout(
@@ -324,10 +389,7 @@ export async function startCall(agentId, callbacks) {
     );
     const socketPromise = setupSocket(callInputParse.data.agentId, callbacks);
     socketPromise.catch((socketError) => {
-      const socketErrMsg = socketError instanceof Error ? socketError.message : String(socketError);
-      appendDebugLog(UI_STRINGS.signaling.logs.startupFailed(getStartupElapsedMs()), 'error');
-      showToast(UI_STRINGS.toasts.callStartFailed(socketErrMsg), 'error');
-      appendDebugLog(UI_STRINGS.signaling.logs.startCallFailed(socketErrMsg), 'error');
+      handleCallStartFailure(socketError, callbacks);
       endCall();
     });
 
@@ -336,10 +398,7 @@ export async function startCall(agentId, callbacks) {
     appendDebugLog(UI_STRINGS.signaling.logs.micReadyElapsed(Date.now() - micReadyStart), 'info');
     setupAudioGraph();
   } catch (_err) {
-    const errMsg = _err instanceof Error ? _err.message : String(_err);
-    appendDebugLog(UI_STRINGS.signaling.logs.startupFailed(getStartupElapsedMs()), 'error');
-    showToast(UI_STRINGS.toasts.callStartFailed(errMsg), 'error');
-    appendDebugLog(UI_STRINGS.signaling.logs.startCallFailed(errMsg), 'error');
+    handleCallStartFailure(_err, callbacks);
     endCall();
   }
 }

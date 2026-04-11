@@ -2,11 +2,9 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { 
-  toggleCall, getCallState, toggleMute, handleWsMessage, startTimer, stopTimer,
-  playAudioResponse, startCall, resetState,
-  getWs, getAudioProcessor, getAudioContext,
-  processAudioQueue
+import {
+  toggleCall, getCallState, toggleMute, handleWsMessage, startTimer, stopTimer, playAudioResponse, startCall,
+  resetState, getWs, getAudioProcessor, getAudioContext, processAudioQueue,
 } from '../call.js';
 import { MESSAGE_TYPE } from '../constants/config.js';
 
@@ -30,14 +28,13 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       ok: true,
       json: async () => ({ token: 'test-token' }),
     }));
-    
+
     // Complex WebSocket mock with constants
     class MockWS {
       static CONNECTING = 0;
       static OPEN = 1;
       static CLOSING = 2;
       static CLOSED = 3;
-      
       onopen: (() => void) | null = null;
       onmessage: ((ev: { data: string }) => void) | null = null;
       onerror: (() => void) | null = null;
@@ -195,8 +192,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     it('should handle failed startCall validation', async () => {
       await startCall(null, mockCallbacks);
       expect(getWs()).toBe(null);
-
-      // test webkitAudioContext fallback branch
       resetState();
       vi.stubGlobal('navigator', {
         mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn(), enabled: true }] }) }
@@ -205,33 +200,35 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       (window as any).AudioContext = undefined;
       await startCall('a1', mockCallbacks);
       window.AudioContext = tempAudio;
-
-      // test getUserMedia rejection
       resetState();
+      vi.stubGlobal('navigator', {} as Navigator);
+      await startCall('a1', mockCallbacks);
+      resetState();
+      const activeAudioContext = globalThis.AudioContext;
+      const activeWebkitAudioContext = (globalThis as any).webkitAudioContext;
+      vi.stubGlobal('AudioContext', undefined as unknown as typeof AudioContext);
+      vi.stubGlobal('webkitAudioContext', undefined as unknown as typeof AudioContext);
       vi.stubGlobal('navigator', {
-        mediaDevices: {
-          getUserMedia: vi.fn().mockRejectedValue('string error fallback')
-        }
+        mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn(), enabled: true }] }) },
       });
       await startCall('a1', mockCallbacks);
-
-      // test createRunId fallback when randomUUID is unavailable
+      vi.stubGlobal('AudioContext', activeAudioContext as unknown as typeof AudioContext);
+      vi.stubGlobal('webkitAudioContext', activeWebkitAudioContext as unknown as typeof AudioContext);
+      resetState();
+      vi.stubGlobal('navigator', {
+        mediaDevices: { getUserMedia: vi.fn().mockRejectedValue('string error fallback') }
+      });
+      await startCall('a1', mockCallbacks);
       resetState();
       const originalCrypto = globalThis.crypto;
       vi.stubGlobal('crypto', {} as Crypto);
       await startCall('a1', mockCallbacks);
       vi.stubGlobal('crypto', originalCrypto);
-
-      // test setupAudioGraph early return when media stream is not available
       resetState();
       vi.stubGlobal('navigator', {
-        mediaDevices: {
-          getUserMedia: vi.fn().mockResolvedValue(null),
-        },
+        mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(null) },
       });
       await startCall('a1', mockCallbacks);
-
-      // test audioContext suspended state branch
       resetState();
       class SuspendedAudioContext {
         createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn() });
@@ -249,13 +246,16 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
         },
       });
       await startCall('a1', mockCallbacks);
-      
-      // test again with Error
       resetState();
       vi.stubGlobal('navigator', {
-        mediaDevices: {
-          getUserMedia: vi.fn().mockRejectedValue(new Error('fail'))
-        }
+        mediaDevices: { getUserMedia: vi.fn().mockRejectedValue(new Error('fail')) }
+      });
+      await startCall('a1', mockCallbacks);
+      resetState();
+      const permissionDeniedError = new Error('permission denied');
+      permissionDeniedError.name = 'NotAllowedError';
+      vi.stubGlobal('navigator', {
+        mediaDevices: { getUserMedia: vi.fn().mockRejectedValue(permissionDeniedError) },
       });
       await startCall('a1', mockCallbacks);
     });

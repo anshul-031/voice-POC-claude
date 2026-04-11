@@ -116,7 +116,23 @@ export const UI_STRINGS = {
       invalidMessageFormat: 'Invalid signaling message format',
       wsConnectTimeout: 'Signaling connection timed out',
       micAccessTimeout: 'Microphone access timed out',
+      mediaDevicesUnsupported: 'Microphone access is not supported in this browser context.',
+      audioContextUnsupported: 'Audio playback is not supported in this browser context.',
       unknownMessageType: (/** @type {string} */ type) => `Unknown message type: ${type}`,
+    },
+    recovery: {
+      permissionRequired: 'Please allow microphone and speaker access, then retry. '
+        + 'If it still fails, try another mobile browser or use a laptop.',
+      noMicrophone: 'No microphone was found on this device. Connect or enable a microphone, then retry.',
+      microphoneBusy: 'Microphone is in use by another app. Close other audio apps and retry.',
+      secureContextRequired: 'Microphone access requires a secure HTTPS page. '
+        + 'Open the same link in a secure tab and retry.',
+      browserUnsupported: 'This browser does not fully support web-call audio permissions. '
+        + 'Try another mobile browser or use a laptop.',
+      networkIssue: 'Call setup could not connect to signaling. Check internet and retry, '
+        + 'or try another device/browser.',
+      generic: 'Please enable required microphone and speaker permissions, then retry. '
+        + 'If issue persists, try another mobile browser or use a laptop.',
     },
     logs: {
       callInit: 'Initializing call',
@@ -146,6 +162,7 @@ export const UI_STRINGS = {
       callEndCleanup: 'Cleaning up call resources',
       callEndComplete: 'Call cleanup completed',
       startCallFailed: (/** @type {string} */ msg) => `Start call failed: ${msg}`,
+      startCallRecoveryHint: (/** @type {string} */ msg) => `Recovery suggestion: ${msg}`,
       interrupted: 'Model response interrupted',
       bargeInDetected: 'User speech detected, interrupting model playback',
       callStarted: 'Call established',
