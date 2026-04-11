@@ -235,13 +235,25 @@ function setupAudioGraph() {
     return;
   }
   const source = audioContext.createMediaStreamSource(mediaStream);
+  /** @type {AudioNode} */
+  let processedSource = source;
+
+  if (typeof audioContext.createBiquadFilter === 'function') {
+    const highPassFilter = audioContext.createBiquadFilter();
+    highPassFilter.type = 'highpass';
+    highPassFilter.frequency.value = CONFIG.MIC_HIGHPASS_FREQUENCY_HZ;
+    highPassFilter.Q.value = CONFIG.MIC_HIGHPASS_Q;
+    source.connect(highPassFilter);
+    processedSource = highPassFilter;
+  }
+
   analyserNode = audioContext.createAnalyser();
   analyserNode.fftSize = 256;
-  source.connect(analyserNode);
+  processedSource.connect(analyserNode);
   startWaveformAnimation(analyserNode);
 
   audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-  source.connect(audioProcessor);
+  processedSource.connect(audioProcessor);
   audioProcessor.connect(audioContext.destination);
   audioProcessor.onaudioprocess = (/** @type {AudioProcessingEvent} */ event) => {
     if (!isInCall || isMuted) return;

@@ -7,6 +7,7 @@ let isPlayingAudio = false;
 let currentPlaybackSource = null;
 let speechFrameStreak = 0;
 let lastBargeInAtMs = 0;
+let adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
 
 /** @param {string | undefined} base64Data @returns {void} */
 function requeueChunkAndStop(base64Data) {
@@ -101,16 +102,39 @@ export function interruptModelPlayback() {
   return hadPlayback;
 }
 
-/** @param {Float32Array} inputData @returns {boolean} */
-export function detectSpeechBargeIn(inputData) {
+/** @param {Float32Array} inputData @returns {number} */
+function calculateRms(inputData) {
   let energy = 0;
   for (let i = 0; i < inputData.length; i++) {
     const sample = inputData[i];
     energy += sample * sample;
   }
+  return Math.sqrt(energy / inputData.length);
+}
 
-  const rms = Math.sqrt(energy / inputData.length);
-  speechFrameStreak = rms >= CONFIG.BARGE_IN_RMS_THRESHOLD ? speechFrameStreak + 1 : 0;
+/** @returns {number} */
+function getAdaptiveBargeInThreshold() {
+  return Math.max(
+    CONFIG.BARGE_IN_RMS_THRESHOLD,
+    CONFIG.BARGE_IN_MIN_INTERRUPT_RMS,
+    adaptiveNoiseFloorRms * CONFIG.BARGE_IN_DYNAMIC_THRESHOLD_MULTIPLIER,
+  );
+}
+
+/** @param {number} rms @returns {void} */
+function updateAdaptiveNoiseFloor(rms) {
+  const smoothing = CONFIG.BARGE_IN_NOISE_FLOOR_SMOOTHING;
+  adaptiveNoiseFloorRms = ((1 - smoothing) * adaptiveNoiseFloorRms) + (smoothing * rms);
+}
+
+/** @param {Float32Array} inputData @returns {boolean} */
+export function detectSpeechBargeIn(inputData) {
+  const rms = calculateRms(inputData);
+  const threshold = getAdaptiveBargeInThreshold();
+  if (rms < threshold) {
+    updateAdaptiveNoiseFloor(rms);
+  }
+  speechFrameStreak = rms >= threshold ? speechFrameStreak + 1 : 0;
 
   const cooldownElapsed = Date.now() - lastBargeInAtMs >= CONFIG.BARGE_IN_COOLDOWN_MS;
   const shouldInterrupt = cooldownElapsed
@@ -186,4 +210,5 @@ export function resetAudioPlaybackState() {
   interruptModelPlayback();
   speechFrameStreak = 0;
   lastBargeInAtMs = 0;
+  adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
 }

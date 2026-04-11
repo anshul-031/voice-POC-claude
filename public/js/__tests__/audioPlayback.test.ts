@@ -69,6 +69,19 @@ describe('audioPlayback module', () => {
     expect(detectSpeechBargeIn(quietFrame)).toBe(false);
   });
 
+  it('adapts barge-in threshold against steady background noise', () => {
+    expect(enqueueAudio('steady-noise-audio')).toBe(true);
+
+    const noisyBaselineFrame = new Float32Array(1024).fill(0.04);
+    for (let i = 0; i < 10; i++) {
+      expect(detectSpeechBargeIn(noisyBaselineFrame)).toBe(false);
+    }
+
+    const realSpeechFrame = new Float32Array(1024).fill(0.12);
+    expect(detectSpeechBargeIn(realSpeechFrame)).toBe(false);
+    expect(detectSpeechBargeIn(realSpeechFrame)).toBe(true);
+  });
+
   it('covers null-context early return and decoder catch path', async () => {
     enqueueAudio('x');
     await processAudioQueue(null, null);

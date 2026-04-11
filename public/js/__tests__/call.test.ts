@@ -29,7 +29,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       json: async () => ({ token: 'test-token' }),
     }));
 
-    // Complex WebSocket mock with constants
     class MockWS {
       static CONNECTING = 0;
       static OPEN = 1;
@@ -57,6 +56,12 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
 
     const mockAudioContextInstance = {
       createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
+      createBiquadFilter: vi.fn().mockReturnValue({
+        type: 'highpass',
+        frequency: { value: 0 },
+        Q: { value: 0 },
+        connect: vi.fn(),
+      }),
       createAnalyser: vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256 }),
       createScriptProcessor: vi.fn().mockReturnValue({ 
         connect: vi.fn(), 
@@ -103,8 +108,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
   describe('Internal Event Handlers (Deep Coverage)', () => {
     it('should handle ws.onopen', async () => {
       await startCall('a1', mockCallbacks);
-      const ws = getWs() as any;
-      ws?.onopen?.();
+      const ws = getWs() as any; ws?.onopen?.();
       expect(ws?.send).toHaveBeenCalled();
     });
 
@@ -114,11 +118,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.AUDIO_RESPONSE, data: 'audio' }) });
       ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.CALL_STARTED }) });
       expect(getCallState().isInCall).toBe(true);
-      
-      // Invalid format (valid JSON, invalid schema)
       ws?.onmessage?.({ data: JSON.stringify({ unknown: true }) });
-
-      // Invalid JSON
       ws?.onmessage?.({ data: 'invalid-json' });
     });
 
@@ -132,28 +132,20 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
 
     it('should handle ws.onerror', async () => {
       await startCall('a1', mockCallbacks);
-      const ws = getWs() as any;
-      ws?.onerror?.();
+      const ws = getWs() as any; ws?.onerror?.();
       expect(getCallState().isInCall).toBe(false);
-      
-      // Flush microtasks to allow endCall to complete
       await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
       expect(getWs()).toBe(null);
     });
 
     it('should handle ws.onclose', async () => {
       await startCall('a1', mockCallbacks);
-      const ws = getWs() as any;
-      expect(ws).not.toBeNull();
-      
-      // Simulate connection accepted
+      const ws = getWs() as any; expect(ws).not.toBeNull();
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
       expect(getCallState().isInCall).toBe(true);
 
       ws?.onclose?.({ code: 1000 });
       expect(getCallState().isInCall).toBe(false);
-
-      // Flush microtasks to allow endCall to complete
       await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
       expect(getWs()).toBe(null);
     });
@@ -163,7 +155,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       const sp = getAudioProcessor() as any;
       const ws = getWs() as any;
       expect(ws).not.toBeNull();
-      if (ws) ws.readyState = 1; // WebSocket.OPEN
+      if (ws) ws.readyState = 1;
       
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
       expect(getCallState().isInCall).toBe(true);
@@ -261,14 +253,10 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     });
 
     it('should handle handleWsMessage branches', () => {
-      // With agentName to cover toast branch
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED, agentName: 'TestAgent' }, mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.AUDIO_RESPONSE, data: 'base64audio' }, mockCallbacks);
-      
       handleWsMessage({ type: MESSAGE_TYPE.TRANSCRIPT, role: 'user', text: 'hi' }, mockCallbacks);
-      // fallback onTranscript test
       handleWsMessage({ type: MESSAGE_TYPE.TRANSCRIPT, role: 'model', text: 'hello' }, { onStatusChange: vi.fn() } as any);
-      
       handleWsMessage({ type: MESSAGE_TYPE.INTERRUPTED } as any, mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.CALL_ENDED, reason: 'Disconnected' } as any, mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.CALL_ENDED } as any, mockCallbacks);
@@ -288,36 +276,20 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
 
   describe('Audio Playback', () => {
     it('should handle playAudioResponse with queue', async () => {
-      // Rely on the beforeEach MockAudioContext which already returns a proper Float32Array 
-      // with `.set()` functionality to allow lines 243-258 to cleanly execute!
-      vi.stubGlobal('atob', () => 'abcdabcd');
-      window.atob = () => 'abcdabcd';
+      vi.stubGlobal('atob', () => 'abcdabcd'); window.atob = () => 'abcdabcd';
 
       await startCall('a1', mockCallbacks);
-      
-      // empty string
       playAudioResponse('');
-      
-      // non-empty base64 string
       playAudioResponse('base64data');
-      
-      // trigger again to branch on isPlayingAudio
       playAudioResponse('base64data');
-      
-      getAudioContext(); // test getter
+      getAudioContext();
 
-      await Promise.resolve();
-      await Promise.resolve();
-      
-      // trigger onended manually
+      await Promise.resolve(); await Promise.resolve();
       const ctx = getAudioContext() as any;
       if (ctx && ctx.createBufferSource) {
-        // the buffer source mock in beforeEach was actually statically defined
-        // We can just call processAudioQueue to hit the queue block directly!
         await processAudioQueue();
       }
 
-      // now force a catch block
       playAudioResponse('trigger-catch');
       vi.stubGlobal('atob', () => { throw new Error('Test Error parsing'); });
       window.atob = () => { throw new Error('Test Error parsing'); };
@@ -325,8 +297,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     });
 
     it('should stop active playback on server interrupted event', async () => {
-      vi.stubGlobal('atob', () => 'abcdabcd');
-      window.atob = () => 'abcdabcd';
+      vi.stubGlobal('atob', () => 'abcdabcd'); window.atob = () => 'abcdabcd';
 
       await startCall('a1', mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
@@ -334,8 +305,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       playAudioResponse('base64data');
       await Promise.resolve();
 
-      const ctx = getAudioContext() as any;
-      const source = ctx.createBufferSource.mock.results[0]?.value;
+      const ctx = getAudioContext() as any; const source = ctx.createBufferSource.mock.results[0]?.value;
       expect(source).toBeDefined();
 
       handleWsMessage({ type: MESSAGE_TYPE.INTERRUPTED } as any, mockCallbacks);
@@ -345,8 +315,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     });
 
     it('should barge-in locally when user speech starts during model playback', async () => {
-      vi.stubGlobal('atob', () => 'abcdabcd');
-      window.atob = () => 'abcdabcd';
+      vi.stubGlobal('atob', () => 'abcdabcd'); window.atob = () => 'abcdabcd';
 
       await startCall('a1', mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
@@ -354,8 +323,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       playAudioResponse('base64data');
       await Promise.resolve();
 
-      const ctx = getAudioContext() as any;
-      const source = ctx.createBufferSource.mock.results[0]?.value;
+      const ctx = getAudioContext() as any; const source = ctx.createBufferSource.mock.results[0]?.value;
       const sp = getAudioProcessor() as any;
       expect(source).toBeDefined();
       expect(sp).toBeDefined();
