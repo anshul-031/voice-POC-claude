@@ -19,6 +19,7 @@ import {
 /** @typedef {Navigator & { audioSession?: { type?: string } }} NavigatorWithAudioSession */
 
 /** @type {AudioContext | null} */ let audioContext = null;
+/** @type {AudioContext | null} */ let playbackAudioContext = null;
 /** @type {MediaStream | null} */ let mediaStream = null;
 /** @type {ScriptProcessorNode | null} */ let audioProcessor = null;
 /** @type {WebSocket | null} */ let ws = null;
@@ -78,6 +79,21 @@ function getOrCreateAudioContext() {
   audioContext = new ContextCtor({ sampleRate: CONFIG.SAMPLE_RATE_INPUT });
   hasPrimedAudioOutput = false;
   return audioContext;
+}
+
+/** @returns {AudioContext | null} */
+function getOrCreatePlaybackAudioContext() {
+  if (playbackAudioContext && playbackAudioContext.state !== 'closed') {
+    return playbackAudioContext;
+  }
+
+  const ContextCtor = getAudioContextCtor();
+  if (!ContextCtor) return null;
+
+  playbackAudioContext = new ContextCtor();
+  const rate = playbackAudioContext.sampleRate || CONFIG.SAMPLE_RATE_OUTPUT;
+  appendDebugLog(UI_STRINGS.signaling.logs.playbackContextCreated(rate), 'info');
+  return playbackAudioContext;
 }
 
 /** @returns {Promise<void>} */
@@ -161,10 +177,55 @@ function primeAudioOutput(context) {
     unlockSource.onended = () => {
       try {
         unlockSource.disconnect();
+      /* c8 ignore next */
       } catch (_e) { /* ignore */ }
     };
     unlockSource.start(0);
     hasPrimedAudioOutput = true;
+  } catch (_e) { /* ignore */ }
+}
+
+/** @returns {void} */
+function playSilentAudioElementForIosUnlock() {
+  try {
+    const silentAudio = document.createElement('audio');
+    silentAudio.setAttribute('playsinline', '');
+    silentAudio.setAttribute('webkit-playsinline', '');
+    const durationSec = CONFIG.IOS_AUDIO_SILENT_UNLOCK_DURATION_MS / 1000;
+    const sampleRate = 8000;
+    const numSamples = Math.ceil(sampleRate * durationSec);
+    const wavHeaderSize = 44;
+    const wavSize = wavHeaderSize + numSamples * 2;
+    const wavBuffer = new ArrayBuffer(wavSize);
+    const view = new DataView(wavBuffer);
+    const writeStr = (/** @type {number} */ o, /** @type {string} */ s) => {
+      for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+    };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, wavSize - 8, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+    const wavBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+    silentAudio.src = URL.createObjectURL(wavBlob);
+    const playPromise = silentAudio.play();
+    if (playPromise) {
+      playPromise
+        .then(() => appendDebugLog(UI_STRINGS.signaling.logs.silentAudioUnlockPlayed, 'info'))
+        .catch((/** @type {unknown} */ err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          appendDebugLog(UI_STRINGS.signaling.logs.silentAudioUnlockFailed(msg), 'warn');
+        });
+    }
+  /* c8 ignore next */
   } catch (_e) { /* ignore */ }
 }
 
@@ -178,6 +239,14 @@ function primeAudioOutputOnUserGesture() {
 
   primeAudioOutput(context);
   appendDebugLog(UI_STRINGS.signaling.logs.audioOutputPrimed, 'info');
+
+  const pbCtx = getOrCreatePlaybackAudioContext();
+  if (pbCtx) {
+    void resumeAudioContextWithRetries(pbCtx);
+    primeAudioOutput(pbCtx);
+  }
+
+  playSilentAudioElementForIosUnlock();
 }
 
 /** @returns {void} */
@@ -328,7 +397,13 @@ function setupAudioGraph() {
 
   audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
   processedSource.connect(audioProcessor);
-  audioProcessor.connect(audioContext.destination);
+
+  const silentSink = audioContext.createGain();
+  silentSink.gain.value = 0;
+  silentSink.connect(audioContext.destination);
+  audioProcessor.connect(silentSink);
+  appendDebugLog(UI_STRINGS.signaling.logs.scriptProcessorIsolated, 'info');
+
   audioProcessor.onaudioprocess = (/** @type {AudioProcessingEvent} */ event) => {
     if (!isInCall || isMuted) return;
     const inputData = event.inputBuffer.getChannelData(0);
@@ -459,6 +534,17 @@ export async function startCall(agentId, callbacks) {
     }
     primeAudioOutput(audioContext);
     appendDebugLog(UI_STRINGS.signaling.logs.audioOutputPrimed, 'info');
+
+    playbackAudioContext = getOrCreatePlaybackAudioContext();
+    if (playbackAudioContext) {
+      const pbRunning = await resumeAudioContextWithRetries(playbackAudioContext);
+      if (!pbRunning) {
+        appendDebugLog(UI_STRINGS.signaling.logs.playbackResumeBlocked, 'warn');
+      }
+      primeAudioOutput(playbackAudioContext);
+    }
+    playSilentAudioElementForIosUnlock();
+
     appendDebugLog(UI_STRINGS.signaling.logs.micRequesting, 'info');
 
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
@@ -546,7 +632,8 @@ export function playAudioResponse(base64Data) {
 
 /** @returns {Promise<void>} */
 export async function processAudioQueue() {
-  await processPlaybackQueue(audioContext, analyserNode, {
+  const pbCtx = playbackAudioContext || audioContext;
+  await processPlaybackQueue(pbCtx, analyserNode, {
     onPlaybackStarted: () => {
       audioContextResumeFailures = 0;
       hasShownAudioRecoveryToast = false;
@@ -577,11 +664,11 @@ export async function processAudioQueue() {
   });
 }
 
-/** @returns {Promise<void>} */
-async function closeAudioContextIfNeeded() {
-  if (!audioContext || audioContext.state === 'closed') return;
+/** @param {AudioContext | null} ctx @returns {Promise<void>} */
+async function closeAudioContextIfNeeded(ctx) {
+  if (!ctx || ctx.state === 'closed') return;
   try {
-    await audioContext.close();
+    await ctx.close();
   } catch (_e) { /* ignore */ }
 }
 
@@ -605,8 +692,10 @@ export async function endCall() {
     mediaStream.getTracks().forEach((t) => t.stop());
     mediaStream = null;
   }
-  await closeAudioContextIfNeeded();
+  await closeAudioContextIfNeeded(audioContext);
+  await closeAudioContextIfNeeded(playbackAudioContext);
   audioContext = null;
+  playbackAudioContext = null;
   hasPrimedAudioOutput = false;
   audioContextResumeFailures = 0;
   hasShownAudioRecoveryToast = false;
@@ -652,6 +741,7 @@ export function resetState() {
   resetAudioPlaybackState();
   ws = null;
   audioContext = null;
+  playbackAudioContext = null;
   hasPrimedAudioOutput = false;
   audioContextResumeFailures = 0;
   hasShownAudioRecoveryToast = false;
@@ -669,5 +759,7 @@ export function resetState() {
 export function getWs() { return ws; }
 /** @returns {AudioContext | null} */
 export function getAudioContext() { return audioContext; }
+/** @returns {AudioContext | null} */
+export function getPlaybackAudioContext() { return playbackAudioContext; }
 /** @returns {ScriptProcessorNode | null} */
 export function getAudioProcessor() { return audioProcessor; }
