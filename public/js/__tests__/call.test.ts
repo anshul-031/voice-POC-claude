@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+/* eslint-disable max-lines */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   toggleCall, getCallState, toggleMute, handleWsMessage, startTimer, stopTimer, playAudioResponse, startCall, resetState, getWs, getAudioProcessor, getAudioContext, processAudioQueue,
