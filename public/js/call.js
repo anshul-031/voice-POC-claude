@@ -633,7 +633,8 @@ export function playAudioResponse(base64Data) {
 /** @returns {Promise<void>} */
 export async function processAudioQueue() {
   const pbCtx = playbackAudioContext || audioContext;
-  await processPlaybackQueue(pbCtx, analyserNode, {
+  const pbAnalyser = (pbCtx === audioContext) ? analyserNode : null;
+  await processPlaybackQueue(pbCtx, pbAnalyser, {
     onPlaybackStarted: () => {
       audioContextResumeFailures = 0;
       hasShownAudioRecoveryToast = false;
