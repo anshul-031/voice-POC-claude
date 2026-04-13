@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 import { CONFIG } from './constants/config.js';
 
 /** @type {string[]} */
@@ -149,34 +148,10 @@ function decodePcmBase64(base64Data) {
   return float32;
 }
 
-/**
- * Linearly resample PCM Float32Array from one sample rate to another.
- * @param {Float32Array} input
- * @param {number} inputRate
- * @param {number} outputRate
- * @returns {Float32Array}
- */
-export function resamplePcm(input, inputRate, outputRate) {
-  if (inputRate === outputRate || input.length === 0) return input;
-  const ratio = inputRate / outputRate;
-  const outputLength = Math.ceil(input.length / ratio);
-  const output = new Float32Array(outputLength);
-  for (let i = 0; i < outputLength; i++) {
-    const srcIndex = i * ratio;
-    const srcFloor = Math.floor(srcIndex);
-    const srcCeil = Math.min(srcFloor + 1, input.length - 1);
-    const fraction = srcIndex - srcFloor;
-    output[i] = input[srcFloor] + fraction * (input[srcCeil] - input[srcFloor]);
-  }
-  return output;
-}
-
 /** @param {AudioContext} audioContext @param {Float32Array} float32 @returns {AudioBuffer} */
 function createAudioBuffer(audioContext, float32) {
-  const contextRate = audioContext.sampleRate || CONFIG.SAMPLE_RATE_OUTPUT;
-  const resampled = resamplePcm(float32, CONFIG.SAMPLE_RATE_OUTPUT, contextRate);
-  const audioBuffer = audioContext.createBuffer(1, resampled.length, contextRate);
-  audioBuffer.getChannelData(0).set(resampled);
+  const audioBuffer = audioContext.createBuffer(1, float32.length, CONFIG.SAMPLE_RATE_OUTPUT);
+  audioBuffer.getChannelData(0).set(float32);
   return audioBuffer;
 }
 
