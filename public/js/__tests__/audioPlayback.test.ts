@@ -9,7 +9,6 @@ import {
   hasModelPlayback,
   interruptModelPlayback,
   processAudioQueue,
-  resamplePcm,
   resetAudioPlaybackState,
 } from '../audioPlayback.js';
 
@@ -183,7 +182,6 @@ describe('audioPlayback module', () => {
     };
     const runningContext = {
       state: 'running',
-      sampleRate: 24000,
       destination: {},
       createGain: vi.fn().mockReturnValue({
         gain: { value: 0 },
@@ -199,69 +197,6 @@ describe('audioPlayback module', () => {
 
     await processAudioQueue(runningContext as any, null);
     expect(sourceNode.start).toHaveBeenCalled();
-  });
-
-  describe('resamplePcm', () => {
-    it('returns same array when rates match', () => {
-      const input = new Float32Array([0.1, 0.2, 0.3, 0.4]);
-      const result = resamplePcm(input, 24000, 24000);
-      expect(result).toBe(input);
-    });
-
-    it('returns same array for empty input', () => {
-      const input = new Float32Array([]);
-      const result = resamplePcm(input, 24000, 48000);
-      expect(result).toBe(input);
-    });
-
-    it('upsamples from 24kHz to 48kHz', () => {
-      const input = new Float32Array([0.0, 1.0]);
-      const result = resamplePcm(input, 24000, 48000);
-      expect(result.length).toBe(4);
-      expect(result[0]).toBeCloseTo(0.0, 5);
-      expect(result[1]).toBeCloseTo(0.5, 5);
-      expect(result[2]).toBeCloseTo(1.0, 5);
-    });
-
-    it('downsamples from 48kHz to 24kHz', () => {
-      const input = new Float32Array([0.0, 0.25, 0.5, 0.75]);
-      const result = resamplePcm(input, 48000, 24000);
-      expect(result.length).toBe(2);
-      expect(result[0]).toBeCloseTo(0.0, 5);
-      expect(result[1]).toBeCloseTo(0.5, 5);
-    });
-  });
-
-  it('creates audio buffer using context sampleRate with resampling', async () => {
-    enqueueAudio('test-resample');
-
-    const sourceNode: any = {
-      buffer: null,
-      connect: vi.fn(),
-      start: vi.fn(),
-      stop: vi.fn(),
-      disconnect: vi.fn(),
-      onended: null,
-    };
-    const context = {
-      state: 'running',
-      sampleRate: 48000,
-      destination: {},
-      createGain: vi.fn().mockReturnValue({
-        gain: { value: 0 },
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-      }),
-      createBuffer: vi.fn().mockReturnValue({
-        getChannelData: vi.fn().mockReturnValue(new Float32Array(16)),
-      }),
-      createBufferSource: vi.fn().mockReturnValue(sourceNode),
-    };
-
-    await processAudioQueue(context as any, null);
-    expect(context.createBuffer).toHaveBeenCalled();
-    const callArgs = context.createBuffer.mock.calls[0];
-    expect(callArgs[2]).toBe(48000);
   });
 
 });
