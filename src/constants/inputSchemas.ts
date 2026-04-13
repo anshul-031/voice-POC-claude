@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AVAILABLE_MODELS, AVAILABLE_VOICES } from './agents.js';
+import { SUPPORTED_THEMES } from './index.js';
 import { MESSAGE_TYPE } from '../types/index.js';
 
 const VOICE_IDS = AVAILABLE_VOICES.map((voice) => voice.id);
@@ -7,6 +8,13 @@ const MODEL_IDS = AVAILABLE_MODELS.map((model) => model.id);
 
 const isValidVoiceId = (value: string): boolean => VOICE_IDS.includes(value);
 const isValidModelId = (value: string): boolean => MODEL_IDS.includes(value);
+
+export const WEBSITE_NAME_SCHEMA = z.string().trim().min(1).max(120);
+export const RUNTIME_THEME_SCHEMA = z.enum(SUPPORTED_THEMES);
+export const RUNTIME_UI_CONFIG_SCHEMA = z.object({
+  websiteName: WEBSITE_NAME_SCHEMA,
+  theme: RUNTIME_THEME_SCHEMA,
+}).strict();
 
 export const REQUEST_HEADERS_SCHEMA = z.object({
   'content-type': z.string().optional(),
@@ -58,3 +66,4 @@ export type AgentIdParams = z.infer<typeof AGENT_ID_PARAMS_SCHEMA>;
 export type CreateAgentBody = z.infer<typeof CREATE_AGENT_BODY_SCHEMA>;
 export type UpdateAgentBody = z.infer<typeof UPDATE_AGENT_BODY_SCHEMA>;
 export type SignalingMessage = z.infer<typeof SIGNALING_MESSAGE_SCHEMA>;
+export type RuntimeUiConfig = z.infer<typeof RUNTIME_UI_CONFIG_SCHEMA>;

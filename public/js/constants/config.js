@@ -4,6 +4,7 @@
 
 export const CONFIG = {
   API_PREFIX: '/api',
+  RUNTIME_CONFIG_PATH: '/runtime-config',
   WS_PATH: '/ws',
   PREVIEW_PATH: '/preview',
   PAGE_PATHS: {
@@ -13,6 +14,12 @@ export const CONFIG = {
     SIGNUP: '/signup',
     FORGOT_PASSWORD: '/forgot-password',
     RESET_PASSWORD: '/reset-password',
+  },
+  DEFAULT_WEBSITE_NAME: 'AnshulTheGreat.com',
+  DEFAULT_THEME: 'dark',
+  THEMES: {
+    DARK: 'dark',
+    LIGHT: 'light',
   },
   DEFAULT_VOICE: 'Puck',
   DEFAULT_MODEL: 'gemini-2.0-flash-exp',

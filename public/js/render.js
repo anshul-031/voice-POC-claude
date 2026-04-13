@@ -1,5 +1,5 @@
 /**
- * Rendering logic for AIPhonceCaller.in dashboard.
+ * Rendering logic for AnshulTheGreat.com dashboard.
  */
 import { UI_STRINGS } from './constants/uiStrings.js';
 import { CONFIG } from './constants/config.js';

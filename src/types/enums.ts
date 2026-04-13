@@ -20,6 +20,7 @@ export const ROUTES = {
   LEGACY_FORGOT_PASSWORD_PAGE: '/forgot-password.html',
   LEGACY_RESET_PASSWORD_PAGE: '/reset-password.html',
   HEALTH_CHECK: '/api/health',
+  RUNTIME_CONFIG: '/api/runtime-config',
   CONSTANTS_UI_STRINGS: '/constants/uiStrings.js',
   CONSTANTS_CONFIG: '/constants/config.js',
 } as const;

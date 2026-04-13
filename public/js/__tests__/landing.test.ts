@@ -93,6 +93,22 @@ describe('Landing Page Logic (landing.js) — 90%+ Exclusive Coverage', () => {
       }
     });
 
+    it('should use light nav colors when data-theme is light', () => {
+      document.documentElement.setAttribute('data-theme', 'light');
+      initLanding();
+
+      const nav = document.getElementById('landing-nav');
+      if (nav) {
+        vi.stubGlobal('scrollY', 100);
+        window.dispatchEvent(new Event('scroll'));
+        expect(nav.style.background).toContain('rgba(255, 255, 255, 0.92)');
+
+        vi.stubGlobal('scrollY', 0);
+        window.dispatchEvent(new Event('scroll'));
+        expect(nav.style.background).toContain('rgba(255, 255, 255, 0.78)');
+      }
+    });
+
     it('should handle smooth scrolling clicks', () => {
       initLanding();
       const anchor = document.querySelector('a[href="#test-section"]') as HTMLAnchorElement;

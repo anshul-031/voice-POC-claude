@@ -17,7 +17,7 @@ export const UI_STRINGS = {
     info: 'Info',
   },
   header: {
-    title: 'AIPhonceCaller.in',
+    title: 'AnshulTheGreat.com',
     apiStatus: {
       checking: 'Checking API...',
       connected: 'Connected',

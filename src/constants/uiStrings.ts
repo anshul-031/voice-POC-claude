@@ -2,6 +2,8 @@
  * Centralized UI Strings for Internationalization (i18n)
  * This object contains all user-facing literals used in the application.
  */
+import { DEFAULT_WEBSITE_NAME } from './index.js';
+
 export const UI_STRINGS = {
   common: {
     back: 'Back',
@@ -17,7 +19,7 @@ export const UI_STRINGS = {
     info: 'Info',
   },
   header: {
-    title: 'AIPhonceCaller.in',
+    title: DEFAULT_WEBSITE_NAME,
     apiStatus: {
       checking: 'Checking API...',
       connected: 'Connected',

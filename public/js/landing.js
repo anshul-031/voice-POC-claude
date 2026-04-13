@@ -2,6 +2,26 @@
  * Landing page interactions — scroll reveals, smooth scrolling, nav scroll effect.
  */
 
+/**
+ * @returns {{ idleBackground: string, activeBackground: string, activeShadow: string }}
+ */
+function getNavScrollThemeColors() {
+  const isLightTheme = document.documentElement.getAttribute('data-theme') === 'light';
+  if (isLightTheme) {
+    return {
+      idleBackground: 'rgba(255, 255, 255, 0.78)',
+      activeBackground: 'rgba(255, 255, 255, 0.92)',
+      activeShadow: '0 4px 24px rgba(15, 23, 42, 0.12)',
+    };
+  }
+
+  return {
+    idleBackground: 'rgba(10, 10, 18, 0.7)',
+    activeBackground: 'rgba(10, 10, 18, 0.92)',
+    activeShadow: '0 4px 30px rgba(0, 0, 0, 0.3)',
+  };
+}
+
 // ── Scroll Reveal ──
 export function initLanding() {
   if (typeof IntersectionObserver === 'undefined') {
@@ -41,11 +61,12 @@ export function initLanding() {
   if (nav) {
     window.addEventListener('scroll', () => {
       const scrollY = window.scrollY;
+      const navColors = getNavScrollThemeColors();
       if (scrollY > 80) {
-        nav.style.background = 'rgba(10, 10, 18, 0.92)';
-        nav.style.boxShadow = '0 4px 30px rgba(0, 0, 0, 0.3)';
+        nav.style.background = navColors.activeBackground;
+        nav.style.boxShadow = navColors.activeShadow;
       } else {
-        nav.style.background = 'rgba(10, 10, 18, 0.7)';
+        nav.style.background = navColors.idleBackground;
         nav.style.boxShadow = 'none';
       }
     }, { passive: true });

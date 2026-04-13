@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { UI_STRINGS } from '../constants/uiStrings.js';
+import { DEFAULT_WEBSITE_NAME } from '../constants/index.js';
 
 describe('UI_STRINGS', () => {
   it('should have a title', () => {
-    expect(UI_STRINGS.header.title).toBe('AIPhonceCaller.in');
+    expect(UI_STRINGS.header.title).toBe(DEFAULT_WEBSITE_NAME);
   });
 
   it('agentList.card.createdAt should format dates', () => {

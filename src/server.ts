@@ -9,7 +9,7 @@ import agentRoutes from './routes/agents.js';
 import authRoutes from './routes/auth.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
-import { UI_STRINGS } from './constants/uiStrings.js';
+import { RUNTIME_UI_CONFIG } from './constants/config.js';
 import { DEFAULT_PORT } from './constants/index.js';
 import { ROUTES } from './types/index.js';
 
@@ -60,6 +60,10 @@ app.get(ROUTES.CONSTANTS_CONFIG, (req: Request, res: Response) => {
 app.get(ROUTES.HEALTH_CHECK, (req: Request, res: Response) => {
   logger.debug('Health check requested');
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get(ROUTES.RUNTIME_CONFIG, (_req: Request, res: Response) => {
+  res.json(RUNTIME_UI_CONFIG);
 });
 
 // Canonical page routes
@@ -136,7 +140,7 @@ signalingServer.attach(server);
 server.listen(PORT, () => {
   const startupMsg = `
 ${'━'.repeat(56)}
-🎙️  ${UI_STRINGS.header.title} — AI Voice Agent Platform
+🎙️  ${RUNTIME_UI_CONFIG.websiteName} — AI Voice Agent Platform
 ${'━'.repeat(56)}
   🌐  Server:     http://localhost:${PORT}
   📡  WebSocket:  ws://localhost:${PORT}${ROUTES.WS_PATH}

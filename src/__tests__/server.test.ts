@@ -106,6 +106,16 @@ describe('Server initialization and Routes', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }));
     }
 
+    if (routes[ROUTES.RUNTIME_CONFIG]) {
+      routes[ROUTES.RUNTIME_CONFIG]({}, res);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          websiteName: expect.any(String),
+          theme: expect.any(String),
+        }),
+      );
+    }
+
     // Test canonical page routes + preview + fallback route
     const sendFileRoutes = [
       ROUTES.LANDING_PAGE,

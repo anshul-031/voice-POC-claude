@@ -1,5 +1,5 @@
 /* ============================================
-   AIPhonceCaller.in — Landing Page
+   AnshulTheGreat.com — Landing Page
    Premium BFSI Voice Bot Marketing Page
    ============================================ */
 
@@ -672,6 +672,53 @@
 .footer-copy {
   font-size: 0.78rem;
   color: #6a6a8e;
+}
+
+/* ── Light Theme Overrides ── */
+html[data-theme='light'] .landing-nav {
+  background: rgba(255, 255, 255, 0.78);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme='light'] .landing-nav .nav-link-ghost {
+  color: #334155;
+}
+
+html[data-theme='light'] .landing-nav .nav-link-ghost:hover {
+  color: #0f172a;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+html[data-theme='light'] .hero h1,
+html[data-theme='light'] .section-header h2,
+html[data-theme='light'] .cta-box h2,
+html[data-theme='light'] .step-card h3 {
+  color: #0f172a;
+}
+
+html[data-theme='light'] .hero-subtitle,
+html[data-theme='light'] .section-header p,
+html[data-theme='light'] .step-card p,
+html[data-theme='light'] .cta-box p,
+html[data-theme='light'] .footer-brand span,
+html[data-theme='light'] .footer-links a,
+html[data-theme='light'] .footer-copy {
+  color: #475569;
+}
+
+html[data-theme='light'] .stats-grid,
+html[data-theme='light'] .feature-card,
+html[data-theme='light'] .usecase-card,
+html[data-theme='light'] .step-card,
+html[data-theme='light'] .cta-box {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.1);
+}
+
+html[data-theme='light'] .landing-footer {
+  border-top: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 /* ── Scroll Animations ── */

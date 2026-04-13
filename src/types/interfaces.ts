@@ -66,6 +66,12 @@ export interface RoutesConfig {
   API_PREFIX: string;
   WS_PATH: string;
   HEALTH_CHECK: string;
+  RUNTIME_CONFIG: string;
   CONSTANTS_UI_STRINGS: string;
   CONSTANTS_CONFIG: string;
+}
+
+export interface RuntimeUiConfig {
+  websiteName: string;
+  theme: 'dark' | 'light';
 }

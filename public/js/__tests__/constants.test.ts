@@ -6,8 +6,13 @@ import { API_REQUEST_SCHEMA } from '../constants/inputSchemas.js';
 describe('Frontend Constants', () => {
   it('should have valid CONFIG', () => {
     expect(CONFIG.API_PREFIX).toBeDefined();
+    expect(CONFIG.RUNTIME_CONFIG_PATH).toBe('/runtime-config');
     expect(CONFIG.WS_PATH).toBeDefined();
     expect(CONFIG.DEFAULT_VOICE).toBeDefined();
+    expect(CONFIG.DEFAULT_WEBSITE_NAME).toBe('AnshulTheGreat.com');
+    expect(CONFIG.DEFAULT_THEME).toBe('dark');
+    expect(CONFIG.THEMES.DARK).toBe('dark');
+    expect(CONFIG.THEMES.LIGHT).toBe('light');
     expect(CONFIG.SAMPLE_RATE_INPUT).toBe(16000);
   });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CONFIG } from '../constants/config.js';
+import { CONFIG, RUNTIME_UI_CONFIG } from '../constants/config.js';
 import { DEFAULT_PORT } from '../constants/index.js';
 import { ROUTES, PRISMA_ERRORS, AUDIO_CONFIG, TIME, LOGGING, MESSAGE_TYPE, VOICE_NAME } from '../types/index.js';
 
@@ -10,11 +10,14 @@ describe('Config and Types Constants', () => {
     expect(CONFIG.SAMPLE_RATE_INPUT).toBe(16000);
     expect(CONFIG.SAMPLE_RATE_OUTPUT).toBe(24000);
     expect(CONFIG.DEFAULT_VOICE).toBe('Puck');
+    expect(RUNTIME_UI_CONFIG.websiteName.length).toBeGreaterThan(0);
+    expect(['dark', 'light']).toContain(RUNTIME_UI_CONFIG.theme);
   });
 
   it('should expose global constants and enum-like objects', () => {
     expect(DEFAULT_PORT).toBe(3000);
     expect(ROUTES.HEALTH_CHECK).toBe('/api/health');
+    expect(ROUTES.RUNTIME_CONFIG).toBe('/api/runtime-config');
     expect(PRISMA_ERRORS.NOT_FOUND).toBe('P2025');
     expect(AUDIO_CONFIG.DEFAULT_MODEL).toBe('gemini-2.5-flash-native-audio-latest');
     expect(TIME.MS_TO_SEC).toBe(1000);

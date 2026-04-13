@@ -1,5 +1,5 @@
 /* ============================================
-   AIPhonceCaller.in — Auth Pages (Login, Signup, Reset)
+   AnshulTheGreat.com — Auth Pages (Login, Signup, Reset)
    Premium Glassmorphism Auth Cards
    ============================================ */
 
@@ -399,6 +399,45 @@
 
 .forgot-password-link a:hover {
   color: #c4b5fd;
+}
+
+/* ── Light Theme Overrides ── */
+html[data-theme='light'] .auth-nav {
+  background: rgba(255, 255, 255, 0.78);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme='light'] .auth-card {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
+}
+
+html[data-theme='light'] .auth-card-header h1 {
+  color: #0f172a;
+}
+
+html[data-theme='light'] .auth-card-header p,
+html[data-theme='light'] .auth-field label,
+html[data-theme='light'] .auth-links,
+html[data-theme='light'] .forgot-password-link a,
+html[data-theme='light'] .auth-divider {
+  color: #475569;
+}
+
+html[data-theme='light'] .auth-field input {
+  background: rgba(15, 23, 42, 0.03);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+}
+
+html[data-theme='light'] .auth-field input::placeholder {
+  color: #94a3b8;
+}
+
+html[data-theme='light'] .auth-divider::before,
+html[data-theme='light'] .auth-divider::after {
+  background: rgba(15, 23, 42, 0.08);
 }
 
 /* ── Responsive ── */
