@@ -2,8 +2,9 @@ import { Router, type Request, type Response } from 'express';
 import prisma from '../lib/prisma.js';
 import logger from '../utils/logger.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
+import { RUNTIME_UI_CONFIG } from '../constants/config.js';
 import { PRISMA_ERRORS, AUDIO_CONFIG, ROUTES } from '../types/index.js';
-import { AVAILABLE_VOICES, AVAILABLE_MODELS } from '../constants/agents.js';
+import { AVAILABLE_VOICES, getWhitelabeledModels } from '../constants/agents.js';
 import {
   AGENT_ID_PARAMS_SCHEMA,
   AGENTS_LIST_QUERY_SCHEMA,
@@ -44,7 +45,7 @@ router.get('/voices', (_req: Request, res: Response): void => {
 
 // GET /api/models — list available Gemini Live models
 router.get('/models', (_req: Request, res: Response): void => {
-  res.json(AVAILABLE_MODELS);
+  res.json(getWhitelabeledModels(RUNTIME_UI_CONFIG.websiteName));
 });
 
 // GET /api/agents — list all agents for authenticated user
@@ -302,4 +303,4 @@ router.get('/public/agents/:id/preview', async (req: Request, res: Response): Pr
 });
 
 export default router;
-export { AVAILABLE_VOICES, AVAILABLE_MODELS };
+export { AVAILABLE_VOICES };

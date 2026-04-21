@@ -53,11 +53,11 @@ describe('Render Logic (render.js) — 90%+ Exclusive Coverage', () => {
 
   describe('Model Select Rendering', () => {
     it('should render models and handle missing select', () => {
-      const models = [{ id: 'm1', name: 'Model 1', description: 'Desc 1' }];
+      const models = [{ id: 'm1', name: 'AnshulTheGreat.com 3.1 Flash Live (Preview)', description: 'Desc 1' }];
       renderModelSelect(models);
       const select = document.getElementById('form-model') as HTMLSelectElement;
       expect(select.options.length).toBe(1);
-      expect(select.options[0].textContent).toContain('Model 1');
+      expect(select.options[0].textContent).toContain('AnshulTheGreat.com 3.1 Flash Live (Preview)');
 
       document.getElementById('form-model')?.remove();
       renderModelSelect(models); 

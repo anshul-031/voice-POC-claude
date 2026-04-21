@@ -17,6 +17,7 @@
     "db:migrate": "npx prisma migrate dev",
     "db:deploy": "npx prisma migrate deploy",
     "db:generate": "npx prisma generate",
+    "db:view": "npm run db:studio",
     "db:studio": "npx prisma studio",
     "pr": "npm run lint && npm run typecheck && npm run test:coverage && npm run build"
   },

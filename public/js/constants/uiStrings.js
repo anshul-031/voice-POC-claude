@@ -55,7 +55,7 @@ export const UI_STRINGS = {
     nameLabel: 'Agent Name',
     namePlaceholder: 'e.g. Customer Support Bot',
     voiceLabel: 'Voice',
-    modelLabel: 'Gemini Live Model',
+    modelLabel: 'AnshulTheGreat.com Live Model',
     promptLabel: 'System Prompt',
     publicPreviewLabel: 'Enable public preview URL',
     promptPlaceholder: 'You are a helpful customer support agent for Acme Corp. Be friendly, professional, and concise in your responses...',

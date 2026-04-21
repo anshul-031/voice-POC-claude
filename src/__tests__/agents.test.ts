@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import router from '../routes/agents.js';
 import prisma from '../lib/prisma.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
+import { RUNTIME_UI_CONFIG } from '../constants/config.js';
+import { AVAILABLE_MODELS, getWhitelabeledModelName } from '../constants/agents.js';
 
 vi.mock('../lib/prisma.js', () => ({
   default: {
@@ -43,6 +45,14 @@ describe('Agents Routes', () => {
     expect(res.json).toHaveBeenCalled();
     getRouteHandler('/models', 'get')({} as any, res);
     expect(res.json).toHaveBeenCalledTimes(2);
+
+    const modelsPayload = res.json.mock.calls[1]?.[0];
+    expect(modelsPayload).toHaveLength(AVAILABLE_MODELS.length);
+    expect(modelsPayload[0].id).toBe(AVAILABLE_MODELS[0].id);
+    expect(modelsPayload[0].description).toBe(AVAILABLE_MODELS[0].description);
+    expect(modelsPayload[0].name).toBe(
+      getWhitelabeledModelName(AVAILABLE_MODELS[0].name, RUNTIME_UI_CONFIG.websiteName),
+    );
   });
 
   it('GET /agents success and error', async () => {

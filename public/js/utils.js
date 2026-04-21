@@ -2,6 +2,8 @@
  * General utility functions for the frontend.
  */
 
+const MODEL_PROVIDER_PREFIX_PATTERN = /^gemini(?=[\s-]|$)/i;
+
 /**
  * @param {string} str 
  * @returns {string}
@@ -43,4 +45,23 @@ export function uint8ToBase64(uint8) {
     binary += String.fromCharCode(uint8[i]);
   }
   return window.btoa(binary);
+}
+
+/**
+ * @param {string} modelName
+ * @param {string} websiteName
+ * @returns {string}
+ */
+export function whitelabelModelName(modelName, websiteName) {
+  const normalizedModelName = modelName.trim();
+  if (!normalizedModelName) {
+    return '';
+  }
+
+  const normalizedWebsiteName = websiteName.trim();
+  if (!normalizedWebsiteName) {
+    return normalizedModelName;
+  }
+
+  return normalizedModelName.replace(MODEL_PROVIDER_PREFIX_PATTERN, normalizedWebsiteName);
 }

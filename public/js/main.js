@@ -7,7 +7,7 @@ import { applyI18n, showPanel } from './ui.js';
 import { api, checkApiHealth } from './api.js';
 import { initWaveform } from './waveform.js';
 import { toggleCall, endCall, toggleMute as callToggleMute, prepareAudioPlaybackOnGesture } from './call.js';
-import { showToast } from './utils.js';
+import { showToast, whitelabelModelName } from './utils.js';
 import { appendTranscript, selectVoiceInGrid, clearDebugLogs } from './transcript.js';
 import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
 import { renderVoiceGrid, renderModelSelect, renderAgentList } from './render.js';
@@ -372,7 +372,9 @@ export function showCallPanel(agentId) {
   const modelBadge = document.getElementById('call-model-badge');
   if (modelBadge) {
     const model = models.find(m => m.id === agent.modelName);
-    modelBadge.textContent = model ? model.name : agent.modelName || '';
+    const modelDisplayName = model ? model.name : agent.modelName || '';
+    const websiteName = UI_STRINGS.header.title || CONFIG.DEFAULT_WEBSITE_NAME;
+    modelBadge.textContent = whitelabelModelName(modelDisplayName, websiteName);
   }
   const bodyEl = document.getElementById('transcript-body');
   if (bodyEl) bodyEl.innerHTML = '';

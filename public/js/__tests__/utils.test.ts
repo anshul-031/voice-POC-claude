@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { escapeHtml, showToast, uint8ToBase64 } from '../utils.js';
+import { escapeHtml, showToast, uint8ToBase64, whitelabelModelName } from '../utils.js';
 
 describe('Frontend Utils', () => {
   beforeEach(() => {
@@ -50,6 +50,23 @@ describe('Frontend Utils', () => {
       const input = new Uint8Array([72, 101, 108, 108, 111]); // "Hello"
       const expected = btoa('Hello');
       expect(uint8ToBase64(input)).toBe(expected);
+    });
+  });
+
+  describe('whitelabelModelName', () => {
+    it('should replace gemini prefix in display names and ids', () => {
+      expect(whitelabelModelName('Gemini 3.1 Flash Live (Preview)', 'AnshulTheGreat.com'))
+        .toBe('AnshulTheGreat.com 3.1 Flash Live (Preview)');
+      expect(whitelabelModelName('gemini-3.1-flash-lite-preview', 'AnshulTheGreat.com'))
+        .toBe('AnshulTheGreat.com-3.1-flash-lite-preview');
+    });
+
+    it('should return empty string for empty model labels', () => {
+      expect(whitelabelModelName('   ', 'AnshulTheGreat.com')).toBe('');
+    });
+
+    it('should keep model label unchanged when website name is empty', () => {
+      expect(whitelabelModelName('Custom Live Model', '   ')).toBe('Custom Live Model');
     });
   });
 });

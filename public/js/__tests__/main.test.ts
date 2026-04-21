@@ -26,8 +26,8 @@ describe('Dashboard Logic (main.js) — 90%+ Exclusive Coverage', () => {
       if (path === '/models') return [{ id: 'm1', name: 'Model 1' }];
       if (path === '/agents') return [
         { id: 'a1', name: 'Agent 1', voiceName: 'v1', modelName: 'm1', systemPrompt: 'p1' },
-         // Agent 2 without voiceName/modelName to hit fallback branch
-        { id: 'a2', name: 'Agent 2', systemPrompt: 'p2' }
+         // Agent 2 keeps voice fallback and uses unknown model id to hit branded model fallback.
+        { id: 'a2', name: 'Agent 2', modelName: 'gemini-3.1-flash-lite-preview', systemPrompt: 'p2' }
       ];
       return {};
     });
@@ -197,6 +197,8 @@ describe('Dashboard Logic (main.js) — 90%+ Exclusive Coverage', () => {
       
       // show agent 2 to hit model/voice fallbacks
       showCallPanel('a2');
+      expect(document.getElementById('call-model-badge')?.textContent)
+        .toBe(`${UI_STRINGS.header.title}-3.1-flash-lite-preview`);
       
       // try invalid
       showCallPanel('invalid-id');

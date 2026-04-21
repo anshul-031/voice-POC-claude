@@ -14,6 +14,8 @@ export interface Model {
   description: string;
 }
 
+const MODEL_PROVIDER_PREFIX_PATTERN = /^gemini(?=[\s-]|$)/i;
+
 export const AVAILABLE_VOICES: Voice[] = [
   { id: 'Puck', name: 'Puck', description: 'Warm & friendly — great all-rounder (default)' },
   { id: 'Charon', name: 'Charon', description: 'Deep & authoritative — ideal for formal agents' },
@@ -47,3 +49,25 @@ export const AVAILABLE_MODELS: Model[] = [
     description: 'Native audio preview from September 2025',
   },
 ];
+
+/**
+ * Replaces the provider prefix in a model label with the current website brand.
+ */
+export function getWhitelabeledModelName(modelName: string, websiteName: string): string {
+  const normalizedWebsiteName = websiteName.trim();
+  if (!normalizedWebsiteName) {
+    return modelName;
+  }
+
+  return modelName.replace(MODEL_PROVIDER_PREFIX_PATTERN, normalizedWebsiteName);
+}
+
+/**
+ * Returns model options with branded display names, preserving ids/descriptions.
+ */
+export function getWhitelabeledModels(websiteName: string): Model[] {
+  return AVAILABLE_MODELS.map((model) => ({
+    ...model,
+    name: getWhitelabeledModelName(model.name, websiteName),
+  }));
+}

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { CONFIG, RUNTIME_UI_CONFIG } from '../constants/config.js';
 import { DEFAULT_PORT } from '../constants/index.js';
 import { ROUTES, PRISMA_ERRORS, AUDIO_CONFIG, TIME, LOGGING, MESSAGE_TYPE, VOICE_NAME } from '../types/index.js';
+import { AVAILABLE_MODELS, getWhitelabeledModelName, getWhitelabeledModels } from '../constants/agents.js';
 
 describe('Config and Types Constants', () => {
   it('should expose frontend config constants', () => {
@@ -24,5 +25,19 @@ describe('Config and Types Constants', () => {
     expect(LOGGING.THROTTLE_CHUNKS).toBe(50);
     expect(MESSAGE_TYPE.START_CALL).toBe('start-call');
     expect(VOICE_NAME.PUCK).toBe('Puck');
+  });
+
+  it('should whitelabel model names and preserve model ids', () => {
+    expect(getWhitelabeledModelName('Gemini 3.1 Flash Live (Preview)', 'AnshulTheGreat.com'))
+      .toBe('AnshulTheGreat.com 3.1 Flash Live (Preview)');
+    expect(getWhitelabeledModelName('gemini-3.1-flash-lite-preview', 'AnshulTheGreat.com'))
+      .toBe('AnshulTheGreat.com-3.1-flash-lite-preview');
+    expect(getWhitelabeledModelName('Custom Live Model', '   ')).toBe('Custom Live Model');
+
+    const brandedModels = getWhitelabeledModels('Branding.site');
+    expect(brandedModels).toHaveLength(AVAILABLE_MODELS.length);
+    expect(brandedModels[0].id).toBe(AVAILABLE_MODELS[0].id);
+    expect(brandedModels[0].description).toBe(AVAILABLE_MODELS[0].description);
+    expect(brandedModels[0].name.startsWith('Branding.site')).toBe(true);
   });
 });
