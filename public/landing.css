@@ -1,6 +1,6 @@
 /* ============================================
    AnshulTheGreat.com — Landing Page
-   Premium BFSI Voice Bot Marketing Page
+   Enterprise Voice AI & Speech Analytics
    ============================================ */
 
 /* ── Landing Nav ── */
@@ -351,111 +351,250 @@
   line-height: 1.6;
 }
 
-/* ── BFSI Use Cases ── */
-.usecase-grid {
+/* ── Solutions Section ── */
+.solutions-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 28px;
 }
 
-.usecase-card {
+.solution-card {
   background: rgba(26, 26, 46, 0.5);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 20px;
-  padding: 36px 28px;
+  border-radius: 24px;
+  padding: 40px 32px;
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
 }
 
-.usecase-card::before {
+.solution-card::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(6, 182, 212, 0.05));
   opacity: 0;
   transition: opacity 0.4s;
 }
 
-.usecase-card:hover {
-  border-color: rgba(124, 58, 237, 0.2);
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), 0 0 40px rgba(124, 58, 237, 0.06);
+.solution-card:first-child::before {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(6, 182, 212, 0.04));
 }
 
-.usecase-card:hover::before {
+.solution-card:last-child::before {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(124, 58, 237, 0.04));
+}
+
+.solution-card:hover {
+  border-color: rgba(124, 58, 237, 0.2);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3), 0 0 40px rgba(124, 58, 237, 0.06);
+}
+
+.solution-card:hover::before {
   opacity: 1;
 }
 
-.usecase-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
+.solution-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.5rem;
   margin-bottom: 20px;
   position: relative;
   z-index: 1;
 }
 
-.usecase-icon.banking {
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+.solution-icon.voice-ai {
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  color: #a78bfa;
 }
 
-.usecase-icon.insurance {
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+.solution-icon.speech-analytics {
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  color: #22d3ee;
 }
 
-.usecase-icon.financial {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.2);
-}
-
-.usecase-card h3 {
-  font-size: 1.2rem;
+.solution-label {
+  font-size: 0.72rem;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6a6a8e;
+  margin-bottom: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.solution-card h3 {
+  font-size: 1.4rem;
+  font-weight: 700;
   color: #f0f0f8;
   margin-bottom: 12px;
   position: relative;
   z-index: 1;
 }
 
-.usecase-card p {
-  font-size: 0.88rem;
+.solution-card p {
+  font-size: 0.92rem;
   color: #a0a0c0;
-  line-height: 1.6;
-  margin-bottom: 20px;
+  line-height: 1.65;
+  margin-bottom: 24px;
   position: relative;
   z-index: 1;
 }
 
-.usecase-list {
+.solution-features {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  margin-bottom: 28px;
   position: relative;
   z-index: 1;
 }
 
-.usecase-list li {
+.solution-features li {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.82rem;
+  gap: 10px;
+  font-size: 0.85rem;
   color: #a0a0c0;
 }
 
-.usecase-list li::before {
+.solution-features li::before {
   content: '✓';
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: #22c55e;
   font-weight: 700;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.solution-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: #c4b5fd;
+  padding: 10px 0;
+  position: relative;
+  z-index: 1;
+  transition: all 0.25s;
+}
+
+.solution-cta:hover {
+  color: #e2e8f0;
+  gap: 12px;
+}
+
+/* ── Industries Grid ── */
+.industries-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.industry-card {
+  background: rgba(26, 26, 46, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 18px;
+  padding: 32px 24px;
+  text-align: center;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.industry-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.06), rgba(6, 182, 212, 0.04));
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+.industry-card:hover {
+  border-color: rgba(124, 58, 237, 0.15);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), 0 0 24px rgba(124, 58, 237, 0.05);
+}
+
+.industry-card:hover::before {
+  opacity: 1;
+}
+
+.industry-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  margin: 0 auto 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.industry-icon.banking {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.industry-icon.healthcare {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.industry-icon.retail {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.industry-icon.telecom {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.industry-icon.manufacturing {
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.industry-icon.education {
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+}
+
+.industry-card h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f0f0f8;
+  margin-bottom: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.industry-card p {
+  font-size: 0.82rem;
+  color: #a0a0c0;
+  line-height: 1.55;
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Features Grid ── */
@@ -708,12 +847,25 @@ html[data-theme='light'] .footer-copy {
 
 html[data-theme='light'] .stats-grid,
 html[data-theme='light'] .feature-card,
-html[data-theme='light'] .usecase-card,
+html[data-theme='light'] .solution-card,
+html[data-theme='light'] .industry-card,
 html[data-theme='light'] .step-card,
 html[data-theme='light'] .cta-box {
   background: rgba(255, 255, 255, 0.78);
   border-color: rgba(15, 23, 42, 0.1);
   box-shadow: 0 8px 28px rgba(15, 23, 42, 0.1);
+}
+
+html[data-theme='light'] .solution-card h3,
+html[data-theme='light'] .industry-card h3 {
+  color: #0f172a;
+}
+
+html[data-theme='light'] .solution-card p,
+html[data-theme='light'] .solution-features li,
+html[data-theme='light'] .solution-label,
+html[data-theme='light'] .industry-card p {
+  color: #475569;
 }
 
 html[data-theme='light'] .landing-footer {
@@ -735,7 +887,8 @@ html[data-theme='light'] .landing-footer {
 
 /* ── Responsive ── */
 @media (max-width: 1024px) {
-  .usecase-grid { grid-template-columns: 1fr; }
+  .solutions-grid { grid-template-columns: 1fr; }
+  .industries-grid { grid-template-columns: repeat(2, 1fr); }
   .features-grid { grid-template-columns: 1fr; }
   .steps-grid { grid-template-columns: 1fr; gap: 24px; }
   .steps-grid::before { display: none; }
@@ -751,17 +904,21 @@ html[data-theme='light'] .landing-footer {
   .hero-actions { flex-direction: column; align-items: center; }
   .landing-section { padding: 60px 20px; }
   .section-header h2 { font-size: 1.8rem; }
+  .industries-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; }
   .stat-number { font-size: 1.8rem; }
+  .solution-card { padding: 32px 24px; }
   .cta-section { padding: 60px 20px; }
   .cta-box { padding: 48px 28px; border-radius: 20px; }
   .cta-box h2 { font-size: 1.6rem; }
   .footer-content { flex-direction: column; gap: 20px; text-align: center; }
-  .footer-links { justify-content: center; }
+  .footer-links { justify-content: center; flex-wrap: wrap; }
 }
 
 @media (max-width: 480px) {
   .nav-links .nav-link-ghost { display: none; }
   .hero h1 { font-size: 1.85rem; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
+  .industries-grid { grid-template-columns: 1fr; }
+  .industry-card { padding: 24px 20px; }
 }
