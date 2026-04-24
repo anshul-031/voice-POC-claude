@@ -10,7 +10,7 @@ import authRoutes from './routes/auth.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
 import { RUNTIME_UI_CONFIG } from './constants/config.js';
-import { DEFAULT_PORT } from './constants/index.js';
+import { DEFAULT_PORT, DEFAULT_LANDING_PAGE_URL } from './constants/index.js';
 import { ROUTES } from './types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,6 +20,7 @@ const PUBLIC_DIR = join(process.cwd(), 'public');
 const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || DEFAULT_PORT;
+const LANDING_PAGE_URL = process.env.LANDING_PAGE_URL || DEFAULT_LANDING_PAGE_URL;
 
 // Middleware
 app.use(cors());
@@ -66,13 +67,13 @@ app.get(ROUTES.RUNTIME_CONFIG, (_req: Request, res: Response) => {
   res.json(RUNTIME_UI_CONFIG);
 });
 
-// Canonical page routes
+// Landing page routes — redirect to external landing application
 app.get(ROUTES.LANDING_PAGE, (req: Request, res: Response) => {
-  sendPublicPage(res, 'landing.html');
+  res.redirect(302, LANDING_PAGE_URL);
 });
 
 app.get(ROUTES.LANDING_ALIAS_PAGE, (req: Request, res: Response) => {
-  redirectTo(res, ROUTES.LANDING_PAGE);
+  res.redirect(302, LANDING_PAGE_URL);
 });
 
 app.get(ROUTES.DASHBOARD_PAGE, (req: Request, res: Response) => {
@@ -97,7 +98,7 @@ app.get(ROUTES.RESET_PASSWORD_PAGE, (req: Request, res: Response) => {
 
 // Legacy page URLs
 app.get(ROUTES.LEGACY_LANDING_PAGE, (req: Request, res: Response) => {
-  redirectTo(res, ROUTES.LANDING_PAGE);
+  res.redirect(302, LANDING_PAGE_URL);
 });
 
 app.get(ROUTES.LEGACY_DASHBOARD_PAGE, (req: Request, res: Response) => {

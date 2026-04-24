@@ -118,7 +118,6 @@ describe('Server initialization and Routes', () => {
 
     // Test canonical page routes + preview + fallback route
     const sendFileRoutes = [
-      ROUTES.LANDING_PAGE,
       ROUTES.DASHBOARD_PAGE,
       ROUTES.LOGIN_PAGE,
       ROUTES.SIGNUP_PAGE,
@@ -134,10 +133,8 @@ describe('Server initialization and Routes', () => {
     });
     expect(res.sendFile).toHaveBeenCalled();
 
-    // Test alias + legacy redirects
+    // Test alias + legacy redirects (301 — internal pages)
     const redirectRoutes: Array<[string, string]> = [
-      [ROUTES.LANDING_ALIAS_PAGE, ROUTES.LANDING_PAGE],
-      [ROUTES.LEGACY_LANDING_PAGE, ROUTES.LANDING_PAGE],
       [ROUTES.LEGACY_DASHBOARD_PAGE, ROUTES.DASHBOARD_PAGE],
       [ROUTES.LEGACY_LOGIN_PAGE, ROUTES.LOGIN_PAGE],
       [ROUTES.LEGACY_SIGNUP_PAGE, ROUTES.SIGNUP_PAGE],
@@ -148,6 +145,19 @@ describe('Server initialization and Routes', () => {
       if (routes[path]) {
         routes[path]({}, res);
         expect(res.redirect).toHaveBeenCalledWith(301, target);
+      }
+    });
+
+    // Test landing page external redirects (302)
+    const landingRedirectRoutes = [
+      ROUTES.LANDING_PAGE,
+      ROUTES.LANDING_ALIAS_PAGE,
+      ROUTES.LEGACY_LANDING_PAGE,
+    ];
+    landingRedirectRoutes.forEach((path) => {
+      if (routes[path]) {
+        routes[path]({}, res);
+        expect(res.redirect).toHaveBeenCalledWith(302, expect.any(String));
       }
     });
 

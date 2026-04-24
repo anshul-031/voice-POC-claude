@@ -128,10 +128,15 @@ class GeminiLiveService {
             this._handleMessage(sessionId, message, onAudio, onTranscript, onInterrupted);
           },
           onerror: (error: unknown) => {
-            const errorMsg = error instanceof Error ? error.message : String(error || 'Unknown Gemini error');
+            const errorMsg = error instanceof Error
+              ? error.message
+              : (typeof error === 'object' && error !== null
+                ? JSON.stringify(error)
+                : String(error || 'Unknown Gemini error'));
             logger.error('Gemini Live session error', {
               sessionId,
               error: errorMsg,
+              errorType: typeof error,
               stack: error instanceof Error ? error.stack : undefined,
               correlationId,
             });

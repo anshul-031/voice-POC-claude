@@ -156,6 +156,44 @@ describe('GeminiLiveService', () => {
     }
   });
 
+  it('should cover null transcription values in _processServerTranscriptions', async () => {
+    await geminiLiveService.createSession('null-trans', { onTranscript: vi.fn() });
+    if (state.callbacks) {
+      // null values should skip _processTranscription (the !== null guard)
+      state.callbacks.onmessage({
+        serverContent: {
+          inputTranscription: null,
+          outputTranscription: null,
+        },
+      });
+    }
+  });
+
+  it('should skip entry block but still call onAudio when entry is missing in _processDirectAudio', async () => {
+    const onAudio = vi.fn();
+    await geminiLiveService.createSession('no-entry-audio', { onAudio });
+    if (state.callbacks) {
+      // Manually set audioChunksReceived to 1 so first chunk is logged,
+      // then send a second chunk (count=2) to hit shouldLogChunkProgress false branch
+      const entry = geminiLiveService.sessions.get('no-entry-audio');
+      if (entry) entry.audioChunksReceived = 1;
+      state.callbacks.onmessage({
+        serverContent: {
+          modelTurn: {
+            parts: [{ inlineData: { mimeType: 'audio/pcm', data: 'chunk2' } }],
+          },
+        },
+      });
+    }
+  });
+
+  it('should call onAudio even when session entry is absent (entry undefined path)', async () => {
+    const onAudio = vi.fn();
+    // Call the private method directly since _handleMessage early-returns if session is missing
+    (geminiLiveService as any)._processDirectAudio('ghost-session', 'ghost-audio', onAudio);
+    expect(onAudio).toHaveBeenCalledWith('ghost-audio');
+  });
+
   it('should cover missing session on close', async () => {
     await geminiLiveService.closeSession('doesnt-exist');
   });

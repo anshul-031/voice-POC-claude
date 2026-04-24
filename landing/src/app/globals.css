@@ -1,7 +1,137 @@
 /* ============================================
    AnshulTheGreat.com — Landing Page
    Enterprise Voice AI & Speech Analytics
+   Standalone Next.js Landing Application
    ============================================ */
+
+/* ── CSS Custom Properties (Design Tokens) ── */
+:root {
+  /* Colors */
+  --bg-primary: #0a0a12;
+  --bg-secondary: #12121f;
+  --bg-tertiary: #1a1a2e;
+  --bg-card: rgba(26, 26, 46, 0.6);
+  --bg-card-hover: rgba(36, 36, 62, 0.7);
+  --bg-glass: rgba(255, 255, 255, 0.03);
+  --bg-glass-hover: rgba(255, 255, 255, 0.06);
+
+  --text-primary: #f0f0f8;
+  --text-secondary: #a0a0c0;
+  --text-muted: #6a6a8e;
+  --text-accent: #c4b5fd;
+
+  --accent-1: #7c3aed;
+  --accent-2: #06b6d4;
+  --accent-gradient: linear-gradient(135deg, #7c3aed, #06b6d4);
+  --accent-gradient-hover: linear-gradient(135deg, #8b5cf6, #22d3ee);
+  --accent-glow: 0 0 30px rgba(124, 58, 237, 0.3), 0 0 60px rgba(6, 182, 212, 0.15);
+
+  --border-color: rgba(255, 255, 255, 0.06);
+  --border-accent: rgba(124, 58, 237, 0.3);
+
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #f59e0b;
+
+  /* Spacing */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme='light'] {
+  --bg-primary: #f4f7fb;
+  --bg-secondary: #e9eef6;
+  --bg-tertiary: #dbe7f6;
+  --bg-card: rgba(255, 255, 255, 0.78);
+  --bg-card-hover: rgba(255, 255, 255, 0.92);
+  --bg-glass: rgba(15, 23, 42, 0.04);
+  --bg-glass-hover: rgba(15, 23, 42, 0.08);
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-accent: #4f46e5;
+
+  --accent-1: #2563eb;
+  --accent-2: #0ea5e9;
+  --accent-gradient: linear-gradient(135deg, #2563eb, #0ea5e9);
+  --accent-gradient-hover: linear-gradient(135deg, #1d4ed8, #0284c7);
+  --accent-glow: 0 0 26px rgba(37, 99, 235, 0.28), 0 0 52px rgba(14, 165, 233, 0.16);
+
+  --border-color: rgba(15, 23, 42, 0.1);
+  --border-accent: rgba(37, 99, 235, 0.24);
+
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.12);
+  --shadow-md: 0 6px 16px rgba(15, 23, 42, 0.14);
+  --shadow-lg: 0 14px 36px rgba(15, 23, 42, 0.18);
+  --shadow-xl: 0 28px 72px rgba(15, 23, 42, 0.2);
+}
+
+/* ── Reset & Base ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Ambient background glow */
+body::before {
+  content: '';
+  position: fixed;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(124, 58, 237, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(124, 58, 237, 0.04) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+  animation: ambientShift 20s ease-in-out infinite;
+}
+
+html[data-theme='light'] body::before {
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(37, 99, 235, 0.09) 0%, transparent 52%),
+    radial-gradient(ellipse at 80% 20%, rgba(14, 165, 233, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(59, 130, 246, 0.06) 0%, transparent 48%);
+}
+
+@keyframes ambientShift {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33% { transform: translate(2%, -1%) rotate(1deg); }
+  66% { transform: translate(-1%, 2%) rotate(-1deg); }
+}
 
 /* ── Landing Nav ── */
 .landing-nav {
@@ -208,30 +338,6 @@
   border-color: rgba(124, 58, 237, 0.6);
   color: #ffffff;
   background: rgba(255, 255, 255, 0.08);
-}
-
-/* Hero wave animation */
-.hero-visual {
-  position: absolute;
-  bottom: -20px;
-  left: 0;
-  right: 0;
-  height: 200px;
-  overflow: hidden;
-  z-index: 1;
-}
-
-.hero-wave {
-  position: absolute;
-  bottom: 0;
-  width: 200%;
-  height: 100px;
-  opacity: 0.08;
-}
-
-.hero-wave svg {
-  width: 100%;
-  height: 100%;
 }
 
 /* Floating particles as Mesh Gradient Orbs */
