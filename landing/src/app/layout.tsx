@@ -8,14 +8,13 @@ const inter = Inter({
   display: 'swap',
 });
 
+const WEBSITE_NAME = process.env.NEXT_PUBLIC_WEBSITE_NAME || 'AnshulTheGreat.com';
+
 export const metadata: Metadata = {
-  title:
-    'AnshulTheGreat.com — Enterprise Voice AI Agents & Speech Analytics',
-  description:
-    'AnshulTheGreat.com — Enterprise Voice AI agents and advanced speech analytics for B2B businesses. Automate conversations, unlock insights, and scale customer engagement across any industry.',
+  title: `${WEBSITE_NAME} — Enterprise Voice AI Agents & Speech Analytics`,
+  description: `${WEBSITE_NAME} — Enterprise Voice AI agents and advanced speech analytics for B2B businesses. Automate conversations, unlock insights, and scale customer engagement across any industry.`,
   openGraph: {
-    title:
-      'AnshulTheGreat.com — Enterprise Voice AI Agents & Speech Analytics',
+    title: `${WEBSITE_NAME} — Enterprise Voice AI Agents & Speech Analytics`,
     description:
       'Deploy AI-powered voice agents and advanced speech analytics for B2B businesses.',
     type: 'website',

@@ -1,6 +1,7 @@
 import LandingInteractions from '@/components/LandingInteractions';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+const WEBSITE_NAME = process.env.NEXT_PUBLIC_WEBSITE_NAME || 'AnshulTheGreat.com';
 
 export default function LandingPage(): React.JSX.Element {
   const signupUrl = `${APP_URL}/signup`;
@@ -30,7 +31,7 @@ export default function LandingPage(): React.JSX.Element {
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
           </div>
-          <span className="nav-logo-text">AnshulTheGreat.com</span>
+          <span className="nav-logo-text">{WEBSITE_NAME}</span>
         </a>
         <div className="nav-links">
           <a href="#solutions" className="nav-link-ghost">
@@ -518,7 +519,7 @@ export default function LandingPage(): React.JSX.Element {
         <div className="cta-box reveal">
           <h2>Ready to Transform Your Customer Experience?</h2>
           <p>
-            Join leading enterprises using AnshulTheGreat.com to automate voice
+            Join leading enterprises using {WEBSITE_NAME} to automate voice
             interactions and unlock conversation intelligence.
           </p>
           <div className="hero-actions">
@@ -550,7 +551,7 @@ export default function LandingPage(): React.JSX.Element {
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               </svg>
             </div>
-            <span>AnshulTheGreat.com</span>
+            <span>{WEBSITE_NAME}</span>
           </div>
           <div className="footer-links">
             <a href="#solutions">Solutions</a>
@@ -560,7 +561,7 @@ export default function LandingPage(): React.JSX.Element {
             <a href={loginUrl}>Login</a>
           </div>
           <div className="footer-copy">
-            &copy; 2026 AnshulTheGreat.com. All rights reserved.
+            &copy; 2026 {WEBSITE_NAME}. All rights reserved.
           </div>
         </div>
       </footer>
