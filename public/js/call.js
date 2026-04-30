@@ -339,6 +339,17 @@ function setupAudioGraph() {
   };
 }
 
+/** @returns {void} */
+function resetMuteButtonUI() {
+  const btn = document.getElementById('btn-mute');
+  if (btn) btn.classList.remove('muted');
+  const iconOff = document.getElementById('mute-icon-off');
+  if (iconOff) iconOff.classList.remove('hidden');
+  const iconOn = document.getElementById('mute-icon-on');
+  if (iconOn) iconOn.classList.add('hidden');
+}
+
+
 /** @param {string} agentId @param {CallCallbacks} callbacks @returns {Promise<void>} */
 function setupSocket(agentId, callbacks) {
   const wsConnectStart = Date.now();
@@ -615,14 +626,25 @@ export async function endCall() {
   stopTimer();
   updateCallUI(false);
   stopWaveformAnimation();
+  setMediaStreamTracksEnabled(true);
   isMuted = false;
+  resetMuteButtonUI();
   startupTrace = null;
   appendDebugLog(UI_STRINGS.signaling.logs.callEndComplete, 'info');
+}
+
+/** @param {boolean} enabled @returns {void} */
+function setMediaStreamTracksEnabled(enabled) {
+  if (!mediaStream) return;
+  mediaStream.getAudioTracks().forEach((track) => {
+    track.enabled = enabled;
+  });
 }
 
 /** @returns {boolean} */
 export function toggleMute() {
   isMuted = !isMuted;
+  setMediaStreamTracksEnabled(!isMuted);
   return isMuted;
 }
 

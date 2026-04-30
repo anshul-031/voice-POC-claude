@@ -6,6 +6,7 @@ import {
   toggleCall, getCallState, toggleMute, handleWsMessage, startTimer, stopTimer, playAudioResponse, startCall, resetState, getWs, getAudioProcessor, getAudioContext, processAudioQueue,
 } from '../call.js';
 import { MESSAGE_TYPE } from '../constants/config.js';
+const mockMedia = () => ({ getTracks: () => [{ stop: vi.fn(), enabled: true }], getAudioTracks: () => [{ stop: vi.fn(), enabled: true }] });
 
 describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
   let mockCallbacks: {
@@ -13,6 +14,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     onTimerUpdate: ReturnType<typeof vi.fn>;
     onTranscript: ReturnType<typeof vi.fn>;
   };
+  let mockAudioTrack: { stop: ReturnType<typeof vi.fn>; enabled: boolean };
 
   beforeEach(() => {
     resetState();
@@ -29,26 +31,19 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     }));
 
     class MockWS {
-      static CONNECTING = 0;
-      static OPEN = 1;
-      static CLOSING = 2;
-      static CLOSED = 3;
-      onopen: (() => void) | null = null;
-      onmessage: ((ev: { data: string }) => void) | null = null;
-      onerror: (() => void) | null = null;
-      onclose: ((ev: { code: number }) => void) | null = null;
-      readyState = 1;
-      send = vi.fn();
-      close = vi.fn();
-      addEventListener = vi.fn();
-      removeEventListener = vi.fn();
+      static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
+      onopen: (() => void) | null = null; onmessage: ((ev: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null; onclose: ((ev: { code: number }) => void) | null = null;
+      readyState = 1; send = vi.fn(); close = vi.fn();
+      addEventListener = vi.fn(); removeEventListener = vi.fn();
     }
     vi.stubGlobal('WebSocket', MockWS);
 
+    mockAudioTrack = { stop: vi.fn(), enabled: true };
     vi.stubGlobal('navigator', {
       mediaDevices: {
         getUserMedia: vi.fn().mockResolvedValue({
-          getTracks: () => [{ stop: vi.fn(), enabled: true }],
+          getTracks: () => [mockAudioTrack], getAudioTracks: () => [mockAudioTrack],
         }),
       },
     });
@@ -56,40 +51,20 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     const mockAudioContextInstance = {
       createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
       createGain: vi.fn().mockReturnValue({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }),
-      createBiquadFilter: vi.fn().mockReturnValue({
-        type: 'highpass',
-        frequency: { value: 0 },
-        Q: { value: 0 },
-        connect: vi.fn(),
-      }),
+      createBiquadFilter: vi.fn().mockReturnValue({ type: 'highpass', frequency: { value: 0 }, Q: { value: 0 }, connect: vi.fn() }),
       createAnalyser: vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256 }),
-      createScriptProcessor: vi.fn().mockReturnValue({ 
-        connect: vi.fn(), 
-        onaudioprocess: null,
-        disconnect: vi.fn(),
-      }),
-      createBuffer: vi.fn().mockReturnValue({
-        getChannelData: vi.fn().mockReturnValue(new Float32Array(1024)),
-      }),
+      createScriptProcessor: vi.fn().mockReturnValue({ connect: vi.fn(), onaudioprocess: null, disconnect: vi.fn() }),
+      createBuffer: vi.fn().mockReturnValue({ getChannelData: vi.fn().mockReturnValue(new Float32Array(1024)) }),
       createBufferSource: vi.fn().mockReturnValue({
-        buffer: null,
-        connect: vi.fn(),
-        start: vi.fn(),
-        onended: null,
-        disconnect: vi.fn(),
-        stop: vi.fn(),
+        buffer: null, connect: vi.fn(), start: vi.fn(), onended: null, disconnect: vi.fn(), stop: vi.fn(),
       }),
-      destination: {},
-      close: vi.fn().mockResolvedValue(undefined),
-      state: 'running',
+      destination: {}, close: vi.fn().mockResolvedValue(undefined), state: 'running',
       resume: vi.fn().mockResolvedValue(undefined),
     };
 
     class MockAudioContext {
       constructor() { return mockAudioContextInstance as any; }
-      state = 'running';
-      close = vi.fn().mockResolvedValue(undefined);
-      resume = vi.fn().mockResolvedValue(undefined);
+      state = 'running'; close = vi.fn().mockResolvedValue(undefined); resume = vi.fn().mockResolvedValue(undefined);
     }
     vi.stubGlobal('AudioContext', MockAudioContext);
     vi.stubGlobal('webkitAudioContext', MockAudioContext);
@@ -100,7 +75,10 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       <div id="call-status"></div>
       <div id="call-timer"></div>
       <div id="call-agent-name"></div>
-      <button id="btn-mute"></button>
+      <button id="btn-mute">
+        <svg id="mute-icon-off"></svg>
+        <svg id="mute-icon-on" class="hidden"></svg>
+      </button>
       <canvas id="waveform-canvas"></canvas>
     `;
   });
@@ -111,7 +89,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       const ws = getWs() as any; ws?.onopen?.();
       expect(ws?.send).toHaveBeenCalled();
     });
-
     it('should handle ws.onmessage success and parse fail', async () => {
       await startCall('a1', mockCallbacks);
       const ws = getWs() as any;
@@ -121,7 +98,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       ws?.onmessage?.({ data: JSON.stringify({ unknown: true }) });
       ws?.onmessage?.({ data: 'invalid-json' });
     });
-
     it('should handle signaling websocket open timeout', async () => {
       await startCall('a1', mockCallbacks);
       vi.advanceTimersByTime(10001);
@@ -129,7 +105,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       await Promise.resolve();
       expect(getWs()).toBeNull();
     });
-
     it('should handle ws.onerror', async () => {
       await startCall('a1', mockCallbacks);
       const ws = getWs() as any; ws?.onerror?.();
@@ -137,19 +112,16 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
       expect(getWs()).toBe(null);
     });
-
     it('should handle ws.onclose', async () => {
       await startCall('a1', mockCallbacks);
       const ws = getWs() as any; expect(ws).not.toBeNull();
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
       expect(getCallState().isInCall).toBe(true);
-
       ws?.onclose?.({ code: 1000 });
       expect(getCallState().isInCall).toBe(false);
       await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
       expect(getWs()).toBe(null);
     });
-
     it('should handle scriptProcessor.onaudioprocess', async () => {
       await startCall('a1', mockCallbacks);
       const sp = getAudioProcessor() as any;
@@ -158,7 +130,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       if (ws) ws.readyState = 1;
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
       expect(getCallState().isInCall).toBe(true);
-
       sp?.onaudioprocess?.({
         inputBuffer: { getChannelData: () => new Float32Array(1024) },
       });
@@ -170,6 +141,26 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       });
       expect(ws?.send).not.toHaveBeenCalled();
     });
+    it('should disable media tracks on mute, re-enable on unmute, and reset UI on endCall', async () => {
+      await startCall('a1', mockCallbacks);
+      handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
+      expect(toggleMute()).toBe(true);
+      expect(mockAudioTrack.enabled).toBe(false);
+      expect(toggleMute()).toBe(false);
+      expect(mockAudioTrack.enabled).toBe(true);
+      toggleMute();
+      const btn = document.getElementById('btn-mute');
+      if (btn) btn.classList.add('muted');
+      const iconOff = document.getElementById('mute-icon-off');
+      if (iconOff) iconOff.classList.add('hidden');
+      const iconOn = document.getElementById('mute-icon-on');
+      if (iconOn) iconOn.classList.remove('hidden');
+      await (await import('../call.js')).endCall();
+      await Promise.resolve(); await Promise.resolve();
+      expect(btn?.classList.contains('muted')).toBe(false);
+      expect(iconOff?.classList.contains('hidden')).toBe(false);
+      expect(iconOn?.classList.contains('hidden')).toBe(true);
+    });
   });
   describe('Edge Cases', () => {
     it('should handle toggleCall', async () => {
@@ -177,13 +168,12 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
       await toggleCall('a1', mockCallbacks);
     });
-
     it('should handle failed startCall validation', async () => {
       await startCall(null, mockCallbacks);
       expect(getWs()).toBe(null);
       resetState();
       vi.stubGlobal('navigator', {
-        mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn(), enabled: true }] }) }
+        mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(mockMedia()) }
       });
       const tempAudio = window.AudioContext;
       (window as any).AudioContext = undefined;
@@ -198,7 +188,7 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       vi.stubGlobal('AudioContext', undefined as unknown as typeof AudioContext);
       vi.stubGlobal('webkitAudioContext', undefined as unknown as typeof AudioContext);
       vi.stubGlobal('navigator', {
-        mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn(), enabled: true }] }) },
+        mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(mockMedia()) },
       });
       await startCall('a1', mockCallbacks);
       vi.stubGlobal('AudioContext', activeAudioContext as unknown as typeof AudioContext);
@@ -224,18 +214,12 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
         createGain = vi.fn().mockReturnValue({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() });
         createAnalyser = vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256 });
         createScriptProcessor = vi.fn().mockReturnValue({ connect: vi.fn(), onaudioprocess: null, disconnect: vi.fn() });
-        destination = {};
-        close = vi.fn().mockResolvedValue(undefined);
-        state = 'suspended';
-        resume = vi.fn().mockImplementation(async () => {
-          this.state = 'running';
-        });
+        destination = {}; close = vi.fn().mockResolvedValue(undefined); state = 'suspended';
+        resume = vi.fn().mockImplementation(async () => { this.state = 'running'; });
       }
       vi.stubGlobal('AudioContext', SuspendedAudioContext as unknown as typeof AudioContext);
       vi.stubGlobal('navigator', {
-        mediaDevices: {
-          getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn(), enabled: true }] }),
-        },
+        mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(mockMedia()) },
       });
       await startCall('a1', mockCallbacks);
       resetState();
@@ -251,7 +235,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       });
       await startCall('a1', mockCallbacks);
     });
-
     it('should handle handleWsMessage branches', () => {
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED, agentName: 'TestAgent' }, mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.AUDIO_RESPONSE, data: 'base64audio' }, mockCallbacks);
@@ -264,7 +247,6 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       handleWsMessage({ type: 'UNKNOWN' } as any, mockCallbacks);
     });
   });
-
   describe('Timer Logic', () => {
     it('should start and stop timer', () => {
       startTimer(mockCallbacks.onTimerUpdate as unknown as (s: number) => void);
@@ -273,65 +255,49 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       stopTimer();
     });
   });
-
   describe('Audio Playback', () => {
     it('should handle playAudioResponse with queue', async () => {
       vi.stubGlobal('atob', () => 'abcdabcd'); window.atob = () => 'abcdabcd';
-
       await startCall('a1', mockCallbacks);
       playAudioResponse('');
       playAudioResponse('base64data');
       playAudioResponse('base64data');
       getAudioContext();
-
       await Promise.resolve(); await Promise.resolve();
       const ctx = getAudioContext() as any;
       if (ctx && ctx.createBufferSource) {
         await processAudioQueue();
       }
-
       playAudioResponse('trigger-catch');
       vi.stubGlobal('atob', () => { throw new Error('Test Error parsing'); });
       window.atob = () => { throw new Error('Test Error parsing'); };
       await processAudioQueue();
     });
-
     it('should stop active playback on server interrupted event', async () => {
       vi.stubGlobal('atob', () => 'abcdabcd'); window.atob = () => 'abcdabcd';
-
       await startCall('a1', mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
-
       playAudioResponse('base64data');
       await Promise.resolve();
-
       const ctx = getAudioContext() as any; const source = ctx.createBufferSource.mock.results[0]?.value;
       expect(source).toBeDefined();
-
       handleWsMessage({ type: MESSAGE_TYPE.INTERRUPTED } as any, mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.INTERRUPTED } as any, mockCallbacks);
-
       expect(source.stop).toHaveBeenCalled();
     });
-
     it('should barge-in locally when user speech starts during model playback', async () => {
       vi.stubGlobal('atob', () => 'abcdabcd'); window.atob = () => 'abcdabcd';
-
       await startCall('a1', mockCallbacks);
       handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
-
       playAudioResponse('base64data');
       await Promise.resolve();
-
       const ctx = getAudioContext() as any; const source = ctx.createBufferSource.mock.results[0]?.value;
       const sp = getAudioProcessor() as any;
       expect(source).toBeDefined();
       expect(sp).toBeDefined();
-
       const loudFrame = new Float32Array(1024).fill(0.6);
       sp.onaudioprocess({ inputBuffer: { getChannelData: () => loudFrame } });
       sp.onaudioprocess({ inputBuffer: { getChannelData: () => loudFrame } });
-
       expect(source.stop).toHaveBeenCalled();
     });
   });
