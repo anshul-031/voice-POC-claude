@@ -176,6 +176,8 @@ export const UI_STRINGS = {
       startCallRecoveryHint: (/** @type {string} */ msg) => `Recovery suggestion: ${msg}`,
       interrupted: 'Model response interrupted',
       bargeInDetected: 'User speech detected, interrupting model playback',
+      modelInactivityWarn: (/** @type {number} */ ms) =>
+        `No model response for ${Math.round(ms / 1000)}s after last user audio`,
       callStarted: 'Call established',
       callEnded: (/** @type {string} */ reason) => `Call ended: ${reason}`,
       callError: (/** @type {string} */ msg) => `Call error: ${msg}`,

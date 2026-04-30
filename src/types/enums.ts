@@ -51,9 +51,9 @@ export const LIVE_CALL = {
     'Start the call now. Greet the user briefly in the configured language and ask one short opening question.',
   FIRST_RESPONSE_WARN_THRESHOLD_MS: 2500,
   VAD_PREFIX_PADDING_MS: 180,
-  VAD_SILENCE_DURATION_MS: 420,
+  VAD_SILENCE_DURATION_MS: 300,
   VAD_START_SENSITIVITY: 'START_SENSITIVITY_LOW',
-  VAD_END_SENSITIVITY: 'END_SENSITIVITY_LOW',
+  VAD_END_SENSITIVITY: 'END_SENSITIVITY_HIGH',
 } as const;
 
 export const MESSAGE_TYPE = {

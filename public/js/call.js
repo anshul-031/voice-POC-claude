@@ -58,6 +58,10 @@ let isMuted = false;
 /** @type {number | null} */ let callTimer = null;
 let callSeconds = 0;
 let audioChunksSent = 0;
+let lastUserAudioSentAt = 0;
+let lastModelResponseAt = 0;
+/** @type {number | null} */ let inactivityCheckTimer = null;
+let inactivityWarned = false;
 
 /** @returns {typeof AudioContext | null} */
 function getAudioContextCtor() {
@@ -301,6 +305,7 @@ function relayAudioChunk(inputData) {
     appendDebugLog(UI_STRINGS.signaling.logs.audioRelay(audioChunksSent), 'info');
   }
   ws.send(JSON.stringify({ type: MESSAGE_TYPE.AUDIO_DATA, data: uint8ToBase64(new Uint8Array(pcm16.buffer)) }));
+  lastUserAudioSentAt = Date.now();
 }
 
 /** @returns {void} */
@@ -516,11 +521,20 @@ export function handleWsMessage(message, callbacks) {
       updateCallUI(true);
       onStatusChange(UI_STRINGS.callPanel.connected, 'active');
       startTimer(callbacks.onTimerUpdate);
+      startInactivityCheck();
       appendDebugLog(UI_STRINGS.signaling.logs.callStarted, 'info');
       if (message.agentName) showToast(UI_STRINGS.toasts.callStarted(message.agentName), 'success');
     },
-    [MESSAGE_TYPE.AUDIO_RESPONSE]: () => playAudioResponse(message.data),
+    [MESSAGE_TYPE.AUDIO_RESPONSE]: () => {
+      lastModelResponseAt = Date.now();
+      inactivityWarned = false;
+      playAudioResponse(message.data);
+    },
     [MESSAGE_TYPE.TRANSCRIPT]: () => {
+      if (message.role === 'model') {
+        lastModelResponseAt = Date.now();
+        inactivityWarned = false;
+      }
       onTranscript(message.role, message.text);
       if (message.role === 'user') appendDebugLog(UI_STRINGS.signaling.logs.transcriptUser(message.text.length), 'info');
       if (message.role === 'model') appendDebugLog(UI_STRINGS.signaling.logs.transcriptModel(message.text.length), 'info');
@@ -624,11 +638,15 @@ export async function endCall() {
   analyserNode = null;
   audioChunksSent = 0;
   stopTimer();
+  stopInactivityCheck();
   updateCallUI(false);
   stopWaveformAnimation();
   setMediaStreamTracksEnabled(true);
   isMuted = false;
   resetMuteButtonUI();
+  lastUserAudioSentAt = 0;
+  lastModelResponseAt = 0;
+  inactivityWarned = false;
   startupTrace = null;
   appendDebugLog(UI_STRINGS.signaling.logs.callEndComplete, 'info');
 }
@@ -666,6 +684,29 @@ export function stopTimer() {
 }
 
 /** @returns {void} */
+function startInactivityCheck() {
+  stopInactivityCheck();
+  inactivityCheckTimer = window.setInterval(() => {
+    if (!isInCall || !lastUserAudioSentAt) return;
+    const sinceLastUserAudio = Date.now() - lastUserAudioSentAt;
+    const sinceLastModel = lastModelResponseAt ? Date.now() - lastModelResponseAt : sinceLastUserAudio;
+    const isModelSilent = sinceLastModel >= CONFIG.MODEL_INACTIVITY_WARN_MS;
+    const userSpokeRecently = sinceLastUserAudio < sinceLastModel;
+    if (isModelSilent && userSpokeRecently && !inactivityWarned) {
+      inactivityWarned = true;
+      appendDebugLog(UI_STRINGS.signaling.logs.modelInactivityWarn(sinceLastModel), 'warn');
+    }
+  }, CONFIG.MODEL_INACTIVITY_WARN_MS);
+}
+
+/** @returns {void} */
+function stopInactivityCheck() {
+  if (!inactivityCheckTimer) return;
+  clearInterval(inactivityCheckTimer);
+  inactivityCheckTimer = null;
+}
+
+/** @returns {void} */
 export function resetState() {
   isInCall = false;
   isMuted = false;
@@ -685,6 +726,10 @@ export function resetState() {
     clearInterval(callTimer);
     callTimer = null;
   }
+  stopInactivityCheck();
+  lastUserAudioSentAt = 0;
+  lastModelResponseAt = 0;
+  inactivityWarned = false;
 }
 
 /** @returns {WebSocket | null} */

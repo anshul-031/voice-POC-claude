@@ -150,6 +150,8 @@ export const UI_STRINGS = {
       startCallFailed: (msg: string): string => `Start call failed: ${msg}`,
       interrupted: 'Model response interrupted',
       bargeInDetected: 'User speech detected, interrupting model playback',
+      modelInactivityWarn: (ms: number): string =>
+        `No model response for ${Math.round(ms / 1000)}s after last user audio`,
       callStarted: 'Call established',
       callEnded: (reason: string): string => `Call ended: ${reason}`,
       callError: (msg: string): string => `Call error: ${msg}`,
