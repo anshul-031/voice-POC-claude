@@ -48,5 +48,9 @@ export const ARI_RTP_HANDSHAKE_TIMEOUT_MS = 8000;
 export const ARI_RTP_QUEUE_WINDOW_MS = 500;
 export const ARI_EXTERNAL_MEDIA_STASIS_TIMEOUT_MS = 3000;
 
+export const ARI_RTP_PACER_INTERVAL_MS = 20;
+export const ARI_RTP_PAYLOAD_BYTES = 320;
+export const ARI_RTP_SILENCE_BYTE = 0xff;
+
 export const ARI_FALLBACK_SYSTEM_PROMPT =
   'You are a helpful customer support voice agent. Greet the caller, ask how you can help, and keep responses short.';

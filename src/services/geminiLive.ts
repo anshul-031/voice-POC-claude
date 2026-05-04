@@ -1,14 +1,14 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 import {
-  getTranscriptText,
   logGenerationComplete,
   logMessageEnvelope,
-  logTranscriptMilestone,
-  logTranscriptPayload,
   logTurnComplete,
-  markFirstModelAudio,
-  shouldLogChunkProgress,
 } from './geminiLiveLogging.js';
+import {
+  processDirectAudio,
+  processModelTurnParts,
+  processTranscription,
+} from './geminiLiveHandlers.js';
 import { closeGeminiSession, sendAudioToGemini, sendTextToGemini } from './geminiLiveTransport.js';
 import { AUDIO_CONFIG, LIVE_CALL } from '../types/index.js';
 import type { GeminiSession, Transcript } from '../types/index.js';
@@ -16,7 +16,6 @@ import type {
   CreateSessionCallbacks,
   GeminiMessage,
   GeminiServerContent,
-  GeminiTurnPart,
 } from '../types/geminiLive.js';
 import logger from '../utils/logger.js';
 
@@ -202,7 +201,14 @@ class GeminiLiveService {
     if (payload.serverContent) {
       this._processServerContent(sessionId, payload.serverContent, onAudio, onTranscript, onInterrupted);
     }
-    if (payload.data && !payload.serverContent) this._processDirectAudio(sessionId, payload.data, onAudio);
+    if (payload.data && !payload.serverContent) {
+      processDirectAudio({
+        sessionId,
+        data: payload.data,
+        entry: this.sessions.get(sessionId),
+        onAudio,
+      });
+    }
     if (payload.setupComplete) logger.info('Gemini setup complete', { sessionId });
   }
 
@@ -216,7 +222,13 @@ class GeminiLiveService {
     const entry = this.sessions.get(sessionId);
 
     if (content.modelTurn?.parts) {
-      this._processModelTurnParts(sessionId, content.modelTurn.parts, onAudio, onTranscript);
+      processModelTurnParts({
+        sessionId,
+        parts: content.modelTurn.parts,
+        entry,
+        onAudio,
+        onTranscript,
+      });
     }
     if (content.turnComplete) logTurnComplete(sessionId, entry);
     if (content.generationComplete) logGenerationComplete(sessionId, entry);
@@ -226,73 +238,33 @@ class GeminiLiveService {
       if (onInterrupted) onInterrupted();
     }
 
-    this._processServerTranscriptions(sessionId, content, onTranscript);
+    this._processServerTranscriptions(sessionId, content, entry, onTranscript);
   }
 
   private _processServerTranscriptions(
     sessionId: string,
     content: GeminiServerContent,
+    entry: GeminiSession | undefined,
     onTranscript?: (transcript: Transcript) => void,
   ): void {
     if (content.inputTranscription !== undefined && content.inputTranscription !== null) {
-      this._processTranscription(sessionId, content.inputTranscription, 'user', onTranscript);
+      processTranscription({
+        sessionId,
+        transcription: content.inputTranscription,
+        role: 'user',
+        entry,
+        onTranscript,
+      });
     }
     if (content.outputTranscription !== undefined && content.outputTranscription !== null) {
-      this._processTranscription(sessionId, content.outputTranscription, 'model', onTranscript);
+      processTranscription({
+        sessionId,
+        transcription: content.outputTranscription,
+        role: 'model',
+        entry,
+        onTranscript,
+      });
     }
-  }
-
-  private _processModelTurnParts(
-    sessionId: string,
-    parts: GeminiTurnPart[],
-    onAudio?: (audio: string) => void,
-    onTranscript?: (transcript: Transcript) => void,
-  ): void {
-    for (const part of parts) {
-      if (part.inlineData?.mimeType?.startsWith('audio/') && part.inlineData.data) {
-        this._processDirectAudio(sessionId, part.inlineData.data, onAudio);
-      }
-      if (part.text && onTranscript) {
-        const filteredText = stripThoughtBlocks(part.text);
-        if (filteredText) {
-          onTranscript({ role: 'model', text: filteredText });
-        }
-      }
-    }
-  }
-
-  private _processTranscription(
-    sessionId: string,
-    transcription: unknown,
-    role: 'user' | 'model',
-    onTranscript?: (transcript: Transcript) => void,
-  ): void {
-    const entry = this.sessions.get(sessionId);
-    const now = Date.now();
-    const finalMsg = stripThoughtBlocks(getTranscriptText(transcription));
-
-    logTranscriptMilestone(sessionId, entry, role, now);
-    logTranscriptPayload(sessionId, role, finalMsg);
-    if (onTranscript && finalMsg) onTranscript({ role, text: finalMsg });
-  }
-
-  private _processDirectAudio(sessionId: string, data: string, onAudio?: (audio: string) => void): void {
-    const entry = this.sessions.get(sessionId);
-    const now = Date.now();
-
-    if (entry) {
-      entry.audioChunksReceived++;
-      markFirstModelAudio(sessionId, entry, now);
-      if (shouldLogChunkProgress(entry.audioChunksReceived)) {
-        logger.debug('Audio data received', {
-          sessionId,
-          totalReceived: entry.audioChunksReceived,
-          correlationId: entry.correlationId,
-        });
-      }
-    }
-
-    if (onAudio) onAudio(data);
   }
 
   async sendAudio(sessionId: string, audioBase64: string): Promise<void> {
@@ -333,7 +305,3 @@ class GeminiLiveService {
 
 const geminiLiveService = new GeminiLiveService();
 export default geminiLiveService;
-
-function stripThoughtBlocks(text: string): string {
-  return text.replace(/\*\*[^]*?\*\*/g, '').trim();
-}

@@ -1,18 +1,9 @@
-import dgram from 'dgram';
 import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../../lib/prisma.js';
-import geminiLiveService from '../geminiLive.js';
 import logger from '../../utils/logger.js';
-import {
-  ARI_CONFIG,
-  ARI_FALLBACK_SYSTEM_PROMPT,
-  ARI_RTP_DEFAULTS,
-  ARI_RTP_QUEUE_WINDOW_MS,
-  ARI_RTP_HANDSHAKE_TIMEOUT_MS,
-  ARI_EXTERNAL_MEDIA_STASIS_TIMEOUT_MS,
-} from '../../constants/ari.js';
-import { AUDIO_CONFIG, LIVE_CALL } from '../../types/index.js';
+import { ARI_CONFIG, ARI_FALLBACK_SYSTEM_PROMPT } from '../../constants/ari.js';
+import { AUDIO_CONFIG } from '../../types/index.js';
 import {
   ARI_STASIS_END_SCHEMA,
   ARI_STASIS_START_SCHEMA,
@@ -24,15 +15,7 @@ import type {
   SipCallSession,
 } from '../../types/index.js';
 import AriClient from './ariClient.js';
-import {
-  base64ToInt16,
-  buildRtpPacket,
-  decodeMuLawPayload,
-  downsampleTo8k,
-  encodeMuLawPayload,
-  upsampleTo16k,
-} from './rtp.js';
-import { bindRtpSocket } from './rtpSocket.js';
+import { cleanupSession, initializeSipSession, waitForExternalMediaStasis } from './sipSession.js';
 
 const RECONNECT_DELAY_MS = 5000;
 
@@ -187,142 +170,35 @@ class AriGateway {
   private async handleStasisStart(event: AriStasisStartEvent): Promise<void> {
     const channelId = event.channel.id;
     const channelName = event.channel.name;
-    if (this.pendingExternalMedia.has(channelId)) {
-      const entry = this.pendingExternalMedia.get(channelId);
-      if (entry) {
-        clearTimeout(entry.timeout);
-        entry.resolve();
-      }
-      this.pendingExternalMedia.delete(channelId);
-      logger.info('External media channel subscribed', { channelId });
+    if (this.handleExternalMediaSubscription(channelId, channelName)) {
       return;
     }
-    if (channelName && (channelName.includes('Unibody') || channelName.includes('externalMedia'))) {
-      return;
-    }
+
     logger.info('REAL_HUMAN_CALLER', { id: channelId });
     await this.client.answerChannel(channelId);
-    const agentId = this.resolveAgentId(event.args);
 
-    if (!agentId) {
-      logger.warn('Missing agentId for SIP call, hanging up', { channelId });
-      await this.client.hangupChannel(channelId);
+    const agentId = this.resolveAgentId(event.args);
+    const resolvedAgent = await this.resolveAgentForCall(channelId, agentId);
+    if (!resolvedAgent) {
       return;
     }
 
-    const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } });
-    const resolvedAgent = agent || {
-      id: 'fallback',
-      systemPrompt: ARI_FALLBACK_SYSTEM_PROMPT,
-      voiceName: AUDIO_CONFIG.DEFAULT_VOICE,
-      modelName: AUDIO_CONFIG.DEFAULT_MODEL,
-    };
-
-    if (!agent) {
-      logger.warn('Agent not found for SIP call, using fallback prompt', { channelId, agentId });
-    }
-
-    try {
-      const rtpSocket = dgram.createSocket('udp4');
-      const localPort = await bindRtpSocket(rtpSocket, this.config);
-      const sessionId = uuidv4();
-      const bridgeId = await this.client.createBridge();
-      const externalMediaChannelId = await this.client.createExternalMediaChannel(
-        this.config.appName,
-        `${this.config.rtpHost}:${localPort}`,
-      );
-
-      await this.waitForExternalMediaStasis(externalMediaChannelId);
-
-      await this.client.addChannelToBridge(bridgeId, channelId);
-      await this.client.addChannelToBridge(bridgeId, externalMediaChannelId);
-
-      const callSession: SipCallSession = {
-        channelId,
-        sessionId,
-        agentId,
-        bridgeId,
-        externalMediaChannelId,
-        rtpSequence: Math.floor(Math.random() * 65535),
-        rtpTimestamp: Math.floor(Math.random() * 0xffffffff),
-        rtpSsrc: Math.floor(Math.random() * 0xffffffff),
-        rtpSocket,
-        startedAt: Date.now(),
-      };
-
-      this.sessions.set(channelId, callSession);
-
-      callSession.rtpHandshakeTimeout = setTimeout(() => {
-        if (!callSession.rtpRemote) {
-          logger.warn('RTP handshake timeout: no inbound RTP detected', {
-            channelId,
-            timeoutMs: ARI_RTP_HANDSHAKE_TIMEOUT_MS,
-          });
-        }
-      }, ARI_RTP_HANDSHAKE_TIMEOUT_MS);
-
-      rtpSocket.on('message', (message, rinfo) => {
-        this.handleInboundRtp(callSession, message, rinfo);
-      });
-
-      rtpSocket.on('error', (error) => {
-        logger.error('RTP socket error', { channelId, error: error.message });
-      });
-
-      await geminiLiveService.createSession(sessionId, {
-        systemPrompt: resolvedAgent.systemPrompt,
-        voiceName: resolvedAgent.voiceName,
-        modelName: resolvedAgent.modelName || undefined,
-        correlationId: channelId,
-        onAudio: (audio) => this.sendAudioToAsterisk(callSession, audio),
-        onTranscript: (transcript) => {
-          const filteredText = filterThoughtBlocks(transcript.text);
-          if (!filteredText) {
-            return;
-          }
-          logger.info('SIP transcript', { channelId, role: transcript.role, text: filteredText });
-        },
-        onInterrupted: () => {
-          logger.info('SIP call interrupted', { channelId });
-        },
-        onError: (error) => {
-          logger.error('Gemini session error (SIP)', { channelId, error: error.message });
-        },
-        onClose: async () => {
-          logger.info('Gemini session closed (SIP)', { channelId });
-          await this.client.hangupChannel(channelId);
-          await this.cleanupSession(channelId);
-        },
-      });
-
-      const greetingSent = await geminiLiveService.sendText(
-        sessionId,
-        LIVE_CALL.PROACTIVE_GREETING_PROMPT,
-        'sip-initial-greeting',
-      );
-
-      if (!greetingSent) {
-        logger.warn('Failed to send SIP proactive greeting', { channelId });
-      }
-
-      logger.info('SIP call bridged to Gemini', {
-        channelId,
-        agentId: resolvedAgent.id,
-        bridgeId,
-        externalMediaChannelId,
-        caller: event.channel.caller?.number,
-      });
-    } catch (error) {
-      logger.error('Failed to initialize SIP call', {
-        channelId,
-        error: (error as Error).message,
-      });
-      await this.client.hangupChannel(channelId);
-    }
+    await initializeSipSession({
+      event,
+      resolvedAgent,
+      config: this.config,
+      client: this.client,
+      sessions: this.sessions,
+      waitForExternalMediaStasis: (channelId) => waitForExternalMediaStasis(channelId, this.pendingExternalMedia),
+      sessionId: uuidv4(),
+    });
   }
 
   private async handleStasisEnd(event: AriStasisEndEvent): Promise<void> {
-    await this.cleanupSession(event.channel.id);
+    const session = this.sessions.get(event.channel.id);
+    if (session) {
+      await cleanupSession(session, this.client, this.sessions);
+    }
   }
 
   private resolveAgentId(args?: string[]): string {
@@ -332,128 +208,52 @@ class AriGateway {
     return this.config.defaultAgentId;
   }
 
-  private handleInboundRtp(session: SipCallSession, message: Buffer, rinfo: dgram.RemoteInfo): void {
-    if (!session.rtpRemote) {
-      session.rtpRemote = { address: rinfo.address, port: rinfo.port };
-      logger.info('Discovered RTP remote', { channelId: session.channelId, ...session.rtpRemote });
-      if (session.rtpHandshakeTimeout) {
-        clearTimeout(session.rtpHandshakeTimeout);
-        session.rtpHandshakeTimeout = undefined;
+  private handleExternalMediaSubscription(channelId: string, channelName?: string): boolean {
+    if (this.pendingExternalMedia.has(channelId)) {
+      const entry = this.pendingExternalMedia.get(channelId);
+      if (entry) {
+        clearTimeout(entry.timeout);
+        entry.resolve();
       }
+      this.pendingExternalMedia.delete(channelId);
+      logger.info('External media channel subscribed', { channelId });
+      return true;
     }
 
-    if (message.length <= ARI_RTP_DEFAULTS.HEADER_BYTES) {
-      return;
-    }
-
-    const payload = message.subarray(ARI_RTP_DEFAULTS.HEADER_BYTES);
-    const pcm16 = decodeMuLawPayload(payload);
-    const pcm16Upsampled = upsampleTo16k(pcm16);
-    const base64 = Buffer.from(pcm16Upsampled.buffer).toString('base64');
-
-    if (!geminiLiveService.isSessionReady(session.sessionId)) {
-      this.enqueuePendingAudio(session, base64);
-      return;
-    }
-
-    void geminiLiveService.sendAudio(session.sessionId, base64);
+    return !!(channelName && (channelName.includes('Unibody') || channelName.includes('externalMedia')));
   }
 
-  private sendAudioToAsterisk(session: SipCallSession, audioBase64: string): void {
-    const remote = session.rtpRemote;
-    if (!remote) {
-      return;
+  private async resolveAgentForCall(
+    channelId: string,
+    agentId: string,
+  ): Promise<{ id: string; systemPrompt: string; voiceName: string; modelName: string } | null> {
+    if (!agentId) {
+      logger.warn('Missing agentId for SIP call, hanging up', { channelId });
+      await this.client.hangupChannel(channelId);
+      return null;
     }
 
-    const pcm16 = base64ToInt16(audioBase64);
-    const pcm8k = downsampleTo8k(pcm16);
-    const payload = encodeMuLawPayload(pcm8k);
+    const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      logger.warn('Agent not found for SIP call, using fallback prompt', { channelId, agentId });
+      return {
+        id: 'fallback',
+        systemPrompt: ARI_FALLBACK_SYSTEM_PROMPT,
+        voiceName: AUDIO_CONFIG.DEFAULT_VOICE,
+        modelName: AUDIO_CONFIG.DEFAULT_MODEL,
+      };
+    }
 
-    const packet = buildRtpPacket(payload, session, payload.length);
-
-    session.rtpSocket.send(packet, remote.port, remote.address, (error) => {
-      if (error) {
-        logger.error('Failed to send RTP audio', { channelId: session.channelId, error: error.message });
-      }
-    });
+    return {
+      id: agent.id,
+      systemPrompt: agent.systemPrompt,
+      voiceName: agent.voiceName,
+      modelName: agent.modelName,
+    };
   }
 
-  private async cleanupSession(channelId: string): Promise<void> {
-    const session = this.sessions.get(channelId);
-    if (!session) {
-      return;
-    }
-
-    this.sessions.delete(channelId);
-
-    if (session.rtpHandshakeTimeout) {
-      clearTimeout(session.rtpHandshakeTimeout);
-      session.rtpHandshakeTimeout = undefined;
-    }
-
-    try {
-      session.rtpSocket.close();
-    } catch (_error) {
-      // ignore
-    }
-
-    await geminiLiveService.closeSession(session.sessionId);
-
-    await this.client.deleteBridge(session.bridgeId);
-    await this.client.hangupChannel(session.externalMediaChannelId);
-  }
-
-  private enqueuePendingAudio(session: SipCallSession, data: string): void {
-    const now = Date.now();
-    if (!session.pendingAudio) {
-      session.pendingAudio = [];
-    }
-
-    session.pendingAudio.push({ data, receivedAt: now });
-
-    const windowStart = session.pendingAudio[0]?.receivedAt ?? now;
-    if (now - windowStart > ARI_RTP_QUEUE_WINDOW_MS) {
-      session.pendingAudio = session.pendingAudio.filter((item) => now - item.receivedAt <= ARI_RTP_QUEUE_WINDOW_MS);
-      logger.warn('Dropping RTP audio before Gemini session ready', {
-        channelId: session.channelId,
-        windowMs: ARI_RTP_QUEUE_WINDOW_MS,
-      });
-    }
-
-    if (!geminiLiveService.isSessionReady(session.sessionId)) {
-      return;
-    }
-
-    const queue = session.pendingAudio;
-    session.pendingAudio = [];
-    queue.forEach((item) => {
-      void geminiLiveService.sendAudio(session.sessionId, item.data);
-    });
-  }
-
-  private async waitForExternalMediaStasis(channelId: string): Promise<void> {
-    if (!channelId) {
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        this.pendingExternalMedia.delete(channelId);
-        logger.warn('External media channel did not enter Stasis in time', {
-          channelId,
-          timeoutMs: ARI_EXTERNAL_MEDIA_STASIS_TIMEOUT_MS,
-        });
-        resolve();
-      }, ARI_EXTERNAL_MEDIA_STASIS_TIMEOUT_MS);
-
-      this.pendingExternalMedia.set(channelId, { timeout, resolve });
-    });
-  }
 }
 
 const ariGateway = new AriGateway();
 export default ariGateway;
 
-function filterThoughtBlocks(text: string): string {
-  return text.replace(/\*\*[^]*?\*\*/g, '').trim();
-}

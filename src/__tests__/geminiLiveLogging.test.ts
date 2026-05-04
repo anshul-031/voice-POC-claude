@@ -18,6 +18,7 @@ function makeEntry(startTime = 1000): GeminiSession {
     model: 'gemini-2.0-flash-exp',
     correlationId: 'cid',
     startTime,
+    isReady: false,
     audioChunksSent: 0,
     audioChunksReceived: 0,
   };

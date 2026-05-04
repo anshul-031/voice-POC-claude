@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { processDirectAudio } from '../services/geminiLiveHandlers.js';
 
 vi.hoisted(() => {
   process.env.GEMINI_API_KEY = 'test-key';
@@ -189,8 +190,7 @@ describe('GeminiLiveService', () => {
 
   it('should call onAudio even when session entry is absent (entry undefined path)', async () => {
     const onAudio = vi.fn();
-    // Call the private method directly since _handleMessage early-returns if session is missing
-    (geminiLiveService as any)._processDirectAudio('ghost-session', 'ghost-audio', onAudio);
+    processDirectAudio({ sessionId: 'ghost-session', data: 'ghost-audio', onAudio });
     expect(onAudio).toHaveBeenCalledWith('ghost-audio');
   });
 
