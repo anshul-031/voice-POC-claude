@@ -18,7 +18,7 @@ export function enqueueOutboundAudio(session: SipCallSession, payload: Buffer): 
 
 export function stopRtpPacer(session: SipCallSession): void {
   if (session.rtpPacer) {
-    clearInterval(session.rtpPacer);
+    clearTimeout(session.rtpPacer);
     session.rtpPacer = undefined;
   }
 }
@@ -27,25 +27,40 @@ function ensureRtpPacer(session: SipCallSession): void {
   if (session.rtpPacer) {
     return;
   }
+  let nextSendAt = Date.now();
 
-  session.rtpPacer = setInterval(() => {
-    const remote = session.rtpRemote;
-    if (!remote) {
+  const tick = (): void => {
+    if (!session.rtpPacer) {
       return;
     }
 
-    const queue = session.outboundAudioQueue ?? [];
-    const next = queue.shift() ?? new Uint8Array(ARI_RTP_PAYLOAD_BYTES).fill(ARI_RTP_SILENCE_BYTE);
-    session.outboundAudioQueue = queue;
+    const now = Date.now();
+    if (now < nextSendAt) {
+      session.rtpPacer = setTimeout(tick, nextSendAt - now);
+      return;
+    }
 
-    const packet = buildRtpPacket(Buffer.from(next), session, next.length);
+    const remote = session.rtpRemote;
+    if (remote) {
+      const queue = session.outboundAudioQueue ?? [];
+      const next = queue.shift() ?? new Uint8Array(ARI_RTP_PAYLOAD_BYTES).fill(ARI_RTP_SILENCE_BYTE);
+      session.outboundAudioQueue = queue;
 
-    session.rtpSocket.send(packet, remote.port, remote.address, (error) => {
-      if (error) {
-        logger.error('Failed to send RTP audio', { channelId: session.channelId, error: error.message });
-      }
-    });
-  }, ARI_RTP_PACER_INTERVAL_MS);
+      const packet = buildRtpPacket(Buffer.from(next), session, next.length);
+
+      session.rtpSocket.send(packet, remote.port, remote.address, (error) => {
+        if (error) {
+          logger.error('Failed to send RTP audio', { channelId: session.channelId, error: error.message });
+        }
+      });
+    }
+
+    nextSendAt += ARI_RTP_PACER_INTERVAL_MS;
+    const delay = Math.max(0, nextSendAt - Date.now());
+    session.rtpPacer = setTimeout(tick, delay);
+  };
+
+  session.rtpPacer = setTimeout(tick, ARI_RTP_PACER_INTERVAL_MS);
 }
 
 function splitPayload(payload: Buffer, chunkSize: number): Uint8Array[] {

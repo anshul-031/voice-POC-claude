@@ -136,6 +136,6 @@ export interface SipCallSession {
   rtpHandshakeTimeout?: ReturnType<typeof setTimeout>;
   pendingAudio?: Array<{ data: string; receivedAt: number }>;
   outboundAudioQueue?: Uint8Array[];
-  rtpPacer?: ReturnType<typeof setInterval>;
+  rtpPacer?: ReturnType<typeof setTimeout>;
   startedAt: number;
 }
