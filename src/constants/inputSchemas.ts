@@ -62,6 +62,36 @@ export const SIGNALING_MESSAGE_SCHEMA = z.discriminatedUnion('type', [
   SIGNALING_END_CALL_MESSAGE_SCHEMA,
 ]);
 
+export const ARI_ENV_SCHEMA = z.object({
+  ARI_URL: z.string().trim().url().optional(),
+  ARI_USERNAME: z.string().trim().min(1).optional(),
+  ARI_PASSWORD: z.string().trim().min(1).optional(),
+  ARI_APP_NAME: z.string().trim().min(1).optional(),
+  ARI_RTP_HOST: z.string().trim().min(1).optional(),
+  ARI_DEFAULT_AGENT_ID: z.string().trim().min(1).optional(),
+  ARI_RTP_PORT_MIN: z.coerce.number().int().min(10000).max(65000).optional(),
+  ARI_RTP_PORT_MAX: z.coerce.number().int().min(10000).max(65000).optional(),
+}).passthrough();
+
+export const ARI_STASIS_START_SCHEMA = z.object({
+  type: z.literal('StasisStart'),
+  channel: z.object({
+    id: z.string().trim().min(1),
+    name: z.string().trim().optional(),
+    caller: z.object({
+      number: z.string().trim().optional(),
+    }).optional(),
+  }).passthrough(),
+  args: z.array(z.string()).optional(),
+}).passthrough();
+
+export const ARI_STASIS_END_SCHEMA = z.object({
+  type: z.literal('StasisEnd'),
+  channel: z.object({
+    id: z.string().trim().min(1),
+  }).passthrough(),
+}).passthrough();
+
 export type AgentIdParams = z.infer<typeof AGENT_ID_PARAMS_SCHEMA>;
 export type CreateAgentBody = z.infer<typeof CREATE_AGENT_BODY_SCHEMA>;
 export type UpdateAgentBody = z.infer<typeof UPDATE_AGENT_BODY_SCHEMA>;

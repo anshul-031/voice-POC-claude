@@ -8,6 +8,7 @@ import { dirname, join } from 'path';
 import agentRoutes from './routes/agents.js';
 import authRoutes from './routes/auth.js';
 import signalingServer from './services/signalingServer.js';
+import ariGateway from './services/ari/ariGateway.js';
 import logger from './utils/logger.js';
 import { RUNTIME_UI_CONFIG } from './constants/config.js';
 import { DEFAULT_PORT, DEFAULT_LANDING_PAGE_URL } from './constants/index.js';
@@ -136,6 +137,7 @@ app.get('*', (req: Request, res: Response) => {
 
 // Attach WebSocket signaling server
 signalingServer.attach(server);
+await ariGateway.start();
 
 // Start server
 server.listen(PORT, () => {

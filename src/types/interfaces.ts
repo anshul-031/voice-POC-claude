@@ -2,6 +2,8 @@
  * TypeScript interfaces for the application.
  */
 
+import type { Socket } from 'dgram';
+
 export interface VoiceAgent {
   id: string;
   name: string;
@@ -74,4 +76,62 @@ export interface RoutesConfig {
 export interface RuntimeUiConfig {
   websiteName: string;
   theme: 'dark' | 'light';
+}
+
+export interface AriConfig {
+  url: string;
+  username: string;
+  password: string;
+  appName: string;
+  rtpHost: string;
+  defaultAgentId: string;
+  rtpPortMin: number;
+  rtpPortMax: number;
+}
+
+export interface AriBridgeResponse {
+  id: string;
+}
+
+export interface AriChannelResponse {
+  id: string;
+}
+
+export interface AriStasisStartEvent {
+  type: 'StasisStart';
+  channel: {
+    id: string;
+    name?: string;
+    caller?: {
+      number?: string;
+    };
+  };
+  args?: string[];
+}
+
+export interface AriStasisEndEvent {
+  type: 'StasisEnd';
+  channel: {
+    id: string;
+  };
+}
+
+export interface SipRtpRemote {
+  address: string;
+  port: number;
+}
+
+export interface SipCallSession {
+  channelId: string;
+  sessionId: string;
+  agentId: string;
+  bridgeId: string;
+  externalMediaChannelId: string;
+  rtpSequence: number;
+  rtpTimestamp: number;
+  rtpSsrc: number;
+  rtpSocket: Socket;
+  rtpRemote?: SipRtpRemote;
+  rtpHandshakeTimeout?: ReturnType<typeof setTimeout>;
+  startedAt: number;
 }

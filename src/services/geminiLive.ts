@@ -240,7 +240,12 @@ class GeminiLiveService {
       if (part.inlineData?.mimeType?.startsWith('audio/') && part.inlineData.data) {
         this._processDirectAudio(sessionId, part.inlineData.data, onAudio);
       }
-      if (part.text && onTranscript) onTranscript({ role: 'model', text: part.text });
+      if (part.text && onTranscript) {
+        const filteredText = stripThoughtBlocks(part.text);
+        if (filteredText) {
+          onTranscript({ role: 'model', text: filteredText });
+        }
+      }
     }
   }
 
@@ -252,11 +257,11 @@ class GeminiLiveService {
   ): void {
     const entry = this.sessions.get(sessionId);
     const now = Date.now();
-    const finalMsg = getTranscriptText(transcription);
+    const finalMsg = stripThoughtBlocks(getTranscriptText(transcription));
 
     logTranscriptMilestone(sessionId, entry, role, now);
     logTranscriptPayload(sessionId, role, finalMsg);
-    if (onTranscript) onTranscript({ role, text: finalMsg });
+    if (onTranscript && finalMsg) onTranscript({ role, text: finalMsg });
   }
 
   private _processDirectAudio(sessionId: string, data: string, onAudio?: (audio: string) => void): void {
@@ -312,3 +317,7 @@ class GeminiLiveService {
 
 const geminiLiveService = new GeminiLiveService();
 export default geminiLiveService;
+
+function stripThoughtBlocks(text: string): string {
+  return text.replace(/\*\*[^]*?\*\*/g, '').trim();
+}
