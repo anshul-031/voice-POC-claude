@@ -112,6 +112,7 @@ class GeminiLiveService {
       const startTime = Date.now();
       logger.debug('Connecting to Gemini Live API', { sessionId, model, correlationId });
 
+      let pendingReady = false;
       const session = await this.ai.live.connect({
         model,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,6 +124,12 @@ class GeminiLiveService {
               elapsedMs: Date.now() - startTime,
               correlationId,
             });
+            const entry = this.sessions.get(sessionId);
+            if (entry) {
+              entry.isReady = true;
+            } else {
+              pendingReady = true;
+            }
           },
           onmessage: (message: unknown) => {
             this._handleMessage(sessionId, message, onAudio, onTranscript, onInterrupted);
@@ -154,15 +161,20 @@ class GeminiLiveService {
         },
       });
 
-      this.sessions.set(sessionId, {
+      const entry: GeminiSession = {
         session,
         voiceName: voice,
         model,
         correlationId,
+        isReady: false,
         startTime,
         audioChunksSent: 0,
         audioChunksReceived: 0,
-      });
+      };
+      if (pendingReady) {
+        entry.isReady = true;
+      }
+      this.sessions.set(sessionId, entry);
       logger.debug('Gemini Live session registered', { sessionId, correlationId });
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
@@ -308,6 +320,10 @@ class GeminiLiveService {
     if (!entry) return;
     await closeGeminiSession(sessionId, entry);
     this.sessions.delete(sessionId);
+  }
+
+  public isSessionReady(sessionId: string): boolean {
+    return this.sessions.get(sessionId)?.isReady ?? false;
   }
 
   public hasSession(sessionId: string): boolean {

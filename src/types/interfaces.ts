@@ -21,6 +21,7 @@ export interface GeminiSession {
   voiceName: string;
   model: string;
   correlationId?: string;
+  isReady: boolean;
   startTime: number;
   audioChunksSent: number;
   audioChunksReceived: number;
@@ -133,5 +134,6 @@ export interface SipCallSession {
   rtpSocket: Socket;
   rtpRemote?: SipRtpRemote;
   rtpHandshakeTimeout?: ReturnType<typeof setTimeout>;
+  pendingAudio?: Array<{ data: string; receivedAt: number }>;
   startedAt: number;
 }

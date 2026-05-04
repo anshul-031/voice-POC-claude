@@ -8,7 +8,9 @@ import {
   ARI_CONFIG,
   ARI_FALLBACK_SYSTEM_PROMPT,
   ARI_RTP_DEFAULTS,
+  ARI_RTP_QUEUE_WINDOW_MS,
   ARI_RTP_HANDSHAKE_TIMEOUT_MS,
+  ARI_EXTERNAL_MEDIA_STASIS_TIMEOUT_MS,
 } from '../../constants/ari.js';
 import { AUDIO_CONFIG, LIVE_CALL } from '../../types/index.js';
 import {
@@ -40,6 +42,10 @@ class AriGateway {
   private readonly config: AriConfig = ARI_CONFIG;
   private readonly client: AriClient = new AriClient(this.config);
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly pendingExternalMedia = new Map<string, {
+    timeout: ReturnType<typeof setTimeout>;
+    resolve: () => void;
+  }>();
 
   public async start(): Promise<void> {
     logger.info('ARI_START_TRIGGERED');
@@ -181,6 +187,16 @@ class AriGateway {
   private async handleStasisStart(event: AriStasisStartEvent): Promise<void> {
     const channelId = event.channel.id;
     const channelName = event.channel.name;
+    if (this.pendingExternalMedia.has(channelId)) {
+      const entry = this.pendingExternalMedia.get(channelId);
+      if (entry) {
+        clearTimeout(entry.timeout);
+        entry.resolve();
+      }
+      this.pendingExternalMedia.delete(channelId);
+      logger.info('External media channel subscribed', { channelId });
+      return;
+    }
     if (channelName && (channelName.includes('Unibody') || channelName.includes('externalMedia'))) {
       return;
     }
@@ -215,6 +231,8 @@ class AriGateway {
         this.config.appName,
         `${this.config.rtpHost}:${localPort}`,
       );
+
+      await this.waitForExternalMediaStasis(externalMediaChannelId);
 
       await this.client.addChannelToBridge(bridgeId, channelId);
       await this.client.addChannelToBridge(bridgeId, externalMediaChannelId);
@@ -333,6 +351,11 @@ class AriGateway {
     const pcm16Upsampled = upsampleTo16k(pcm16);
     const base64 = Buffer.from(pcm16Upsampled.buffer).toString('base64');
 
+    if (!geminiLiveService.isSessionReady(session.sessionId)) {
+      this.enqueuePendingAudio(session, base64);
+      return;
+    }
+
     void geminiLiveService.sendAudio(session.sessionId, base64);
   }
 
@@ -378,6 +401,53 @@ class AriGateway {
 
     await this.client.deleteBridge(session.bridgeId);
     await this.client.hangupChannel(session.externalMediaChannelId);
+  }
+
+  private enqueuePendingAudio(session: SipCallSession, data: string): void {
+    const now = Date.now();
+    if (!session.pendingAudio) {
+      session.pendingAudio = [];
+    }
+
+    session.pendingAudio.push({ data, receivedAt: now });
+
+    const windowStart = session.pendingAudio[0]?.receivedAt ?? now;
+    if (now - windowStart > ARI_RTP_QUEUE_WINDOW_MS) {
+      session.pendingAudio = session.pendingAudio.filter((item) => now - item.receivedAt <= ARI_RTP_QUEUE_WINDOW_MS);
+      logger.warn('Dropping RTP audio before Gemini session ready', {
+        channelId: session.channelId,
+        windowMs: ARI_RTP_QUEUE_WINDOW_MS,
+      });
+    }
+
+    if (!geminiLiveService.isSessionReady(session.sessionId)) {
+      return;
+    }
+
+    const queue = session.pendingAudio;
+    session.pendingAudio = [];
+    queue.forEach((item) => {
+      void geminiLiveService.sendAudio(session.sessionId, item.data);
+    });
+  }
+
+  private async waitForExternalMediaStasis(channelId: string): Promise<void> {
+    if (!channelId) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingExternalMedia.delete(channelId);
+        logger.warn('External media channel did not enter Stasis in time', {
+          channelId,
+          timeoutMs: ARI_EXTERNAL_MEDIA_STASIS_TIMEOUT_MS,
+        });
+        resolve();
+      }, ARI_EXTERNAL_MEDIA_STASIS_TIMEOUT_MS);
+
+      this.pendingExternalMedia.set(channelId, { timeout, resolve });
+    });
   }
 }
 
