@@ -53,4 +53,4 @@ export const ARI_RTP_PAYLOAD_BYTES = 320;
 export const ARI_RTP_SILENCE_BYTE = 0xff;
 
 export const ARI_FALLBACK_SYSTEM_PROMPT =
-  'You are a helpful customer support voice agent. Greet the caller, ask how you can help, and keep responses short.';
+  'You are a real-time customer support voice agent. Reply with direct spoken sentences only. No analysis, no plans, no bracketed text. Keep responses under one short sentence unless the caller asks for details. Start with a brief greeting and a clear question.';

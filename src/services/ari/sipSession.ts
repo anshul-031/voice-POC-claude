@@ -232,15 +232,18 @@ export async function cleanupSession(
   }
 
   await geminiLiveService.closeSession(session.sessionId);
- try {
-    // Add a check or just wrap in try-catch to ignore if bridge is already gone
-    if (session.bridgeId) {
-  await client.deleteBridge(session.bridgeId);
-    }
+
+  if (session.bridgeId) {
+    try {
+      await client.deleteBridge(session.bridgeId);
     } catch (error) {
-    // Log it quietly so the server doesn't crash
-    console.log(`Bridge ${session.bridgeId} already deleted or not found.`);
-}
+      logger.warn('Bridge already deleted or not found', {
+        channelId: session.channelId,
+        bridgeId: session.bridgeId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   await client.hangupChannel(session.externalMediaChannelId);
 }
 
