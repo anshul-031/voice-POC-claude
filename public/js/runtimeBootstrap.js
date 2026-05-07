@@ -52,11 +52,45 @@ function replaceKnownWebsiteNames(text, websiteName) {
 }
 
 /**
+ * @param {unknown} value
+ * @param {string} websiteName
+ * @returns {unknown}
+ */
+function replaceWebsiteNameInValue(value, websiteName) {
+  if (typeof value === 'string') {
+    return replaceKnownWebsiteNames(value, websiteName);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => replaceWebsiteNameInValue(item, websiteName));
+  }
+
+  if (value && typeof value === 'object') {
+    const record = /** @type {Record<string, unknown>} */ (value);
+    Object.keys(record).forEach((key) => {
+      record[key] = replaceWebsiteNameInValue(record[key], websiteName);
+    });
+    return record;
+  }
+
+  return value;
+}
+
+/**
+ * @param {string} websiteName
+ * @returns {void}
+ */
+function updateUiStringsBranding(websiteName) {
+  replaceWebsiteNameInValue(UI_STRINGS, websiteName);
+}
+
+/**
  * @param {string} websiteName
  * @returns {void}
  */
 export function applyWebsiteName(websiteName) {
   UI_STRINGS.header.title = websiteName;
+  updateUiStringsBranding(websiteName);
   document.title = replaceKnownWebsiteNames(document.title, websiteName);
 
   const metaElements = document.querySelectorAll(
@@ -112,6 +146,25 @@ export function applyRuntimeUiConfig(payload) {
 }
 
 /**
+ * @returns {{ websiteName?: unknown, theme?: unknown } | null}
+ */
+export function getPreloadedRuntimeConfig() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const windowWithConfig = /** @type {Record<string, unknown>} */ (
+    /** @type {unknown} */ (window)
+  );
+  const payload = windowWithConfig[CONFIG.SSR_RUNTIME_CONFIG_KEY];
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  return payload;
+}
+
+/**
  * @returns {Promise<{ websiteName?: unknown, theme?: unknown } | null>}
  */
 export async function fetchRuntimeUiConfig() {
@@ -138,6 +191,12 @@ export async function fetchRuntimeUiConfig() {
  * @returns {Promise<void>}
  */
 export async function initRuntimeBootstrap() {
+  const preloadedConfig = getPreloadedRuntimeConfig();
+  if (preloadedConfig) {
+    applyRuntimeUiConfig(preloadedConfig);
+    return;
+  }
+
   applyRuntimeUiConfig({
     websiteName: CONFIG.DEFAULT_WEBSITE_NAME,
     theme: CONFIG.DEFAULT_THEME,

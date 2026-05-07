@@ -32,6 +32,8 @@ describe('runtimeBootstrap', () => {
     vi.resetModules();
     setBaseDom();
     vi.stubGlobal('fetch', vi.fn());
+    const windowWithConfig = window as unknown as Record<string, unknown>;
+    delete windowWithConfig[CONFIG.SSR_RUNTIME_CONFIG_KEY];
   });
 
   it('should apply default branding and theme when runtime fetch fails', async () => {
@@ -69,6 +71,24 @@ describe('runtimeBootstrap', () => {
 
     expect(document.body.textContent).toContain('DynamicBrand.dev');
     expect(uiStringsModule.UI_STRINGS.header.title).toBe('DynamicBrand.dev');
+    expect(uiStringsModule.UI_STRINGS.form.modelLabel).toContain('DynamicBrand.dev');
+  });
+
+  it('should use preloaded runtime config without fetching', async () => {
+    const windowWithConfig = window as unknown as Record<string, unknown>;
+    windowWithConfig[CONFIG.SSR_RUNTIME_CONFIG_KEY] = {
+      websiteName: 'Preloaded.site',
+      theme: 'light',
+    };
+
+    const uiStringsModule = await import('../constants/uiStrings.js');
+    await import('../runtimeBootstrap.js');
+    await flushTasks();
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(document.title).toContain('Preloaded.site');
+    expect(uiStringsModule.UI_STRINGS.form.modelLabel).toContain('Preloaded.site');
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('should expose helpers and return null for invalid runtime responses', async () => {
@@ -92,6 +112,13 @@ describe('runtimeBootstrap', () => {
 
     runtimeModule.applyWebsiteName('ManualBrand.net');
     expect(document.title).toContain('ManualBrand.net');
+
+    const uiStringsModule = await import('../constants/uiStrings.js');
+    const uiStringsRecord = uiStringsModule.UI_STRINGS as Record<string, unknown>;
+    uiStringsRecord.testArray = ['AnshulTheGreat.com'];
+    runtimeModule.applyRuntimeUiConfig({ websiteName: 'ManualBrand.net', theme: 'dark' });
+    const updatedArray = uiStringsRecord.testArray as string[];
+    expect(updatedArray[0]).toBe('ManualBrand.net');
 
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false } as Response);
     await expect(runtimeModule.fetchRuntimeUiConfig()).resolves.toBeNull();

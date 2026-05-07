@@ -9,6 +9,7 @@ import agentRoutes from './routes/agents.js';
 import authRoutes from './routes/auth.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
+import { renderSsrPage } from './utils/ssr.js';
 import { RUNTIME_UI_CONFIG } from './constants/config.js';
 import { DEFAULT_PORT, DEFAULT_LANDING_PAGE_URL } from './constants/index.js';
 import { ROUTES } from './types/index.js';
@@ -41,7 +42,16 @@ app.use('/api/auth', authRoutes);
 app.use(ROUTES.API_PREFIX, agentRoutes);
 
 const sendPublicPage = (res: Response, pageFile: string): void => {
-  res.sendFile(join(PUBLIC_DIR, pageFile));
+  try {
+    const html = renderSsrPage(PUBLIC_DIR, pageFile, RUNTIME_UI_CONFIG);
+    res.type('html').send(html);
+  } catch (error: unknown) {
+    logger.error('SSR render failed', {
+      pageFile,
+      error: String(error),
+    });
+    res.sendFile(join(PUBLIC_DIR, pageFile));
+  }
 };
 
 const redirectTo = (res: Response, path: string): void => {

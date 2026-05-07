@@ -5,6 +5,7 @@
 export const CONFIG = {
   API_PREFIX: '/api',
   RUNTIME_CONFIG_PATH: '/runtime-config',
+  SSR_RUNTIME_CONFIG_KEY: '__RUNTIME_UI_CONFIG__',
   WS_PATH: '/ws',
   PREVIEW_PATH: '/preview',
   PAGE_PATHS: {

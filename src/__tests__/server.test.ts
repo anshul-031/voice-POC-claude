@@ -1,6 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ROUTES } from '../types/index.js';
 
+type MockResponse = {
+  json: (payload?: unknown) => unknown;
+  send: (payload?: unknown) => unknown;
+  sendFile: (payload?: unknown) => unknown;
+  redirect: (...args: unknown[]) => unknown;
+  status: (statusCode?: number) => MockResponse;
+  type: (contentType?: string) => MockResponse;
+};
+
+const createMockResponse = (): MockResponse => {
+  const res = {
+    json: vi.fn(),
+    send: vi.fn(),
+    sendFile: vi.fn(),
+    redirect: vi.fn(),
+    status: vi.fn(),
+    type: vi.fn(),
+  } as unknown as MockResponse;
+  res.status = vi.fn().mockReturnValue(res) as MockResponse['status'];
+  res.type = vi.fn().mockReturnValue(res) as MockResponse['type'];
+  return res;
+};
+
 // Capture handlers for coverage
 const routes: Record<string, any> = {};
 const middlewares: Array<(req: any, res: any, next: any) => void> = [];
@@ -93,12 +116,7 @@ describe('Server initialization and Routes', () => {
     // @ts-expect-error type-checked import with query
     await import('../server.ts?test=full');
 
-    const res: any = { 
-      json: vi.fn(), 
-      sendFile: vi.fn(), 
-      redirect: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-    };
+    const res = createMockResponse();
     
     // Test Health Check
     if (routes[ROUTES.HEALTH_CHECK]) {
@@ -117,7 +135,7 @@ describe('Server initialization and Routes', () => {
     }
 
     // Test canonical page routes + preview + fallback route
-    const sendFileRoutes = [
+    const sendHtmlRoutes = [
       ROUTES.DASHBOARD_PAGE,
       ROUTES.LOGIN_PAGE,
       ROUTES.SIGNUP_PAGE,
@@ -126,12 +144,12 @@ describe('Server initialization and Routes', () => {
       `${ROUTES.PREVIEW_PAGE}/:agentId`,
       '*',
     ];
-    sendFileRoutes.forEach((path) => {
+    sendHtmlRoutes.forEach((path) => {
       if (routes[path]) {
         routes[path]({ params: { agentId: 'abc' } }, res);
       }
     });
-    expect(res.sendFile).toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalled();
 
     // Test alias + legacy redirects (301 — internal pages)
     const redirectRoutes: Array<[string, string]> = [
@@ -191,5 +209,24 @@ describe('Server initialization and Routes', () => {
     }
 
     expect(consoleLogSpy).toHaveBeenCalled();
+  });
+
+  it('should fallback to static file when SSR render fails', async () => {
+    vi.doMock('../utils/ssr.js', () => ({
+      renderSsrPage: vi.fn(() => {
+        throw new Error('SSR fail');
+      }),
+    }));
+
+    // @ts-expect-error type-checked import with query
+    await import('../server.ts?test=ssr-fail');
+
+    const res = createMockResponse();
+
+    if (routes[ROUTES.DASHBOARD_PAGE]) {
+      routes[ROUTES.DASHBOARD_PAGE]({}, res);
+    }
+
+    expect(res.sendFile).toHaveBeenCalled();
   });
 });
