@@ -27,12 +27,12 @@ describe('Logger Utility', () => {
     const { default: prodLogger } = await import('../utils/logger.ts?test=L3');
     expect(prodLogger.transports.some((t: any) => t.name === 'console')).toBe(true);
     
-    // 3. Prod mode without console
+    // 3. Prod mode without console env still logs to console
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('LOG_TO_CONSOLE', 'false');
     // @ts-expect-error dynamic import
     const { default: prodNoConsoleLogger } = await import('../utils/logger.ts?test=L4');
-    expect(prodNoConsoleLogger.transports.some((t: any) => t.name === 'console')).toBe(false);
+    expect(prodNoConsoleLogger.transports.some((t: any) => t.name === 'console')).toBe(true);
   });
 
   it('should exercise console format via real logging', async () => {

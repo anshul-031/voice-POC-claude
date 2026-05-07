@@ -60,11 +60,8 @@ const logger = winston.createLogger({
   exitOnError: false,
 });
 
-// Add console transport if not in production or if explicitly requested
-if (process.env.NODE_ENV !== 'production' || process.env.LOG_TO_CONSOLE === 'true') {
-  logger.add(new winston.transports.Console({
-    format: consoleFormat,
-  }));
-}
+logger.add(new winston.transports.Console({
+  format: consoleFormat,
+}));
 
 export default logger;
