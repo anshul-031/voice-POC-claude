@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ROUTES } from '../types/index.js';
+import logger from '../utils/logger.js';
+
+vi.mock('../utils/logger.js', () => ({
+  default: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
 
 type MockResponse = {
   json: (payload?: unknown) => unknown;
@@ -76,8 +86,6 @@ vi.mock('../routes/agents.js', () => ({
   default: vi.fn(),
 }));
 
-const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
 describe('Server initialization and Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -95,7 +103,13 @@ describe('Server initialization and Routes', () => {
     vi.stubEnv('NODE_ENV', 'production');
     // @ts-expect-error import
     await import('../server.ts?test=env-all-yes');
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('✅ Configured'));
+    expect(logger.info).toHaveBeenCalledWith(
+      'Server started',
+      expect.objectContaining({
+        geminiApiKeyConfigured: true,
+        databaseConfigured: true,
+      }),
+    );
 
     // 2. Without any env vars (testing defaults for PORT and NODE_ENV)
     vi.unstubAllEnvs();
@@ -106,7 +120,13 @@ describe('Server initialization and Routes', () => {
     
     // @ts-expect-error import
     await import('../server.ts?test=env-all-no');
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('❌ MISSING'));
+    expect(logger.info).toHaveBeenCalledWith(
+      'Server started',
+      expect.objectContaining({
+        geminiApiKeyConfigured: false,
+        databaseConfigured: false,
+      }),
+    );
   });
 
   it('should cover all server branches including routes', async () => {
@@ -208,7 +228,14 @@ describe('Server initialization and Routes', () => {
       expect(res.sendFile).toHaveBeenCalled();
     }
 
-    expect(consoleLogSpy).toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      'Server started',
+      expect.objectContaining({
+        websiteName: expect.any(String),
+        websocketPath: ROUTES.WS_PATH,
+        apiPrefix: ROUTES.API_PREFIX,
+      }),
+    );
   });
 
   it('should fallback to static file when SSR render fails', async () => {

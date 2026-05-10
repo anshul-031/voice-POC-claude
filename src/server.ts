@@ -149,26 +149,14 @@ signalingServer.attach(server);
 
 // Start server
 server.listen(PORT, () => {
-  const startupMsg = `
-${'━'.repeat(56)}
-🎙️  ${RUNTIME_UI_CONFIG.websiteName} — AI Voice Agent Platform
-${'━'.repeat(56)}
-  🌐  Server:     http://localhost:${PORT}
-  📡  WebSocket:  ws://localhost:${PORT}${ROUTES.WS_PATH}
-  📊  API:        http://localhost:${PORT}${ROUTES.API_PREFIX}
-  🔒  Auth:       http://localhost:${PORT}/api/auth
-${'─'.repeat(56)}
-  🔑  API Key:    ${process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ MISSING'}
-  🗄️   Database:   ${process.env.DATABASE_URL ? '✅ Configured' : '❌ MISSING'}
-  🖥️   Node:       ${process.version}
-  📅  Started:    ${new Date().toLocaleString()}
-${'━'.repeat(56)}
-`;
   logger.info('Server started', {
     port: PORT,
     nodeVersion: process.version,
     env: process.env.NODE_ENV || 'development',
+    websiteName: RUNTIME_UI_CONFIG.websiteName,
+    websocketPath: ROUTES.WS_PATH,
+    apiPrefix: ROUTES.API_PREFIX,
+    geminiApiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
+    databaseConfigured: Boolean(process.env.DATABASE_URL),
   });
-   
-  console.log(startupMsg);
 });

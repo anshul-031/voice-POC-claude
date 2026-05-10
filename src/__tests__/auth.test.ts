@@ -24,8 +24,22 @@ const spies = {
   generateResetToken: vi.spyOn(authService, 'generateResetToken'),
 };
 
-const mockReqRes = (body = {}, cookies = {}, params = {}, query = {}) => {
-  const req = { body, cookies, params, query, protocol: 'http', get: vi.fn(() => 'localhost') };
+const mockReqRes = (body = {}, cookies = {}, params = {}, query = {}, headers = {}) => {
+  const req = {
+    body,
+    cookies,
+    params,
+    query,
+    protocol: 'http',
+    get: vi.fn((name: string) => {
+      const headerKey = name.toLowerCase();
+      if (headerKey === 'host') {
+        return (headers as Record<string, string>)[headerKey] || 'localhost';
+      }
+
+      return (headers as Record<string, string>)[headerKey];
+    }),
+  };
   const res = {
     json: vi.fn().mockReturnThis(),
     status: vi.fn().mockReturnThis(),
@@ -180,7 +194,13 @@ describe('Auth Routes', () => {
   });
 
   it('POST /forgot-password', async () => {
-    const { req, res } = mockReqRes({ email: 'e@e.com' });
+    const { req, res } = mockReqRes(
+      { email: 'e@e.com' },
+      {},
+      {},
+      {},
+      { 'x-forwarded-proto': 'https' },
+    );
     (prisma.user.findUnique as any).mockResolvedValue({ id: '1' });
 
     await getRouteHandler('/forgot-password', 'post')(req as any, res as any);

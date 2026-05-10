@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build artifacts (will be re-generated inside Docker)
+dist/
+build/
+
+# Environment secrets — NEVER bake into image
+.env
+.env.*
+!.env.example
+
+# Version control
+.git/
+.github/
+.gitignore
+
+# Development/test files
+src/__tests__/
+coverage/
+vitest.config.ts
+eslint.config.js
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+*.tsbuildinfo
+
+# CI/CD configs (not needed in container)
+.agents/
+terraform/
+scripts/
+landing/
+docs/
+render.yaml
+test-live.cjs

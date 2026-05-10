@@ -51,7 +51,7 @@ router.post('/signup', async (req: Request, res: Response): Promise<any> => {
   try {
     const parse = SignupSchema.safeParse(req.body);
     if (!parse.success) {
-      const firstError = parse.error.issues[0]?.message || 'Invalid input';
+      const firstError = parse.error.issues[0]?.message;
       return res.status(400).json({ error: firstError });
     }
 
@@ -139,7 +139,8 @@ router.post('/forgot-password', async (req: Request, res: Response): Promise<any
     });
 
     // PLACEHOLDER: Log reset link to console (replace with email service)
-    const resetUrl = `${req.protocol}://${req.get('host')}${ROUTES.RESET_PASSWORD_PAGE}?token=${token}`;
+    const requestProtocol = String(req.get('x-forwarded-proto') || req.protocol).split(',')[0].trim();
+    const resetUrl = `${requestProtocol}://${req.get('host')}${ROUTES.RESET_PASSWORD_PAGE}?token=${token}`;
     logger.info('Password reset requested', { userId: user.id, resetUrl });
     console.log(`\n🔐 Password Reset Link for ${email}:\n   ${resetUrl}\n`);
 
@@ -156,7 +157,7 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<any>
   try {
     const parse = ResetPasswordSchema.safeParse(req.body);
     if (!parse.success) {
-      const firstError = parse.error.issues[0]?.message || 'Invalid input';
+      const firstError = parse.error.issues[0]?.message;
       return res.status(400).json({ error: firstError });
     }
 
