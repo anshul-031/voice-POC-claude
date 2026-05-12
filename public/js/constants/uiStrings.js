@@ -184,6 +184,22 @@ export const UI_STRINGS = {
       transcriptUser: (/** @type {number} */ chars) => `User transcript chunk (${chars} chars)`,
       transcriptModel: (/** @type {number} */ chars) => `Model transcript chunk (${chars} chars)`,
       unknownType: (/** @type {string} */ type) => `Unhandled signaling message type: ${type}`,
+      audioCtxSampleRate: (/** @type {number} */ rate) => `AudioContext created at ${rate}Hz`,
+      audioDownsample: (/** @type {number} */ from, /** @type {number} */ to) =>
+        `Downsampling mic audio ${from}Hz → ${to}Hz`,
+      audioQueueDepth: (/** @type {number} */ depth) => `Audio queue depth: ${depth}`,
+      audioQueueDepthWarn: (/** @type {number} */ depth) => `⚠ Audio queue depth high: ${depth}`,
+      audioChunkEnqueued: (/** @type {number} */ samples, /** @type {number} */ queueLen) =>
+        `Chunk enqueued: ${samples} samples, queue=${queueLen}`,
+      audioPlaybackScheduled: (/** @type {number} */ startTime, /** @type {number} */ duration) =>
+        `Playback scheduled: start=${startTime.toFixed(3)}s dur=${duration.toFixed(3)}s`,
+      audioPlaybackUnderrun: (/** @type {number} */ gapMs) =>
+        `⚠ Playback underrun: ${gapMs.toFixed(1)}ms gap`,
+      audioPlaybackStats: (
+        /** @type {number} */ played,
+        /** @type {number} */ underruns,
+        /** @type {number} */ queueDepth,
+      ) => `Audio stats: played=${played} underruns=${underruns} queue=${queueDepth}`,
     },
     status: {
       geminiClosed: 'Gemini session closed',

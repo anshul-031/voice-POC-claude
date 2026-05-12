@@ -79,7 +79,7 @@ function getOrCreateAudioContext() {
   const ContextCtor = getAudioContextCtor();
   if (!ContextCtor) return null;
 
-  audioContext = new ContextCtor({ sampleRate: CONFIG.SAMPLE_RATE_INPUT });
+  audioContext = new ContextCtor({ sampleRate: CONFIG.SAMPLE_RATE_OUTPUT });
   hasPrimedAudioOutput = false;
   return audioContext;
 }
@@ -288,18 +288,52 @@ export async function toggleCall(agentId, callbacks) {
   }
 }
 
+/** @param {Float32Array} inputData @param {number} fromRate @param {number} toRate @returns {Float32Array} */
+function downsampleBuffer(inputData, fromRate, toRate) {
+  if (fromRate === toRate || fromRate <= 0 || toRate <= 0) return inputData;
+  const ratio = fromRate / toRate;
+  const newLength = Math.round(inputData.length / ratio);
+  const result = new Float32Array(newLength);
+  for (let i = 0; i < newLength; i++) {
+    const srcIndex = i * ratio;
+    const low = Math.floor(srcIndex);
+    const high = Math.min(low + 1, inputData.length - 1);
+    const frac = srcIndex - low;
+    result[i] = inputData[low] + frac * (inputData[high] - inputData[low]);
+  }
+  return result;
+}
+
+/**
+ * Log diagnostics on the first audio chunk relay.
+ * @param {number} contextRate
+ * @returns {void}
+ */
+function logFirstAudioChunkRelay(contextRate) {
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioDownsample(contextRate, CONFIG.SAMPLE_RATE_INPUT),
+    'info',
+  );
+  if (startupTrace && !startupTrace.firstAudioRelayedLogged) {
+    startupTrace.firstAudioRelayedLogged = true;
+    appendDebugLog(UI_STRINGS.signaling.logs.firstAudioRelayElapsed(getStartupElapsedMs()), 'info');
+  }
+}
+
 /** @param {Float32Array} inputData @returns {void} */
 function relayAudioChunk(inputData) {
-  const pcm16 = new Int16Array(inputData.length);
-  for (let i = 0; i < inputData.length; i++) {
-    const sample = Math.max(-1, Math.min(1, inputData[i]));
+  const contextRate = audioContext?.sampleRate || CONFIG.SAMPLE_RATE_OUTPUT;
+  const downsampled = downsampleBuffer(inputData, contextRate, CONFIG.SAMPLE_RATE_INPUT);
+
+  const pcm16 = new Int16Array(downsampled.length);
+  for (let i = 0; i < downsampled.length; i++) {
+    const sample = Math.max(-1, Math.min(1, downsampled[i]));
     pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
   }
   if (ws?.readyState !== WebSocket.OPEN) return;
   audioChunksSent++;
-  if (audioChunksSent === 1 && startupTrace && !startupTrace.firstAudioRelayedLogged) {
-    startupTrace.firstAudioRelayedLogged = true;
-    appendDebugLog(UI_STRINGS.signaling.logs.firstAudioRelayElapsed(getStartupElapsedMs()), 'info');
+  if (audioChunksSent === 1) {
+    logFirstAudioChunkRelay(contextRate);
   }
   if (audioChunksSent % CONFIG.AUDIO_LOG_THROTTLE === 1) {
     appendDebugLog(UI_STRINGS.signaling.logs.audioRelay(audioChunksSent), 'info');
@@ -475,6 +509,10 @@ export async function startCall(agentId, callbacks) {
     }
     primeAudioOutput(audioContext);
     appendDebugLog(UI_STRINGS.signaling.logs.audioOutputPrimed, 'info');
+    appendDebugLog(
+      UI_STRINGS.signaling.logs.audioCtxSampleRate(audioContext.sampleRate || CONFIG.SAMPLE_RATE_OUTPUT),
+      'info',
+    );
     appendDebugLog(UI_STRINGS.signaling.logs.micRequesting, 'info');
 
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
@@ -579,7 +617,7 @@ export async function processAudioQueue() {
       startupTrace.firstPlaybackLogged = true;
       appendDebugLog(UI_STRINGS.signaling.logs.firstPlaybackElapsed(getStartupElapsedMs()), 'info');
     },
-    onContextResumeFailure: (attempt, error) => {
+    onContextResumeFailure: (/** @type {number} */ attempt, /** @type {unknown} */ error) => {
       audioContextResumeFailures++;
       appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeAttempt(attempt), 'warn');
       appendDebugLog(UI_STRINGS.signaling.logs.audioContextResumeFailed(getErrorMessage(error)), 'warn');

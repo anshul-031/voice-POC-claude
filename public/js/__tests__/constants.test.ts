@@ -25,8 +25,8 @@ describe('Frontend Constants', () => {
         if (typeof val === 'string') {
           expect(val.length).toBeGreaterThan(0);
         } else if (typeof val === 'function') {
-          // If it's a generator function like startCallFailed(err)
-          expect(val('test')).toBeDefined();
+          // Pass numbers to cover functions that call .toFixed()
+          expect(val(1, 2, 3)).toBeDefined();
         } else {
           touchAll(val as Record<string, unknown>);
         }

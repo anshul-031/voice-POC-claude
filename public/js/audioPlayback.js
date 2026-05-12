@@ -1,4 +1,6 @@
 import { CONFIG } from './constants/config.js';
+import { UI_STRINGS } from './constants/uiStrings.js';
+import { appendDebugLog } from './transcript.js';
 
 /** @type {string[]} */
 const audioQueue = [];
@@ -13,6 +15,10 @@ let speechFrameStreak = 0;
 let lastBargeInAtMs = 0;
 let adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
 
+let nextPlaybackTime = 0;
+let chunksPlayed = 0;
+let underrunCount = 0;
+
 /** @param {string | undefined} base64Data @returns {void} */
 function requeueChunkAndStop(base64Data) {
   if (base64Data) {
@@ -20,12 +26,14 @@ function requeueChunkAndStop(base64Data) {
   }
   isPlayingAudio = false;
   currentPlaybackSource = null;
+  nextPlaybackTime = 0;
 }
 
 /** @returns {void} */
 function clearPlaybackState() {
   isPlayingAudio = false;
   currentPlaybackSource = null;
+  nextPlaybackTime = 0;
 }
 
 /** @returns {string} */
@@ -148,6 +156,19 @@ function decodePcmBase64(base64Data) {
   return float32;
 }
 
+/**
+ * Apply a short cross-fade ramp at the start of a chunk to avoid click artifacts.
+ * @param {Float32Array} samples
+ * @returns {Float32Array}
+ */
+function applyCrossfadeRamp(samples) {
+  const fadeLen = Math.min(CONFIG.AUDIO_CROSSFADE_SAMPLES, samples.length);
+  for (let i = 0; i < fadeLen; i++) {
+    samples[i] *= i / fadeLen;
+  }
+  return samples;
+}
+
 /** @param {AudioContext} audioContext @param {Float32Array} float32 @returns {AudioBuffer} */
 function createAudioBuffer(audioContext, float32) {
   const audioBuffer = audioContext.createBuffer(1, float32.length, CONFIG.SAMPLE_RATE_OUTPUT);
@@ -187,6 +208,7 @@ export function interruptModelPlayback() {
   stopCurrentPlaybackSource();
   audioQueue.length = 0;
   isPlayingAudio = false;
+  nextPlaybackTime = 0;
   return hadPlayback;
 }
 
@@ -240,12 +262,57 @@ export function detectSpeechBargeIn(inputData) {
 export function enqueueAudio(base64Data) {
   if (!base64Data) return false;
   audioQueue.push(base64Data);
+
+  const sampleEstimate = Math.floor((base64Data.length * 3) / 4 / 2);
+
+  const depth = audioQueue.length;
+  if (depth % CONFIG.AUDIO_DIAG_LOG_INTERVAL_CHUNKS === 0) {
+    appendDebugLog(UI_STRINGS.signaling.logs.audioChunkEnqueued(sampleEstimate, depth), 'info');
+  }
+  if (depth >= CONFIG.AUDIO_QUEUE_DEPTH_WARN && depth % CONFIG.AUDIO_DIAG_LOG_INTERVAL_CHUNKS === 0) {
+    appendDebugLog(UI_STRINGS.signaling.logs.audioQueueDepthWarn(depth), 'warn');
+  }
+
   return true;
 }
 
 /** @returns {boolean} */
 export function getIsPlayingAudio() {
   return isPlayingAudio;
+}
+
+/**
+ * Detect and log playback underrun if the schedule has fallen behind.
+ * @param {number} now
+ * @returns {void}
+ */
+function detectPlaybackUnderrun(now) {
+  if (nextPlaybackTime > 0 && chunksPlayed > 0) {
+    const gapMs = (now - nextPlaybackTime) * 1000;
+    if (gapMs > 2) {
+      underrunCount++;
+      appendDebugLog(UI_STRINGS.signaling.logs.audioPlaybackUnderrun(gapMs), 'warn');
+    }
+  }
+  nextPlaybackTime = now;
+}
+
+/**
+ * Log periodic playback diagnostics.
+ * @param {number} scheduledTime
+ * @param {number} chunkDuration
+ * @returns {void}
+ */
+function logPlaybackDiagnostics(scheduledTime, chunkDuration) {
+  if (chunksPlayed % CONFIG.AUDIO_DIAG_LOG_INTERVAL_CHUNKS !== 0) return;
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioPlaybackScheduled(scheduledTime, chunkDuration),
+    'info',
+  );
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioPlaybackStats(chunksPlayed, underrunCount, audioQueue.length),
+    'info',
+  );
 }
 
 /**
@@ -276,8 +343,16 @@ export async function processAudioQueue(audioContext, analyserNode, options = {}
     if (!contextReady || !audioContext) return;
 
     const float32 = decodePcmBase64(base64Data);
-    const audioBuffer = createAudioBuffer(audioContext, float32);
+    const fadedSamples = applyCrossfadeRamp(float32);
+    const audioBuffer = createAudioBuffer(audioContext, fadedSamples);
     const bufferSource = createPlaybackSource(audioContext, audioBuffer, analyserNode);
+
+    const chunkDuration = float32.length / CONFIG.SAMPLE_RATE_OUTPUT;
+    const now = audioContext.currentTime;
+
+    if (nextPlaybackTime <= now) {
+      detectPlaybackUnderrun(now);
+    }
 
     currentPlaybackSource = bufferSource;
     bufferSource.onended = () => {
@@ -289,7 +364,11 @@ export async function processAudioQueue(audioContext, analyserNode, options = {}
     if (options.onPlaybackStarted) {
       options.onPlaybackStarted();
     }
-    bufferSource.start();
+
+    bufferSource.start(nextPlaybackTime);
+    chunksPlayed++;
+    logPlaybackDiagnostics(nextPlaybackTime, chunkDuration);
+    nextPlaybackTime += chunkDuration;
   } catch (_e) {
     currentPlaybackSource = null;
     processAudioQueue(audioContext, analyserNode, options);
@@ -303,4 +382,7 @@ export function resetAudioPlaybackState() {
   speechFrameStreak = 0;
   lastBargeInAtMs = 0;
   adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
+  nextPlaybackTime = 0;
+  chunksPlayed = 0;
+  underrunCount = 0;
 }

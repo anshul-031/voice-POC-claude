@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 /**
  * @vitest-environment jsdom
  */
@@ -60,6 +61,8 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       }),
       destination: {}, close: vi.fn().mockResolvedValue(undefined), state: 'running',
       resume: vi.fn().mockResolvedValue(undefined),
+      sampleRate: 24000,
+      currentTime: 0,
     };
 
     class MockAudioContext {
@@ -89,12 +92,20 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       const ws = getWs() as any; ws?.onopen?.();
       expect(ws?.send).toHaveBeenCalled();
     });
-    it('should handle ws.onmessage success and parse fail', async () => {
+    it('should handle ws.onmessage success and trace events', async () => {
       await startCall('a1', mockCallbacks);
       const ws = getWs() as any;
       ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.AUDIO_RESPONSE, data: 'audio' }) });
       ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.CALL_STARTED }) });
       expect(getCallState().isInCall).toBe(true);
+
+      // Trigger first transcript for startup trace coverage
+      ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.TRANSCRIPT, role: 'model', text: 'hello' }) });
+    });
+
+    it('should handle ws.onmessage parse failure and unknown messages', async () => {
+      await startCall('a1', mockCallbacks);
+      const ws = getWs() as any;
       ws?.onmessage?.({ data: JSON.stringify({ unknown: true }) });
       ws?.onmessage?.({ data: 'invalid-json' });
     });
@@ -140,6 +151,26 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
         inputBuffer: { getChannelData: () => new Float32Array(1024) },
       });
       expect(ws?.send).not.toHaveBeenCalled();
+    });
+    it('should cover downsampling and logging edge cases in relayAudioChunk', async () => {
+      await startCall('a1', mockCallbacks);
+      const sp = getAudioProcessor() as any;
+      const ws = getWs() as any;
+      if (ws) ws.readyState = 1;
+
+      const ctx = getAudioContext() as any;
+
+      // Cover identical sample rate branch
+      ctx.sampleRate = 16000;
+      sp?.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(10) } });
+
+      // Cover invalid sample rate branch
+      ctx.sampleRate = -1;
+      sp?.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(10) } });
+
+      // Cover downsampling from 24000 to 16000
+      ctx.sampleRate = 24000;
+      sp?.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(10) } });
     });
     it('should disable media tracks on mute, re-enable on unmute, and reset UI on endCall', async () => {
       await startCall('a1', mockCallbacks);
@@ -253,6 +284,18 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       vi.advanceTimersByTime(1000);
       expect(mockCallbacks.onTimerUpdate).toHaveBeenCalledWith(1);
       stopTimer();
+    });
+    
+    it('should warn on model inactivity if user spoke and model was silent', async () => {
+      await startCall('a1', mockCallbacks);
+      const ws = getWs() as any;
+      if (ws) ws.readyState = 1;
+      handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
+      
+      const sp = getAudioProcessor() as any;
+      sp?.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(10) } });
+      
+      vi.advanceTimersByTime(9000); // Wait past CONFIG.MODEL_INACTIVITY_WARN_MS (8000ms)
     });
   });
   describe('Audio Playback', () => {

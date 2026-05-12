@@ -52,5 +52,7 @@ describe('UI_STRINGS', () => {
     expect(UI_STRINGS.signaling.logs.transcriptUser(12)).toBe('User transcript chunk (12 chars)');
     expect(UI_STRINGS.signaling.logs.transcriptModel(7)).toBe('Model transcript chunk (7 chars)');
     expect(UI_STRINGS.signaling.logs.unknownType('x')).toBe('Unhandled signaling message type: x');
+    expect(UI_STRINGS.signaling.logs.audioQueueDepth(5)).toBe('Audio queue depth: 5');
+    expect(UI_STRINGS.signaling.logs.audioChunkRelayedSize(1024)).toBe('Audio chunk relayed: 1024 bytes');
   });
 });

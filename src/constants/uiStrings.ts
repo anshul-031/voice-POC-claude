@@ -158,6 +158,8 @@ export const UI_STRINGS = {
       transcriptUser: (chars: number): string => `User transcript chunk (${chars} chars)`,
       transcriptModel: (chars: number): string => `Model transcript chunk (${chars} chars)`,
       unknownType: (type: string): string => `Unhandled signaling message type: ${type}`,
+      audioQueueDepth: (depth: number): string => `Audio queue depth: ${depth}`,
+      audioChunkRelayedSize: (bytes: number): string => `Audio chunk relayed: ${bytes} bytes`,
     },
     status: {
       geminiClosed: 'Gemini session closed',

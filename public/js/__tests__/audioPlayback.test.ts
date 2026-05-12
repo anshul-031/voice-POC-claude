@@ -2,6 +2,11 @@
  * @vitest-environment jsdom
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../transcript.js', () => ({
+  appendDebugLog: vi.fn(),
+}));
+
 import {
   detectSpeechBargeIn,
   enqueueAudio,
@@ -35,7 +40,9 @@ describe('audioPlayback module', () => {
     };
     const context = {
       state: 'running',
+      currentTime: 0,
       destination: {},
+      sampleRate: 24000,
       createGain: vi.fn().mockReturnValue({
         gain: { value: 0 },
         connect: vi.fn(),
@@ -102,7 +109,9 @@ describe('audioPlayback module', () => {
 
     const context = {
       state: 'running',
+      currentTime: 0,
       destination: {},
+      sampleRate: 24000,
       createGain: vi.fn().mockReturnValue({
         gain: { value: 0 },
         connect: vi.fn(),
@@ -132,7 +141,9 @@ describe('audioPlayback module', () => {
 
     const context = {
       state: 'suspended',
+      currentTime: 0,
       destination: {},
+      sampleRate: 24000,
       createGain: vi.fn().mockReturnValue({
         gain: { value: 0 },
         connect: vi.fn(),
@@ -158,7 +169,9 @@ describe('audioPlayback module', () => {
 
     const failingContext = {
       state: 'suspended',
+      currentTime: 0,
       destination: {},
+      sampleRate: 24000,
       createGain: vi.fn().mockReturnValue({
         gain: { value: 0 },
         connect: vi.fn(),
@@ -182,7 +195,9 @@ describe('audioPlayback module', () => {
     };
     const runningContext = {
       state: 'running',
+      currentTime: 0,
       destination: {},
+      sampleRate: 24000,
       createGain: vi.fn().mockReturnValue({
         gain: { value: 0 },
         connect: vi.fn(),
@@ -197,6 +212,100 @@ describe('audioPlayback module', () => {
 
     await processAudioQueue(runningContext as any, null);
     expect(sourceNode.start).toHaveBeenCalled();
+  });
+
+  it('schedules gapless playback with nextPlaybackTime', async () => {
+    enqueueAudio('chunk1');
+    enqueueAudio('chunk2');
+
+    const sources: any[] = [];
+    const context = {
+      state: 'running',
+      currentTime: 1.0,
+      destination: {},
+      sampleRate: 24000,
+      createGain: vi.fn().mockReturnValue({
+        gain: { value: 0 },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      }),
+      createBuffer: vi.fn().mockReturnValue({
+        getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),
+        length: 8,
+      }),
+      createBufferSource: vi.fn().mockImplementation(() => {
+        const node: any = {
+          buffer: null,
+          connect: vi.fn(),
+          start: vi.fn(),
+          stop: vi.fn(),
+          disconnect: vi.fn(),
+          onended: null,
+        };
+        sources.push(node);
+        return node;
+      }),
+    };
+
+    await processAudioQueue(context as any, null);
+    expect(sources[0].start).toHaveBeenCalledWith(1.0);
+
+    sources[0].onended?.();
+    await Promise.resolve();
+
+    expect(sources.length).toBe(2);
+    const secondStartTime = sources[1].start.mock.calls[0][0];
+    expect(secondStartTime).toBeGreaterThan(1.0);
+  });
+
+  it('detects playback underrun and logs diagnostic', async () => {
+    const { appendDebugLog } = await import('../transcript.js');
+
+    enqueueAudio('first');
+
+    const sourceNode: any = {
+      buffer: null,
+      connect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      disconnect: vi.fn(),
+      onended: null,
+    };
+
+    const context = {
+      state: 'running',
+      currentTime: 0.5,
+      destination: {},
+      sampleRate: 24000,
+      createGain: vi.fn().mockReturnValue({
+        gain: { value: 0 },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+      }),
+      createBuffer: vi.fn().mockReturnValue({
+        getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),
+      }),
+      createBufferSource: vi.fn().mockReturnValue(sourceNode),
+    };
+
+    await processAudioQueue(context as any, null);
+    expect(sourceNode.start).toHaveBeenCalled();
+
+    enqueueAudio('second');
+    context.currentTime = 2.0;
+    sourceNode.onended?.();
+    await Promise.resolve();
+
+    expect(appendDebugLog).toHaveBeenCalled();
+  });
+
+  it('logs queue depth warning when queue is deep', () => {
+    for (let i = 0; i < 50; i++) {
+      enqueueAudio(`chunk-${i}`);
+    }
+    expect(hasModelPlayback()).toBe(true);
+    interruptModelPlayback();
+    expect(hasModelPlayback()).toBe(false);
   });
 
 });

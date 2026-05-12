@@ -270,6 +270,15 @@ class SignalingServer {
       type: MESSAGE_TYPE.AUDIO_RESPONSE,
       data: audioData,
     }));
+
+    if (client && client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
+      logger.debug('Model audio chunk relayed', {
+        sessionId,
+        correlationId: client.correlationId,
+        chunkIndex: client.modelAudioChunksRelayed,
+        chunkBytes: audioData.length,
+      });
+    }
   }
 
   private _relayTranscriptToClient(
