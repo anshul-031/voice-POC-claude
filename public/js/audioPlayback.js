@@ -4,9 +4,9 @@ import { appendDebugLog } from './transcript.js';
 
 /** @type {string[]} */
 const audioQueue = [];
-let isPlayingAudio = false;
-/** @type {AudioBufferSourceNode | null} */
-let currentPlaybackSource = null;
+let isProcessingQueue = false;
+/** @type {Set<AudioBufferSourceNode>} */
+const activePlaybackSources = new Set();
 /** @type {GainNode | null} */
 let playbackGainNode = null;
 /** @type {AudioContext | null} */
@@ -24,15 +24,11 @@ function requeueChunkAndStop(base64Data) {
   if (base64Data) {
     audioQueue.unshift(base64Data);
   }
-  isPlayingAudio = false;
-  currentPlaybackSource = null;
   nextPlaybackTime = 0;
 }
 
 /** @returns {void} */
 function clearPlaybackState() {
-  isPlayingAudio = false;
-  currentPlaybackSource = null;
   nextPlaybackTime = 0;
 }
 
@@ -188,26 +184,26 @@ function createPlaybackSource(audioContext, audioBuffer, analyserNode) {
 
 /** @returns {boolean} */
 export function hasModelPlayback() {
-  return !!currentPlaybackSource || isPlayingAudio || audioQueue.length > 0;
+  return activePlaybackSources.size > 0 || audioQueue.length > 0 || isProcessingQueue;
 }
 
 /** @returns {void} */
-function stopCurrentPlaybackSource() {
-  if (!currentPlaybackSource) return;
-  try {
-    currentPlaybackSource.onended = null;
-    currentPlaybackSource.stop();
-    currentPlaybackSource.disconnect();
-  } catch (_e) { /* ignore */ }
-  currentPlaybackSource = null;
+function stopActivePlaybackSources() {
+  activePlaybackSources.forEach(source => {
+    try {
+      source.onended = null;
+      source.stop();
+      source.disconnect();
+    } catch (_e) { /* ignore */ }
+  });
+  activePlaybackSources.clear();
 }
 
 /** @returns {boolean} */
 export function interruptModelPlayback() {
   const hadPlayback = hasModelPlayback();
-  stopCurrentPlaybackSource();
+  stopActivePlaybackSources();
   audioQueue.length = 0;
-  isPlayingAudio = false;
   nextPlaybackTime = 0;
   return hadPlayback;
 }
@@ -278,7 +274,7 @@ export function enqueueAudio(base64Data) {
 
 /** @returns {boolean} */
 export function getIsPlayingAudio() {
-  return isPlayingAudio;
+  return activePlaybackSources.size > 0 || isProcessingQueue;
 }
 
 /**
@@ -328,50 +324,54 @@ function logPlaybackDiagnostics(scheduledTime, chunkDuration) {
  * @returns {Promise<void>}
  */
 export async function processAudioQueue(audioContext, analyserNode, options = {}) {
-  if (audioQueue.length === 0) {
-    clearPlaybackState();
-    return;
-  }
-
-  isPlayingAudio = true;
-  const base64Data = dequeueChunk();
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
 
   try {
-    const contextReady = await ensureAudioContextReady(audioContext, base64Data, {
-      onResumeAttemptFailed: options.onContextResumeFailure,
-    });
-    if (!contextReady || !audioContext) return;
+    while (audioQueue.length > 0) {
+      const base64Data = dequeueChunk();
 
-    const float32 = decodePcmBase64(base64Data);
-    const fadedSamples = applyCrossfadeRamp(float32);
-    const audioBuffer = createAudioBuffer(audioContext, fadedSamples);
-    const bufferSource = createPlaybackSource(audioContext, audioBuffer, analyserNode);
+      try {
+        const contextReady = await ensureAudioContextReady(audioContext, base64Data, {
+          onResumeAttemptFailed: options.onContextResumeFailure,
+        });
+        if (!contextReady || !audioContext) break;
 
-    const chunkDuration = float32.length / CONFIG.SAMPLE_RATE_OUTPUT;
-    const now = audioContext.currentTime;
+        const float32 = decodePcmBase64(base64Data);
+        const fadedSamples = applyCrossfadeRamp(float32);
+        const audioBuffer = createAudioBuffer(audioContext, fadedSamples);
+        const bufferSource = createPlaybackSource(audioContext, audioBuffer, analyserNode);
 
-    if (nextPlaybackTime <= now) {
-      detectPlaybackUnderrun(now);
-    }
+        const chunkDuration = float32.length / CONFIG.SAMPLE_RATE_OUTPUT;
+        const now = audioContext.currentTime;
 
-    currentPlaybackSource = bufferSource;
-    bufferSource.onended = () => {
-      if (currentPlaybackSource === bufferSource) {
-        currentPlaybackSource = null;
+        if (nextPlaybackTime <= now) {
+          detectPlaybackUnderrun(now);
+        }
+
+        activePlaybackSources.add(bufferSource);
+
+        bufferSource.onended = () => {
+          activePlaybackSources.delete(bufferSource);
+          if (activePlaybackSources.size === 0 && audioQueue.length === 0) {
+            clearPlaybackState();
+          }
+        };
+
+        if (options.onPlaybackStarted && chunksPlayed === 0) {
+          options.onPlaybackStarted();
+        }
+
+        bufferSource.start(nextPlaybackTime);
+        chunksPlayed++;
+        logPlaybackDiagnostics(nextPlaybackTime, chunkDuration);
+        nextPlaybackTime += chunkDuration;
+      } catch (_e) {
+        // Skip chunk on decode failure and continue to next chunk
       }
-      processAudioQueue(audioContext, analyserNode, options);
-    };
-    if (options.onPlaybackStarted) {
-      options.onPlaybackStarted();
     }
-
-    bufferSource.start(nextPlaybackTime);
-    chunksPlayed++;
-    logPlaybackDiagnostics(nextPlaybackTime, chunkDuration);
-    nextPlaybackTime += chunkDuration;
-  } catch (_e) {
-    currentPlaybackSource = null;
-    processAudioQueue(audioContext, analyserNode, options);
+  } finally {
+    isProcessingQueue = false;
   }
 }
 

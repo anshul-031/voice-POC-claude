@@ -9,7 +9,6 @@ import { appendDebugLog } from './transcript.js';
 import {
   detectSpeechBargeIn,
   enqueueAudio,
-  getIsPlayingAudio,
   interruptModelPlayback,
   processAudioQueue as processPlaybackQueue,
   resetAudioPlaybackState,
@@ -603,7 +602,7 @@ export function handleWsMessage(message, callbacks) {
 
 /** @param {string} base64Data @returns {void} */
 export function playAudioResponse(base64Data) {
-  if (!enqueueAudio(base64Data) || getIsPlayingAudio()) return;
+  if (!enqueueAudio(base64Data)) return;
   processAudioQueue();
 }
 

@@ -293,7 +293,7 @@ describe('audioPlayback module', () => {
 
     enqueueAudio('second');
     context.currentTime = 2.0;
-    sourceNode.onended?.();
+    await processAudioQueue(context as any, null);
     await Promise.resolve();
 
     expect(appendDebugLog).toHaveBeenCalled();
