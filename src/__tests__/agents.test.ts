@@ -244,6 +244,19 @@ describe('Agents Routes', () => {
     expect(res.json).toHaveBeenCalled();
     res.json.mockClear();
 
+    // 4.3 Missing agent should return 404 before update
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue(null);
+    await getRouteHandler('/agents/:id', 'put')({
+      params: { id: '404' },
+      headers: { 'content-type': 'application/json' },
+      body: { name: 'N' },
+    } as any, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
+    res.status.mockClear();
+
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue({ id: '1' });
+
     // 5. P2025 Not Found
     const err: any = new Error(); err.code = 'P2025';
     (prisma.voiceAgent.update as any).mockRejectedValue(err);
@@ -274,10 +287,21 @@ describe('Agents Routes', () => {
     expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.invalidInput });
     res.status.mockClear();
 
+    // 0.1 Missing agent should hit getAgentOrThrow 404 branch
+    (prisma.voiceAgent.findFirst as any).mockResolvedValue(null);
+    await getRouteHandler('/agents/:id', 'delete')({ params: { id: '404' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.agentNotFound });
+    res.status.mockClear();
+
+    const deleteCallsBefore = (prisma.voiceAgent.delete as any).mock.calls.length;
+
     (prisma.voiceAgent.findFirst as any).mockResolvedValue({ id: '1' });
     (prisma.voiceAgent.delete as any).mockResolvedValue({});
     await getRouteHandler('/agents/:id', 'delete')({ params: { id: '1' } } as any, res);
     expect(res.json).toHaveBeenCalled();
+
+    expect((prisma.voiceAgent.delete as any).mock.calls.length).toBeGreaterThan(deleteCallsBefore);
 
     const err: any = new Error(); err.code = 'P2025';
     (prisma.voiceAgent.findFirst as any).mockResolvedValue({ id: '1' });

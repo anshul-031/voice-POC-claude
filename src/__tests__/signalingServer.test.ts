@@ -68,6 +68,9 @@ describe('SignalingServer', () => {
       name: 'A',
       systemPrompt: 'S',
       publicPreviewEnabled: true,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (geminiLiveService.createSession as any).mockResolvedValue({});
     await messageHandler(JSON.stringify({ type: 'start-call', agentId: '1' }));
@@ -128,6 +131,9 @@ describe('SignalingServer', () => {
       name: 'A',
       systemPrompt: 'S',
       publicPreviewEnabled: true,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (geminiLiveService.createSession as any).mockRejectedValue(new Error('CREATE_FAIL'));
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
@@ -141,6 +147,12 @@ describe('SignalingServer', () => {
       audioChunksRelayed: 0,
       modelAudioChunksRelayed: 0,
       proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (geminiLiveService.createSession as any).mockResolvedValue({});
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
@@ -158,6 +170,9 @@ describe('SignalingServer', () => {
       name: 'A',
       systemPrompt: 'S',
       publicPreviewEnabled: true,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
     expect(geminiLiveService.sendText).toHaveBeenCalledWith(
@@ -197,6 +212,9 @@ describe('SignalingServer', () => {
       systemPrompt: 'S',
       publicPreviewEnabled: false,
       userId: 'owner-1',
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
 
     await signalingServer._handleStartCall(mockWs, { agentId: 'private-agent' }, null);
@@ -214,6 +232,9 @@ describe('SignalingServer', () => {
       modelName: 'gemini-2.0-flash-exp',
       publicPreviewEnabled: true,
       userId: null,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (geminiLiveService.createSession as any).mockResolvedValue({});
 
@@ -235,6 +256,12 @@ describe('SignalingServer', () => {
       audioChunksRelayed: 2,
       modelAudioChunksRelayed: 0,
       proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
 
     (geminiLiveService.closeSession as any).mockRejectedValueOnce(new Error('CLOSE_FAIL'));

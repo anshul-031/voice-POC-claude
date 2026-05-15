@@ -138,6 +138,28 @@
             </label>
           </div>
 
+          <div class="form-section-divider">
+            <span>Call Behavior</span>
+          </div>
+
+          <div class="form-row-grid">
+            <div class="form-group">
+              <label for="form-inactivity-timeout" data-i18n="form.inactivityTimeoutLabel">Inactivity Timeout (seconds)</label>
+              <input type="number" id="form-inactivity-timeout" min="3" max="60" step="1" value="10" class="form-input-sm">
+              <span class="form-hint" data-i18n="form.inactivityTimeoutHint">How long to wait before nudging the model if it stops responding</span>
+            </div>
+            <div class="form-group">
+              <label for="form-max-nudges" data-i18n="form.maxNudgesLabel">Max Nudge Attempts</label>
+              <input type="number" id="form-max-nudges" min="0" max="10" step="1" value="3" class="form-input-sm">
+              <span class="form-hint" data-i18n="form.maxNudgesHint">How many nudge attempts before auto-ending the call (0 = disabled)</span>
+            </div>
+            <div class="form-group">
+              <label for="form-max-call-duration" data-i18n="form.maxCallDurationLabel">Max Call Duration (seconds)</label>
+              <input type="number" id="form-max-call-duration" min="0" max="3600" step="10" value="0" class="form-input-sm">
+              <span class="form-hint" data-i18n="form.maxCallDurationHint">Maximum allowed call length in seconds (0 = unlimited)</span>
+            </div>
+          </div>
+
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" id="btn-cancel-form" data-i18n="common.cancel">Cancel</button>
             <button type="submit" class="btn btn-primary btn-glow" id="form-submit-btn">

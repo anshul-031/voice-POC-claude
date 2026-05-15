@@ -41,7 +41,9 @@ describe('UI_STRINGS', () => {
     expect(UI_STRINGS.signaling.logs.startSentElapsed(66)).toBe('start-call sent in 66ms');
     expect(UI_STRINGS.signaling.logs.firstAudioRelayElapsed(90)).toBe('First audio chunk relayed in 90ms');
     expect(UI_STRINGS.signaling.logs.firstInboundAudioElapsed(120)).toBe('First inbound audio received in 120ms');
+    expect(UI_STRINGS.signaling.logs.firstInboundTranscriptElapsed(150)).toBe('First inbound transcript in 150ms');
     expect(UI_STRINGS.signaling.logs.firstPlaybackElapsed(133)).toBe('First playback started in 133ms');
+    expect(UI_STRINGS.signaling.logs.modelInactivityWarn(5000)).toBe('No model response for 5s after last user audio');
     expect(UI_STRINGS.signaling.logs.wsClosed(1000)).toBe('Signaling socket closed (1000)');
     expect(UI_STRINGS.signaling.logs.sendingStart('agent-1')).toBe('Sending start-call for agent agent-1');
     expect(UI_STRINGS.signaling.logs.recvType('call-started')).toBe('Received signaling message: call-started');
@@ -54,5 +56,8 @@ describe('UI_STRINGS', () => {
     expect(UI_STRINGS.signaling.logs.unknownType('x')).toBe('Unhandled signaling message type: x');
     expect(UI_STRINGS.signaling.logs.audioQueueDepth(5)).toBe('Audio queue depth: 5');
     expect(UI_STRINGS.signaling.logs.audioChunkRelayedSize(1024)).toBe('Audio chunk relayed: 1024 bytes');
+    expect(UI_STRINGS.signaling.status.inactivityNudge(2, 4)).toBe('Model silent — sending nudge 2/4');
+    expect(UI_STRINGS.signaling.status.autoEndInactivity).toBe('Call ended automatically due to prolonged model inactivity.');
+    expect(UI_STRINGS.signaling.status.autoEndDuration(30)).toBe('Call ended automatically — max duration of 30s reached.');
   });
 });

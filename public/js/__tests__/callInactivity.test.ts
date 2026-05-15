@@ -81,6 +81,13 @@ describe('Call Inactivity Detection', () => {
     expect(ws?.send).toHaveBeenCalled();
   });
 
+  it('should not warn before any user audio is sent', async () => {
+    await startCall('a1', mockCallbacks);
+    handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
+    vi.advanceTimersByTime(9000);
+    expect(getWs()).not.toBeNull();
+  });
+
   it('should not warn when not in call or no user audio sent', async () => {
     vi.advanceTimersByTime(9000);
     expect(true).toBe(true);

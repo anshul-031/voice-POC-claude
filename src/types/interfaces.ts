@@ -43,6 +43,14 @@ export interface SignalingClient {
   firstModelTranscriptRelayedAt?: number;
   proactiveGreetingSent: boolean;
   proactiveGreetingSentAt?: number;
+  lastModelResponseAt: number;
+  lastUserAudioAt: number;
+  nudgeCount: number;
+  inactivityTimeoutMs: number;
+  maxInactivityNudges: number;
+  maxCallDurationSecs: number;
+  inactivityTimer?: ReturnType<typeof setInterval>;
+  callDurationTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface Transcript {

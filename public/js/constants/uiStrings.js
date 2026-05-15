@@ -59,6 +59,12 @@ export const UI_STRINGS = {
     promptLabel: 'System Prompt',
     publicPreviewLabel: 'Enable public preview URL',
     promptPlaceholder: 'You are a helpful customer support agent for Acme Corp. Be friendly, professional, and concise in your responses...',
+    inactivityTimeoutLabel: 'Inactivity Timeout (seconds)',
+    inactivityTimeoutHint: 'How long to wait before nudging the model if it stops responding',
+    maxNudgesLabel: 'Max Nudge Attempts',
+    maxNudgesHint: 'How many nudge attempts before auto-ending the call (0 = disabled)',
+    maxCallDurationLabel: 'Max Call Duration (seconds)',
+    maxCallDurationHint: 'Maximum allowed call length in seconds (0 = unlimited)',
     validation: {
       requiredFields: 'Please fill in all fields',
     },
@@ -184,6 +190,10 @@ export const UI_STRINGS = {
       transcriptUser: (/** @type {number} */ chars) => `User transcript chunk (${chars} chars)`,
       transcriptModel: (/** @type {number} */ chars) => `Model transcript chunk (${chars} chars)`,
       unknownType: (/** @type {string} */ type) => `Unhandled signaling message type: ${type}`,
+      inactivityNudge: (/** @type {number} */ nudgeNum, /** @type {number} */ maxNudges) =>
+        `⚠ Inactivity nudge ${nudgeNum}/${maxNudges} — model silent, sending nudge prompt`,
+      autoCallEnd: (/** @type {string} */ reason) =>
+        `🔴 Auto call end: ${reason}`,
       audioCtxSampleRate: (/** @type {number} */ rate) => `AudioContext created at ${rate}Hz`,
       audioDownsample: (/** @type {number} */ from, /** @type {number} */ to) =>
         `Downsampling mic audio ${from}Hz → ${to}Hz`,
@@ -204,6 +214,11 @@ export const UI_STRINGS = {
     status: {
       geminiClosed: 'Gemini session closed',
       userEnded: 'User ended call',
+      inactivityNudge: (/** @type {number} */ nudgeNum, /** @type {number} */ maxNudges) =>
+        `Model silent — nudge ${nudgeNum}/${maxNudges} sent`,
+      autoEndInactivity: 'Call ended due to prolonged model inactivity.',
+      autoEndDuration: (/** @type {number} */ secs) =>
+        `Call ended — max duration of ${secs}s reached.`,
     },
   },
 };

@@ -13,6 +13,9 @@ export const AGENT_FORM_SCHEMA = z.object({
   voiceName: z.string().trim().min(1),
   modelName: z.string().trim().min(1),
   publicPreviewEnabled: z.boolean(),
+  inactivityTimeoutMs: z.number().int().min(3000).max(60000).optional(),
+  maxInactivityNudges: z.number().int().min(0).max(10).optional(),
+  maxCallDurationSecs: z.number().int().min(0).max(3600).optional(),
 });
 
 export const START_CALL_INPUT_SCHEMA = z.object({
@@ -46,5 +49,15 @@ export const WS_INBOUND_MESSAGE_SCHEMA = z.union([
   z.object({
     type: z.literal(MESSAGE_TYPE.ERROR),
     message: z.string().trim().min(1),
+  }).passthrough(),
+  z.object({
+    type: z.literal(MESSAGE_TYPE.INACTIVITY_NUDGE),
+    nudgeNum: z.number(),
+    maxNudges: z.number(),
+    message: z.string().optional(),
+  }).passthrough(),
+  z.object({
+    type: z.literal(MESSAGE_TYPE.AUTO_CALL_END),
+    reason: z.string().optional(),
   }).passthrough(),
 ]);

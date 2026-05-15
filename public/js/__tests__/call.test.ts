@@ -109,6 +109,30 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       ws?.onmessage?.({ data: JSON.stringify({ unknown: true }) });
       ws?.onmessage?.({ data: 'invalid-json' });
     });
+
+    it('should handle inactivity config and auto-end message branches', async () => {
+      await startCall('a1', mockCallbacks);
+      handleWsMessage({
+        type: MESSAGE_TYPE.CALL_STARTED,
+        agentName: 'TestAgent',
+        inactivityConfig: {
+          inactivityTimeoutMs: 5000,
+          maxInactivityNudges: 2,
+          maxCallDurationSecs: 30,
+        },
+      } as any, mockCallbacks);
+
+      handleWsMessage({
+        type: MESSAGE_TYPE.INACTIVITY_NUDGE,
+        nudgeNum: 1,
+        maxNudges: 2,
+      } as any, mockCallbacks);
+
+      handleWsMessage({
+        type: MESSAGE_TYPE.AUTO_CALL_END,
+        reason: 'Auto stop',
+      } as any, mockCallbacks);
+    });
     it('should handle signaling websocket open timeout', async () => {
       await startCall('a1', mockCallbacks);
       vi.advanceTimersByTime(10001);
@@ -171,6 +195,16 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       // Cover downsampling from 24000 to 16000
       ctx.sampleRate = 24000;
       sp?.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(10) } });
+    });
+
+    it('should skip relay when websocket is closed', async () => {
+      await startCall('a1', mockCallbacks);
+      handleWsMessage({ type: MESSAGE_TYPE.CALL_STARTED }, mockCallbacks);
+      const sp = getAudioProcessor() as any;
+      const ws = getWs() as any;
+      if (ws) ws.readyState = 0;
+      sp?.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(1024) } });
+      expect(ws?.send).not.toHaveBeenCalled();
     });
     it('should disable media tracks on mute, re-enable on unmute, and reset UI on endCall', async () => {
       await startCall('a1', mockCallbacks);

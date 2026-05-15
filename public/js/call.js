@@ -61,6 +61,8 @@ let lastUserAudioSentAt = 0;
 let lastModelResponseAt = 0;
 /** @type {number | null} */ let inactivityCheckTimer = null;
 let inactivityWarned = false;
+/** @type {{ inactivityTimeoutMs: number, maxInactivityNudges: number, maxCallDurationSecs: number } | null} */
+let activeInactivityConfig = null;
 
 /** @returns {typeof AudioContext | null} */
 function getAudioContextCtor() {
@@ -558,6 +560,19 @@ export function handleWsMessage(message, callbacks) {
       updateCallUI(true);
       onStatusChange(UI_STRINGS.callPanel.connected, 'active');
       startTimer(callbacks.onTimerUpdate);
+
+      if (message.inactivityConfig) {
+        activeInactivityConfig = message.inactivityConfig;
+        const inactivityConfigLog = [
+          `Inactivity config: timeout=${message.inactivityConfig.inactivityTimeoutMs}ms`,
+          `maxNudges=${message.inactivityConfig.maxInactivityNudges}`,
+          `maxDuration=${message.inactivityConfig.maxCallDurationSecs}s`,
+        ].join(', ');
+        appendDebugLog(
+          inactivityConfigLog,
+          'info',
+        );
+      }
       startInactivityCheck();
       appendDebugLog(UI_STRINGS.signaling.logs.callStarted, 'info');
       if (message.agentName) showToast(UI_STRINGS.toasts.callStarted(message.agentName), 'success');
@@ -573,12 +588,34 @@ export function handleWsMessage(message, callbacks) {
         inactivityWarned = false;
       }
       onTranscript(message.role, message.text);
-      if (message.role === 'user') appendDebugLog(UI_STRINGS.signaling.logs.transcriptUser(message.text.length), 'info');
-      if (message.role === 'model') appendDebugLog(UI_STRINGS.signaling.logs.transcriptModel(message.text.length), 'info');
+      if (message.role === 'user') {
+        appendDebugLog(
+          UI_STRINGS.signaling.logs.transcriptUser(message.text.length),
+          'info',
+        );
+      }
+      if (message.role === 'model') {
+        appendDebugLog(
+          UI_STRINGS.signaling.logs.transcriptModel(message.text.length),
+          'info',
+        );
+      }
     },
     [MESSAGE_TYPE.INTERRUPTED]: () => {
       appendDebugLog(UI_STRINGS.signaling.logs.interrupted, 'warn');
       interruptModelPlayback();
+    },
+    [MESSAGE_TYPE.INACTIVITY_NUDGE]: () => {
+      const nudgeNum = message.nudgeNum || 0;
+      const maxNudges = message.maxNudges || 0;
+      appendDebugLog(UI_STRINGS.signaling.logs.inactivityNudge(nudgeNum, maxNudges), 'warn');
+      showToast(UI_STRINGS.signaling.status.inactivityNudge(nudgeNum, maxNudges), 'info');
+    },
+    [MESSAGE_TYPE.AUTO_CALL_END]: () => {
+      const reason = message.reason || 'Call ended automatically';
+      appendDebugLog(UI_STRINGS.signaling.logs.autoCallEnd(reason), 'warn');
+      showToast(reason, 'info');
+      endCall();
     },
     [MESSAGE_TYPE.CALL_ENDED]: () => {
       showToast(message.reason || UI_STRINGS.callPanel.ended, 'success');
@@ -684,6 +721,7 @@ export async function endCall() {
   lastUserAudioSentAt = 0;
   lastModelResponseAt = 0;
   inactivityWarned = false;
+  activeInactivityConfig = null;
   startupTrace = null;
   appendDebugLog(UI_STRINGS.signaling.logs.callEndComplete, 'info');
 }
@@ -723,17 +761,19 @@ export function stopTimer() {
 /** @returns {void} */
 function startInactivityCheck() {
   stopInactivityCheck();
+  const timeoutMs = activeInactivityConfig?.inactivityTimeoutMs || CONFIG.DEFAULT_INACTIVITY_TIMEOUT_MS;
+  const checkIntervalMs = Math.min(timeoutMs, CONFIG.MODEL_INACTIVITY_WARN_MS);
   inactivityCheckTimer = window.setInterval(() => {
     if (!isInCall || !lastUserAudioSentAt) return;
     const sinceLastUserAudio = Date.now() - lastUserAudioSentAt;
     const sinceLastModel = lastModelResponseAt ? Date.now() - lastModelResponseAt : sinceLastUserAudio;
-    const isModelSilent = sinceLastModel >= CONFIG.MODEL_INACTIVITY_WARN_MS;
+    const isModelSilent = sinceLastModel >= timeoutMs;
     const userSpokeRecently = sinceLastUserAudio < sinceLastModel;
     if (isModelSilent && userSpokeRecently && !inactivityWarned) {
       inactivityWarned = true;
       appendDebugLog(UI_STRINGS.signaling.logs.modelInactivityWarn(sinceLastModel), 'warn');
     }
-  }, CONFIG.MODEL_INACTIVITY_WARN_MS);
+  }, checkIntervalMs);
 }
 
 /** @returns {void} */
@@ -767,6 +807,7 @@ export function resetState() {
   lastUserAudioSentAt = 0;
   lastModelResponseAt = 0;
   inactivityWarned = false;
+  activeInactivityConfig = null;
 }
 
 /** @returns {WebSocket | null} */

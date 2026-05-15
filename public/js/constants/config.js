@@ -57,6 +57,9 @@ export const CONFIG = {
   AUDIO_QUEUE_DEPTH_WARN: 20,
   AUDIO_CROSSFADE_SAMPLES: 48,
   AUDIO_DIAG_LOG_INTERVAL_CHUNKS: 25,
+  DEFAULT_INACTIVITY_TIMEOUT_MS: 10000,
+  DEFAULT_MAX_INACTIVITY_NUDGES: 3,
+  DEFAULT_MAX_CALL_DURATION_SECS: 0,
 };
 
 export const MESSAGE_TYPE = {
@@ -69,4 +72,6 @@ export const MESSAGE_TYPE = {
   ERROR: 'error',
   CALL_STARTED: 'call-started',
   CALL_ENDED: 'call-ended',
+  INACTIVITY_NUDGE: 'inactivity-nudge',
+  AUTO_CALL_END: 'auto-call-end',
 };

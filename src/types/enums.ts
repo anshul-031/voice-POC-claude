@@ -54,6 +54,11 @@ export const LIVE_CALL = {
   VAD_SILENCE_DURATION_MS: 300,
   VAD_START_SENSITIVITY: 'START_SENSITIVITY_LOW',
   VAD_END_SENSITIVITY: 'END_SENSITIVITY_HIGH',
+  DEFAULT_INACTIVITY_TIMEOUT_MS: 10000,
+  DEFAULT_MAX_INACTIVITY_NUDGES: 3,
+  DEFAULT_MAX_CALL_DURATION_SECS: 0,
+  INACTIVITY_CHECK_INTERVAL_MS: 3000,
+  NUDGE_PROMPT: 'The user seems to be waiting for a response. Please continue the conversation naturally.',
 } as const;
 
 export const MESSAGE_TYPE = {
@@ -66,6 +71,8 @@ export const MESSAGE_TYPE = {
   ERROR: 'error',
   CALL_STARTED: 'call-started',
   CALL_ENDED: 'call-ended',
+  INACTIVITY_NUDGE: 'inactivity-nudge',
+  AUTO_CALL_END: 'auto-call-end',
 } as const;
 
 export const VOICE_NAME = {

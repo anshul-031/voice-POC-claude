@@ -164,6 +164,11 @@ export const UI_STRINGS = {
     status: {
       geminiClosed: 'Gemini session closed',
       userEnded: 'User ended call',
+      inactivityNudge: (nudgeNum: number, maxNudges: number): string =>
+        `Model silent — sending nudge ${nudgeNum}/${maxNudges}`,
+      autoEndInactivity: 'Call ended automatically due to prolonged model inactivity.',
+      autoEndDuration: (secs: number): string =>
+        `Call ended automatically — max duration of ${secs}s reached.`,
     },
   },
 };

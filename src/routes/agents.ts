@@ -16,6 +16,34 @@ import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 
 const router = Router();
 
+type CreateAgentBody = {
+  name: string;
+  systemPrompt: string;
+  voiceName?: string;
+  modelName?: string;
+  publicPreviewEnabled?: boolean;
+  inactivityTimeoutMs?: number;
+  maxInactivityNudges?: number;
+  maxCallDurationSecs?: number;
+};
+
+type UpdateAgentBody = Partial<CreateAgentBody>;
+
+type CreateAgentRequestResult =
+  | { success: true; data: CreateAgentBody }
+  | { success: false; error: string };
+
+type AgentUpdateData = {
+  name?: string;
+  systemPrompt?: string;
+  voiceName?: string;
+  modelName?: string;
+  publicPreviewEnabled?: boolean;
+  inactivityTimeoutMs?: number;
+  maxInactivityNudges?: number;
+  maxCallDurationSecs?: number;
+};
+
 function getAgentValidationError(error: { issues: Array<{ path: PropertyKey[] }> }): string {
   const issuePaths = error.issues.map((issue) => String(issue.path[0] || ''));
   if (issuePaths.includes('voiceName')) {
@@ -36,6 +64,20 @@ function hasJsonContentType(contentType?: string): boolean {
 
 function buildPublicPreviewUrl(agentId: string): string {
   return `${ROUTES.PREVIEW_PAGE}/${agentId}`;
+}
+
+function parseCreateAgentRequest(req: AuthenticatedRequest): CreateAgentRequestResult {
+  const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(req.headers ?? {});
+  if (!headersParse.success || !hasJsonContentType(headersParse.data['content-type'])) {
+    return { success: false, error: UI_STRINGS.api.errors.invalidInput };
+  }
+
+  const bodyParse = CREATE_AGENT_BODY_SCHEMA.safeParse(req.body);
+  if (!bodyParse.success) {
+    return { success: false, error: getAgentValidationError(bodyParse.error) };
+  }
+
+  return { success: true, data: bodyParse.data };
 }
 
 // GET /api/voices — list available voices
@@ -106,17 +148,21 @@ router.get('/agents/:id', requireAuth, async (_req: Request, res: Response): Pro
 router.post('/agents', requireAuth, async (_req: Request, res: Response): Promise<any> => {
   const req = _req as AuthenticatedRequest;
   try {
-    const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(req.headers ?? {});
-    if (!headersParse.success || !hasJsonContentType(headersParse.data['content-type'])) {
-      return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    const parsedRequest = parseCreateAgentRequest(req);
+    if (!parsedRequest.success) {
+      return res.status(400).json({ error: parsedRequest.error });
     }
 
-    const bodyParse = CREATE_AGENT_BODY_SCHEMA.safeParse(req.body);
-    if (!bodyParse.success) {
-      return res.status(400).json({ error: getAgentValidationError(bodyParse.error) });
-    }
-
-    const { name, systemPrompt, voiceName, modelName, publicPreviewEnabled } = bodyParse.data;
+    const {
+      name,
+      systemPrompt,
+      voiceName,
+      modelName,
+      publicPreviewEnabled,
+      inactivityTimeoutMs,
+      maxInactivityNudges,
+      maxCallDurationSecs,
+    } = parsedRequest.data;
 
     const agent = await prisma.voiceAgent.create({
       data: {
@@ -125,6 +171,9 @@ router.post('/agents', requireAuth, async (_req: Request, res: Response): Promis
         voiceName: voiceName || AUDIO_CONFIG.DEFAULT_VOICE,
         modelName: modelName || AUDIO_CONFIG.DEFAULT_MODEL,
         publicPreviewEnabled: publicPreviewEnabled || false,
+        ...(inactivityTimeoutMs !== undefined && { inactivityTimeoutMs }),
+        ...(maxInactivityNudges !== undefined && { maxInactivityNudges }),
+        ...(maxCallDurationSecs !== undefined && { maxCallDurationSecs }),
         userId: req.user?.id,
       },
     });
@@ -142,21 +191,27 @@ router.post('/agents', requireAuth, async (_req: Request, res: Response): Promis
  * Prepares the data object for Prisma update.
  */
 function prepareUpdateData(
-  body: {
-    name?: string;
-    systemPrompt?: string;
-    voiceName?: string;
-    modelName?: string;
-    publicPreviewEnabled?: boolean;
-  },
-): { name?: string; systemPrompt?: string; voiceName?: string; modelName?: string; publicPreviewEnabled?: boolean } {
-  const { name, systemPrompt, voiceName, modelName, publicPreviewEnabled } = body;
+  body: UpdateAgentBody,
+): AgentUpdateData {
+  const {
+    name,
+    systemPrompt,
+    voiceName,
+    modelName,
+    publicPreviewEnabled,
+    inactivityTimeoutMs,
+    maxInactivityNudges,
+    maxCallDurationSecs,
+  } = body;
   return {
     ...(name && { name }),
     ...(systemPrompt && { systemPrompt }),
     ...(voiceName && { voiceName }),
     ...(modelName && { modelName }),
     ...(publicPreviewEnabled !== undefined && { publicPreviewEnabled }),
+    ...(inactivityTimeoutMs !== undefined && { inactivityTimeoutMs }),
+    ...(maxInactivityNudges !== undefined && { maxInactivityNudges }),
+    ...(maxCallDurationSecs !== undefined && { maxCallDurationSecs }),
   };
 }
 
@@ -164,7 +219,12 @@ function prepareUpdateData(
  * Checks if an error is a Prisma Not Found error.
  */
 function isPrismaNotFound(error: unknown): boolean {
-  return !!(error && typeof error === 'object' && 'code' in error && (error as { code: string }).code === PRISMA_ERRORS.NOT_FOUND);
+  return !!(
+    error
+    && typeof error === 'object'
+    && 'code' in error
+    && (error as { code: string }).code === PRISMA_ERRORS.NOT_FOUND
+  );
 }
 
 /**

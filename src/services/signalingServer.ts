@@ -25,6 +25,9 @@ type StartCallAgent = {
   modelName: string | null;
   publicPreviewEnabled: boolean;
   userId: string | null;
+  inactivityTimeoutMs: number;
+  maxInactivityNudges: number;
+  maxCallDurationSecs: number;
 };
 
 /**
@@ -229,6 +232,7 @@ class SignalingServer {
 
     if (client) {
       client.modelAudioChunksRelayed++;
+      client.lastModelResponseAt = now;
 
       if (!client.firstModelAudioRelayedAt) {
         client.firstModelAudioRelayedAt = now;
@@ -290,28 +294,7 @@ class SignalingServer {
     const now = Date.now();
     const client = this.clients.get(socket);
 
-    if (client && transcript.role === 'user' && !client.firstUserTranscriptRelayedAt) {
-      client.firstUserTranscriptRelayedAt = now;
-      logger.info('First user transcript relayed to client', {
-        sessionId,
-        correlationId: client.correlationId,
-        elapsedMs: now - client.startTime,
-        chars: transcript.text.length,
-      });
-    }
-
-    if (client && transcript.role === 'model' && !client.firstModelTranscriptRelayedAt) {
-      client.firstModelTranscriptRelayedAt = now;
-      logger.info('First model transcript relayed to client', {
-        sessionId,
-        correlationId: client.correlationId,
-        elapsedMs: now - client.startTime,
-        sinceFirstUserTranscriptMs: client.firstUserTranscriptRelayedAt
-          ? now - client.firstUserTranscriptRelayedAt
-          : undefined,
-        chars: transcript.text.length,
-      });
-    }
+    this._trackTranscriptRelay(client, transcript, now, sessionId);
 
     logger.debug('Relaying transcript', {
       role: transcript.role,
@@ -326,6 +309,44 @@ class SignalingServer {
         role: transcript.role,
         text: transcript.text,
       }));
+    }
+  }
+
+  private _trackTranscriptRelay(
+    client: SignalingClient | undefined,
+    transcript: { role: 'user' | 'model'; text: string },
+    now: number,
+    sessionId: string,
+  ): void {
+    if (!client) {
+      return;
+    }
+
+    if (transcript.role === 'user' && !client.firstUserTranscriptRelayedAt) {
+      client.firstUserTranscriptRelayedAt = now;
+      logger.info('First user transcript relayed to client', {
+        sessionId,
+        correlationId: client.correlationId,
+        elapsedMs: now - client.startTime,
+        chars: transcript.text.length,
+      });
+    }
+
+    if (transcript.role === 'model' && !client.firstModelTranscriptRelayedAt) {
+      client.firstModelTranscriptRelayedAt = now;
+      logger.info('First model transcript relayed to client', {
+        sessionId,
+        correlationId: client.correlationId,
+        elapsedMs: now - client.startTime,
+        sinceFirstUserTranscriptMs: client.firstUserTranscriptRelayedAt
+          ? now - client.firstUserTranscriptRelayedAt
+          : undefined,
+        chars: transcript.text.length,
+      });
+    }
+
+    if (transcript.role === 'model') {
+      client.lastModelResponseAt = now;
     }
   }
 
@@ -382,7 +403,9 @@ class SignalingServer {
     agentId: string,
     correlationId: string,
     startTime: number,
+    agent: StartCallAgent,
   ): void {
+    const now = Date.now();
     this.clients.set(socket, {
       sessionId,
       agentId,
@@ -391,6 +414,12 @@ class SignalingServer {
       modelAudioChunksRelayed: 0,
       startTime,
       proactiveGreetingSent: false,
+      lastModelResponseAt: now,
+      lastUserAudioAt: now,
+      nudgeCount: 0,
+      inactivityTimeoutMs: agent.inactivityTimeoutMs ?? LIVE_CALL.DEFAULT_INACTIVITY_TIMEOUT_MS,
+      maxInactivityNudges: agent.maxInactivityNudges ?? LIVE_CALL.DEFAULT_MAX_INACTIVITY_NUDGES,
+      maxCallDurationSecs: agent.maxCallDurationSecs ?? LIVE_CALL.DEFAULT_MAX_CALL_DURATION_SECS,
     });
   }
 
@@ -469,7 +498,7 @@ class SignalingServer {
       });
 
       const callStartedAt = Date.now();
-      this._registerClientSession(socket, sessionId, agentId, correlationId, callStartedAt);
+      this._registerClientSession(socket, sessionId, agentId, correlationId, callStartedAt, agent);
 
       logger.info('Gemini session created', {
         sessionId,
@@ -484,6 +513,11 @@ class SignalingServer {
         voiceName: agent.voiceName,
         modelName: agent.modelName,
         correlationId,
+        inactivityConfig: {
+          inactivityTimeoutMs: agent.inactivityTimeoutMs,
+          maxInactivityNudges: agent.maxInactivityNudges,
+          maxCallDurationSecs: agent.maxCallDurationSecs,
+        },
       }));
       logger.debug('Sent call-started payload', {
         sessionId,
@@ -500,7 +534,13 @@ class SignalingServer {
         agentName: agent.name,
         correlationId,
         totalStartupMs: Date.now() - startCallAt,
+        inactivityTimeoutMs: agent.inactivityTimeoutMs,
+        maxInactivityNudges: agent.maxInactivityNudges,
+        maxCallDurationSecs: agent.maxCallDurationSecs,
       });
+
+      this._startInactivityMonitor(socket, sessionId, correlationId);
+      this._startCallDurationTimer(socket, sessionId, correlationId);
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Failed to start call', { 
@@ -538,6 +578,8 @@ class SignalingServer {
     if (!client) return;
 
     client.audioChunksRelayed++;
+    client.lastUserAudioAt = Date.now();
+    client.nudgeCount = 0;
     if (client.audioChunksRelayed === 1) {
       logger.info('First client audio chunk relayed to Gemini', {
         sessionId: client.sessionId,
@@ -568,6 +610,7 @@ class SignalingServer {
         correlationId,
       });
       await geminiLiveService.closeSession(client.sessionId);
+      this._stopClientTimers(client);
       this.clients.delete(socket);
       socket.send(JSON.stringify({ 
         type: MESSAGE_TYPE.CALL_ENDED, 
@@ -586,10 +629,165 @@ class SignalingServer {
         durationSeconds: duration, 
         correlationId: client.correlationId,
       });
+      this._stopClientTimers(client);
       geminiLiveService.closeSession(client.sessionId).catch((err: Error) => {
         logger.error('Error closing session on disconnect', { error: err.message });
       });
       this.clients.delete(socket);
+    }
+  }
+
+  private _startInactivityMonitor(
+    socket: WSWebSocket,
+    sessionId: string,
+    correlationId: string,
+  ): void {
+    const client = this.clients.get(socket);
+    if (!client || client.maxInactivityNudges <= 0) return;
+
+    client.inactivityTimer = setInterval(() => {
+      const currentClient = this.clients.get(socket);
+      if (currentClient?.sessionId !== sessionId) {
+        clearInterval(client.inactivityTimer);
+        return;
+      }
+
+      const now = Date.now();
+      const silenceMs = now - currentClient.lastModelResponseAt;
+      const userSpokeAfterModel = currentClient.lastUserAudioAt > currentClient.lastModelResponseAt;
+      const inNudgeCycle = currentClient.nudgeCount > 0;
+
+      if (silenceMs < currentClient.inactivityTimeoutMs) {
+        return;
+      }
+
+      if (!userSpokeAfterModel && !inNudgeCycle) {
+        return;
+      }
+
+      currentClient.nudgeCount++;
+
+      if (currentClient.nudgeCount > currentClient.maxInactivityNudges) {
+        logger.warn('Max inactivity nudges exhausted, auto-ending call', {
+          sessionId,
+          correlationId,
+          nudgeCount: currentClient.nudgeCount - 1,
+          silenceMs,
+        });
+        this._autoEndCall(
+          socket,
+          sessionId,
+          correlationId,
+          UI_STRINGS.signaling.status.autoEndInactivity,
+        );
+        return;
+      }
+
+      logger.info('Sending inactivity nudge to Gemini', {
+        sessionId,
+        correlationId,
+        nudgeNum: currentClient.nudgeCount,
+        maxNudges: currentClient.maxInactivityNudges,
+        silenceMs,
+      });
+
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: MESSAGE_TYPE.INACTIVITY_NUDGE,
+          nudgeNum: currentClient.nudgeCount,
+          maxNudges: currentClient.maxInactivityNudges,
+          message: UI_STRINGS.signaling.status.inactivityNudge(
+            currentClient.nudgeCount,
+            currentClient.maxInactivityNudges,
+          ),
+        }));
+      }
+
+      geminiLiveService.sendText(
+        sessionId,
+        LIVE_CALL.NUDGE_PROMPT,
+        `inactivity-nudge-${currentClient.nudgeCount}`,
+      ).catch((err: Error) => {
+        logger.error('Nudge send failed', {
+          sessionId,
+          correlationId,
+          error: err.message,
+        });
+      });
+    }, LIVE_CALL.INACTIVITY_CHECK_INTERVAL_MS);
+  }
+
+  private _startCallDurationTimer(
+    socket: WSWebSocket,
+    sessionId: string,
+    correlationId: string,
+  ): void {
+    const client = this.clients.get(socket);
+    if (!client?.maxCallDurationSecs || client.maxCallDurationSecs <= 0) return;
+
+    const maxDurationMs = client.maxCallDurationSecs * TIME.MS_TO_SEC;
+    logger.info('Call duration timer started', {
+      sessionId,
+      correlationId,
+      maxCallDurationSecs: client.maxCallDurationSecs,
+    });
+
+    client.callDurationTimer = setTimeout(() => {
+      const currentClient = this.clients.get(socket);
+      if (currentClient?.sessionId !== sessionId) return;
+
+      logger.info('Max call duration reached, auto-ending call', {
+        sessionId,
+        correlationId,
+        maxCallDurationSecs: currentClient.maxCallDurationSecs,
+      });
+
+      this._autoEndCall(
+        socket,
+        sessionId,
+        correlationId,
+        UI_STRINGS.signaling.status.autoEndDuration(currentClient.maxCallDurationSecs),
+      );
+    }, maxDurationMs);
+  }
+
+  private _stopClientTimers(client: SignalingClient): void {
+    if (client.inactivityTimer) {
+      clearInterval(client.inactivityTimer);
+      client.inactivityTimer = undefined;
+    }
+    if (client.callDurationTimer) {
+      clearTimeout(client.callDurationTimer);
+      client.callDurationTimer = undefined;
+    }
+  }
+
+  private async _autoEndCall(
+    socket: WSWebSocket,
+    sessionId: string,
+    correlationId: string,
+    reason: string,
+  ): Promise<void> {
+    const client = this.clients.get(socket);
+    if (!client) return;
+
+    const duration = Math.round((Date.now() - client.startTime) / TIME.MS_TO_SEC);
+    logger.info('Auto-ending call', {
+      sessionId,
+      correlationId,
+      durationSeconds: duration,
+      reason,
+    });
+
+    this._stopClientTimers(client);
+    await geminiLiveService.closeSession(sessionId);
+    this.clients.delete(socket);
+
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: MESSAGE_TYPE.AUTO_CALL_END,
+        reason,
+      }));
     }
   }
 }

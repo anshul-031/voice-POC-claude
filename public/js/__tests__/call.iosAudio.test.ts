@@ -3,7 +3,13 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { getAudioContext, playAudioResponse, resetState, startCall } from '../call.js';
+import {
+  getAudioContext,
+  playAudioResponse,
+  prepareAudioPlaybackOnGesture,
+  resetState,
+  startCall,
+} from '../call.js';
 
 function createCallbacks() {
   return {
@@ -204,5 +210,76 @@ describe('call.js iOS audio hardening branches', () => {
     vi.stubGlobal('webkitAudioContext', StableAudioContext as unknown as typeof AudioContext);
 
     await expect(startCall('agent-1', createCallbacks())).resolves.toBeUndefined();
+  });
+
+  it('handles non-Error microphone failures with a generic startup error', async () => {
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: vi.fn().mockRejectedValue({ reason: 'plain-object' }),
+      },
+    });
+
+    await startCall('agent-1', createCallbacks());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(getAudioContext()).toBeNull();
+  });
+
+  it('times out microphone access when getUserMedia never resolves', async () => {
+    vi.useFakeTimers();
+    const pendingPromise = new Promise<void>(() => {});
+
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: vi.fn().mockReturnValue(pendingPromise),
+      },
+    });
+
+    const startupPromise = startCall('agent-1', createCallbacks());
+    await vi.advanceTimersByTimeAsync(15000);
+    await startupPromise;
+
+    expect(getAudioContext()).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('ignores unlock source disconnect failures', () => {
+    class ThrowingAudioContext {
+      state = 'running';
+      sampleRate = 16000;
+      destination = {};
+      resume = vi.fn().mockResolvedValue(undefined);
+      close = vi.fn().mockResolvedValue(undefined);
+      createBuffer = vi.fn().mockReturnValue({
+        getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),
+      });
+      createBufferSource = vi.fn().mockReturnValue({
+        buffer: null,
+        connect: vi.fn(),
+        start: vi.fn(),
+        onended: null as (() => void) | null,
+        disconnect: vi.fn(() => { throw new Error('disconnect-failed'); }),
+      });
+      createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn() });
+      createAnalyser = vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256 });
+      createScriptProcessor = vi.fn().mockReturnValue({
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        onaudioprocess: null,
+      });
+    }
+
+    vi.stubGlobal('AudioContext', ThrowingAudioContext as unknown as typeof AudioContext);
+    vi.stubGlobal('webkitAudioContext', ThrowingAudioContext as unknown as typeof AudioContext);
+
+    prepareAudioPlaybackOnGesture();
+
+    const context = getAudioContext() as unknown as {
+      createBufferSource: { mock: { results: Array<{ value: { onended: (() => void) | null } }> } };
+    };
+    const source = context.createBufferSource.mock.results[0]?.value;
+    source?.onended?.();
+    expect(source).toBeDefined();
   });
 });

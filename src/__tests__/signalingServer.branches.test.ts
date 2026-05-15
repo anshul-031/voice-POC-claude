@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WebSocket } from 'ws';
+import { LIVE_CALL } from '../types/index.js';
 import signalingServer from '../services/signalingServer.js';
 import geminiLiveService from '../services/geminiLive.js';
 import prisma from '../lib/prisma.js';
@@ -62,6 +63,12 @@ describe('SignalingServer branch helpers', () => {
       modelAudioChunksRelayed: 0,
       startTime: Date.now() - 4000,
       proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (signalingServer as any)._relayModelAudioToClient(mockWs, 'sid', 'audio-b');
 
@@ -75,6 +82,12 @@ describe('SignalingServer branch helpers', () => {
       firstUserTranscriptRelayedAt: Date.now() - 300,
       proactiveGreetingSent: true,
       proactiveGreetingSentAt: Date.now() - 200,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (signalingServer as any)._relayModelAudioToClient(mockWs, 'sid2', 'audio-c');
     (signalingServer as any)._relayModelAudioToClient(mockWs, 'sid2', 'audio-d');
@@ -91,6 +104,12 @@ describe('SignalingServer branch helpers', () => {
       modelAudioChunksRelayed: 0,
       startTime: Date.now() - 100,
       proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (signalingServer as any)._relayTranscriptToClient(
       mockWs,
@@ -109,6 +128,12 @@ describe('SignalingServer branch helpers', () => {
       firstUserTranscriptRelayedAt: Date.now() - 50,
       proactiveGreetingSent: true,
       proactiveGreetingSentAt: Date.now() - 70,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (signalingServer as any)._relayTranscriptToClient(
       mockWs,
@@ -116,6 +141,122 @@ describe('SignalingServer branch helpers', () => {
       { role: 'model', text: 'm2' },
       'cid-model-2',
     );
+  });
+
+  it('covers inactivity monitor and auto-end branches', async () => {
+    vi.useFakeTimers();
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+    const now = Date.now();
+
+    (geminiLiveService.sendText as any).mockResolvedValue(undefined);
+    (geminiLiveService.closeSession as any).mockResolvedValue(undefined);
+
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'sid-inactivity',
+      agentId: '1',
+      correlationId: 'cid-inactivity',
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      startTime: now - 5000,
+      proactiveGreetingSent: false,
+      lastModelResponseAt: now - 5000,
+      lastUserAudioAt: now - 4000,
+      nudgeCount: 0,
+      inactivityTimeoutMs: 1000,
+      maxInactivityNudges: 1,
+      maxCallDurationSecs: 0,
+    });
+
+    (signalingServer as any)._startInactivityMonitor(mockWs, 'sid-inactivity', 'cid-inactivity');
+    vi.advanceTimersByTime(LIVE_CALL.INACTIVITY_CHECK_INTERVAL_MS * 3);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(geminiLiveService.sendText).toHaveBeenCalled();
+    expect(geminiLiveService.closeSession).toHaveBeenCalledWith('sid-inactivity');
+    expect(clearIntervalSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('covers inactivity monitor session mismatch cleanup', () => {
+    vi.useFakeTimers();
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'sid-mismatch',
+      agentId: '1',
+      correlationId: 'cid-mismatch',
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      startTime: Date.now() - 1000,
+      proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now() - 1000,
+      lastUserAudioAt: Date.now() - 500,
+      nudgeCount: 0,
+      inactivityTimeoutMs: 1000,
+      maxInactivityNudges: 1,
+      maxCallDurationSecs: 0,
+    });
+
+    (signalingServer as any)._startInactivityMonitor(mockWs, 'sid-mismatch', 'cid-mismatch');
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'sid-other',
+      agentId: '1',
+      correlationId: 'cid-mismatch',
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      startTime: Date.now() - 1000,
+      proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now() - 1000,
+      lastUserAudioAt: Date.now() - 500,
+      nudgeCount: 0,
+      inactivityTimeoutMs: 1000,
+      maxInactivityNudges: 1,
+      maxCallDurationSecs: 0,
+    });
+
+    vi.advanceTimersByTime(LIVE_CALL.INACTIVITY_CHECK_INTERVAL_MS);
+    expect(clearIntervalSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('covers call duration timer and auto-end cleanup branches', async () => {
+    vi.useFakeTimers();
+    (geminiLiveService.closeSession as any).mockResolvedValue(undefined);
+
+    const inactivityTimer = setInterval(() => {}, 1000);
+
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'sid-duration',
+      agentId: '1',
+      correlationId: 'cid-duration',
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      startTime: Date.now() - 2000,
+      proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now() - 2000,
+      lastUserAudioAt: Date.now() - 1500,
+      nudgeCount: 0,
+      inactivityTimeoutMs: 1000,
+      maxInactivityNudges: 1,
+      maxCallDurationSecs: 1,
+      inactivityTimer,
+    });
+
+    (signalingServer as any)._startCallDurationTimer(mockWs, 'sid-duration', 'cid-duration');
+    vi.advanceTimersByTime(1000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(geminiLiveService.closeSession).toHaveBeenCalledWith('sid-duration');
+    expect(signalingServer.clients.has(mockWs as WebSocket)).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('covers auto-end no-client branch', async () => {
+    const closeCallsBefore = (geminiLiveService.closeSession as any).mock.calls.length;
+    await (signalingServer as any)._autoEndCall(mockWs, 'missing-session', 'cid-missing', 'reason');
+    expect((geminiLiveService.closeSession as any).mock.calls.length).toBe(closeCallsBefore);
   });
 
   it('covers non-Error createSession failure branch', async () => {
@@ -127,6 +268,9 @@ describe('SignalingServer branch helpers', () => {
       modelName: 'gemini-2.0-flash-exp',
       publicPreviewEnabled: true,
       userId: null,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
     });
     (geminiLiveService.createSession as any).mockRejectedValueOnce('RAW_CREATE_FAIL');
 

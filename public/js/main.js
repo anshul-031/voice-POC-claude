@@ -6,13 +6,22 @@ import { CONFIG } from './constants/config.js';
 import { applyI18n, showPanel } from './ui.js';
 import { api, checkApiHealth } from './api.js';
 import { initWaveform } from './waveform.js';
-import { toggleCall, endCall, toggleMute as callToggleMute, prepareAudioPlaybackOnGesture } from './call.js';
+import {
+  toggleCall,
+  endCall,
+  toggleMute as callToggleMute,
+  prepareAudioPlaybackOnGesture,
+} from './call.js';
 import { showToast, whitelabelModelName } from './utils.js';
-import { appendTranscript, selectVoiceInGrid, clearDebugLogs } from './transcript.js';
+import { appendTranscript, clearDebugLogs } from './transcript.js';
 import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
 import { renderVoiceGrid, renderModelSelect, renderAgentList } from './render.js';
-import { copyPreviewUrl as copyPreviewUrlToClipboard, togglePublicPreview as togglePublicPreviewRequest } from './previewLinks.js';
+import {
+  copyPreviewUrl as copyPreviewUrlToClipboard,
+  togglePublicPreview as togglePublicPreviewRequest,
+} from './previewLinks.js';
 import { renderCallPanelTemplate } from './components/callPanel.js';
+import { getFormData, populateForm } from './agentForm.js';
 
 // ── Auth Check ──
 export async function checkAuthAndInit() {
@@ -202,39 +211,6 @@ export const selectAgent = (id) => {
 /** @type {any} */ (window).selectAgent = selectAgent;
 
 /**
- * Sets the value or textContent of a DOM element by ID.
- * @param {string} elId
- * @param {string} value
- * @param {'value' | 'text'} mode
- * @returns {void}
- */
-export function setFormField(elId, value, mode = 'value') {
-  const el = document.getElementById(elId);
-  if (!el) return;
-  if (mode === 'text') { el.textContent = value; }
-  else { /** @type {HTMLInputElement} */ (el).value = value; }
-}
-
-/**
- * Populates the agent form fields.
- * @param {{id?: string, name?: string, systemPrompt?: string, voiceName?: string, modelName?: string, publicPreviewEnabled?: boolean, title?: string, submitText?: string}} fields
- * @returns {void}
- */
-export function populateForm(fields) {
-  setFormField('form-agent-id', fields.id || '');
-  setFormField('form-name', fields.name || '');
-  setFormField('form-prompt', fields.systemPrompt || '');
-  setFormField('form-title', fields.title || UI_STRINGS.form.createTitle, 'text');
-  setFormField('form-submit-text', fields.submitText || UI_STRINGS.common.create, 'text');
-  if (fields.modelName) setFormField('form-model', fields.modelName);
-  const publicPreviewCheckbox = /** @type {HTMLInputElement | null} */ (document.getElementById('form-public-preview-enabled'));
-  if (publicPreviewCheckbox) {
-    publicPreviewCheckbox.checked = !!fields.publicPreviewEnabled;
-  }
-  if (fields.voiceName) selectVoiceInGrid(fields.voiceName);
-}
-
-/**
  * @returns {void}
  */
 export const showCreateForm = () => {
@@ -256,36 +232,13 @@ export function editAgent(id) {
     voiceName: agent.voiceName,
     modelName: agent.modelName,
     publicPreviewEnabled: agent.publicPreviewEnabled,
+    inactivityTimeoutMs: agent.inactivityTimeoutMs,
+    maxInactivityNudges: agent.maxInactivityNudges,
+    maxCallDurationSecs: agent.maxCallDurationSecs,
     title: UI_STRINGS.form.editTitle || 'Edit Agent',
     submitText: UI_STRINGS.common.save || 'Save Changes',
   });
   showPanel('form');
-}
-
-/**
- * @returns {{id: string, name: string, systemPrompt: string, voiceName: string, modelName: string, publicPreviewEnabled: boolean} | null}
- */
-export function getFormData() {
-  const idEl = /** @type {HTMLInputElement} */ (document.getElementById('form-agent-id'));
-  const nameEl = /** @type {HTMLInputElement} */ (document.getElementById('form-name'));
-  const promptEl = /** @type {HTMLTextAreaElement} */ (document.getElementById('form-prompt'));
-  const modelEl = /** @type {HTMLSelectElement} */ (document.getElementById('form-model'));
-  const publicPreviewEl = /** @type {HTMLInputElement | null} */ (document.getElementById('form-public-preview-enabled'));
-  
-  if (!idEl || !nameEl || !promptEl || !modelEl) return null;
-
-  const voiceName = /** @type {HTMLInputElement | null} */ (
-    document.querySelector('input[name="voiceName"]:checked')
-  )?.value || CONFIG.DEFAULT_VOICE;
-
-  return {
-    id: idEl.value,
-    name: nameEl.value.trim(),
-    systemPrompt: promptEl.value.trim(),
-    voiceName,
-    modelName: modelEl.value,
-    publicPreviewEnabled: !!publicPreviewEl?.checked,
-  };
 }
 
 /**
@@ -303,12 +256,31 @@ export async function handleSubmit(event) {
     return;
   }
 
-  const { id, name, systemPrompt, voiceName, modelName, publicPreviewEnabled } = parseResult.data;
+  const {
+    id,
+    name,
+    systemPrompt,
+    voiceName,
+    modelName,
+    publicPreviewEnabled,
+    inactivityTimeoutMs,
+    maxInactivityNudges,
+    maxCallDurationSecs,
+  } = parseResult.data;
 
   try {
     await api(id ? `/agents/${id}` : '/agents', {
       method: id ? 'PUT' : 'POST',
-      body: JSON.stringify({ name, systemPrompt, voiceName, modelName, publicPreviewEnabled }),
+      body: JSON.stringify({
+        name,
+        systemPrompt,
+        voiceName,
+        modelName,
+        publicPreviewEnabled,
+        inactivityTimeoutMs,
+        maxInactivityNudges,
+        maxCallDurationSecs,
+      }),
     });
     showToast(id ? UI_STRINGS.toasts.agentUpdated : UI_STRINGS.toasts.agentCreated, 'success');
     await loadAgents();

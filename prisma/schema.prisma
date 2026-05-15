@@ -8,30 +8,39 @@ datasource db {
 }
 
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  name            String
-  passwordHash    String
-  resetToken      String?
+  id               String       @id @default(cuid())
+  email            String       @unique
+  name             String
+  passwordHash     String
+  resetToken       String?
   resetTokenExpiry DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  agents          VoiceAgent[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  agents           VoiceAgent[]
 
   @@map("users")
 }
 
 model VoiceAgent {
-  id           String   @id @default(cuid())
-  name         String
-  systemPrompt String   @db.Text
-  voiceName    String   @default("Puck")
-  modelName    String   @default("gemini-2.5-flash-native-audio-latest")
-  publicPreviewEnabled Boolean @default(false)
-  userId       String?
-  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  name                 String
+  systemPrompt         String   @db.Text
+  voiceName            String   @default("Puck")
+  modelName            String   @default("gemini-2.5-flash-native-audio-latest")
+  publicPreviewEnabled Boolean  @default(false)
+  vadStartSensitivity  String   @default("START_SENSITIVITY_HIGH")
+  vadEndSensitivity    String   @default("END_SENSITIVITY_HIGH")
+  vadPrefixPaddingMs   Int      @default(100)
+  vadSilenceDurationMs Int      @default(300)
+  firstMessage         String?
+  languageCode         String   @default("en-US")
+  inactivityTimeoutMs  Int      @default(10000)
+  maxInactivityNudges  Int      @default(3)
+  maxCallDurationSecs  Int      @default(0)
+  userId               String?
+  user                 User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@map("voice_agents")
 }

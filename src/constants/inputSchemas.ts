@@ -32,6 +32,9 @@ export const CREATE_AGENT_BODY_SCHEMA = z.object({
   voiceName: z.string().trim().optional().refine((value) => !value || isValidVoiceId(value)),
   modelName: z.string().trim().optional().refine((value) => !value || isValidModelId(value)),
   publicPreviewEnabled: z.boolean().optional(),
+  inactivityTimeoutMs: z.number().int().min(3000).max(60000).optional(),
+  maxInactivityNudges: z.number().int().min(0).max(10).optional(),
+  maxCallDurationSecs: z.number().int().min(0).max(3600).optional(),
 }).strict();
 
 export const UPDATE_AGENT_BODY_SCHEMA = z.object({
@@ -40,6 +43,9 @@ export const UPDATE_AGENT_BODY_SCHEMA = z.object({
   voiceName: z.string().trim().min(1).optional().refine((value) => !value || isValidVoiceId(value)),
   modelName: z.string().trim().min(1).optional().refine((value) => !value || isValidModelId(value)),
   publicPreviewEnabled: z.boolean().optional(),
+  inactivityTimeoutMs: z.number().int().min(3000).max(60000).optional(),
+  maxInactivityNudges: z.number().int().min(0).max(10).optional(),
+  maxCallDurationSecs: z.number().int().min(0).max(3600).optional(),
 }).strict();
 
 export const SIGNALING_START_CALL_MESSAGE_SCHEMA = z.object({
