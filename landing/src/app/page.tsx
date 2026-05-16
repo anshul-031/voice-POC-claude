@@ -2,6 +2,11 @@ import LandingInteractions from '@/components/LandingInteractions';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 const WEBSITE_NAME = process.env.NEXT_PUBLIC_WEBSITE_NAME || 'AnshulTheGreat.com';
+const SUPPORT_PHONE_DISPLAY = '+91-9808494950';
+const SUPPORT_PHONE_LINK = 'tel:+919808494950';
+const SUPPORT_WHATSAPP_LINK = `https://wa.me/919808494950?text=${encodeURIComponent(
+  "Hi, I'd like to learn more about your voice AI platform.",
+)}`;
 
 export default function LandingPage(): React.JSX.Element {
   const signupUrl = `${APP_URL}/signup`;
@@ -114,6 +119,40 @@ export default function LandingPage(): React.JSX.Element {
                 />
               </svg>
               Explore Solutions
+            </a>
+          </div>
+          <div className="hero-contact">
+            <a href={SUPPORT_PHONE_LINK} className="contact-pill contact-pill-call">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.1.81.27 1.6.51 2.36a2 2 0 0 1-.45 2.11L8 9.5a16 16 0 0 0 6.5 6.5l1.31-1.17a2 2 0 0 1 2.11-.45c.76.24 1.55.41 2.36.51A2 2 0 0 1 22 16.92z" />
+              </svg>
+              <span>{SUPPORT_PHONE_DISPLAY}</span>
+            </a>
+            <a
+              href={SUPPORT_WHATSAPP_LINK}
+              className="contact-pill contact-pill-whatsapp"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M16.75 13.96c.25.12 1.47.72 1.7.81.23.09.38.13.55-.13.17-.25.7-.81.85-.98.16-.17.28-.25.42-.38.14-.13.17-.22.25-.37.08-.15.04-.28-.02-.39-.06-.12-.55-1.34-.76-1.84-.2-.5-.41-.43-.56-.44h-.48c-.16 0-.42.06-.64.3-.22.25-.84.82-.84 2s.86 2.33.98 2.49c.12.17 1.69 2.58 4.1 3.5.57.24 1.02.37 1.37.47.57.18 1.09.15 1.5.09.46-.07 1.47-.6 1.67-1.18.2-.58.2-1.07.14-1.18-.06-.12-.21-.18-.45-.3-.24-.12-1.47-.72-1.7-.81-.23-.09-.38-.13-.55.13-.17.25-.7.81-.85.98-.16.17-.28.25-.42.38-.14.13-.17.22-.25.37-.08.15-.04.28.02.39.06.12.55 1.34.76 1.84.2.5.41.43.56.44h.48c.16 0 .42-.06.64-.3.22-.25.84-.82.84-2s-.86-2.33-.98-2.49c-.12-.17-1.69-2.58-4.1-3.5-.57-.24-1.02-.37-1.37-.47-.57-.18-1.09-.15-1.5-.09-.46.07-1.47.6-1.67 1.18-.2.58-.2 1.07-.14 1.18.06.12.21.18.45.3.24.12 1.47.72 1.7.81z" />
+              </svg>
+              <span>WhatsApp support</span>
             </a>
           </div>
         </div>
@@ -559,6 +598,10 @@ export default function LandingPage(): React.JSX.Element {
             <a href="#features">Features</a>
             <a href="#how-it-works">How It Works</a>
             <a href={loginUrl}>Login</a>
+            <a href={SUPPORT_PHONE_LINK}>{SUPPORT_PHONE_DISPLAY}</a>
+            <a href={SUPPORT_WHATSAPP_LINK} target="_blank" rel="noreferrer">
+              WhatsApp
+            </a>
           </div>
           <div className="footer-copy">
             &copy; 2026 {WEBSITE_NAME}. All rights reserved.

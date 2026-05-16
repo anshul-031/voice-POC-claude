@@ -302,6 +302,15 @@ html[data-theme='light'] body::before {
   animation: fadeSlideUp 0.6s ease-out 0.3s both;
 }
 
+.hero-contact {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+  animation: fadeSlideUp 0.6s ease-out 0.35s both;
+}
+
 .hero-btn {
   display: inline-flex;
   align-items: center;
@@ -338,6 +347,44 @@ html[data-theme='light'] body::before {
   border-color: rgba(124, 58, 237, 0.6);
   color: #ffffff;
   background: rgba(255, 255, 255, 0.08);
+}
+
+.contact-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: transform 0.25s, background 0.25s, border-color 0.25s, color 0.25s;
+}
+
+.contact-pill:hover {
+  transform: translateY(-1px);
+}
+
+.contact-pill-call {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.contact-pill-call:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.contact-pill-whatsapp {
+  color: #dcfce7;
+  background: rgba(37, 211, 102, 0.12);
+  border-color: rgba(37, 211, 102, 0.22);
+}
+
+.contact-pill-whatsapp:hover {
+  background: rgba(37, 211, 102, 0.18);
+  border-color: rgba(37, 211, 102, 0.35);
 }
 
 /* Floating particles as Mesh Gradient Orbs */
@@ -900,6 +947,8 @@ html[data-theme='light'] body::before {
 
 .footer-links {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 24px;
 }
 
@@ -974,6 +1023,26 @@ html[data-theme='light'] .industry-card p {
   color: #475569;
 }
 
+html[data-theme='light'] .contact-pill-call {
+  color: #0f172a;
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+html[data-theme='light'] .contact-pill-call:hover {
+  background: rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme='light'] .contact-pill-whatsapp {
+  color: #14532d;
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.22);
+}
+
+html[data-theme='light'] .contact-pill-whatsapp:hover {
+  background: rgba(34, 197, 94, 0.18);
+}
+
 html[data-theme='light'] .landing-footer {
   border-top: 1px solid rgba(15, 23, 42, 0.1);
   background: rgba(255, 255, 255, 0.72);
@@ -1008,6 +1077,7 @@ html[data-theme='light'] .landing-footer {
   .hero h1 { font-size: 2.2rem; }
   .hero-subtitle { font-size: 1rem; }
   .hero-actions { flex-direction: column; align-items: center; }
+  .hero-contact { flex-direction: column; align-items: center; }
   .landing-section { padding: 60px 20px; }
   .section-header h2 { font-size: 1.8rem; }
   .industries-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
