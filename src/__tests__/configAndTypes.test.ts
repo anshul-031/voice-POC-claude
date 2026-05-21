@@ -20,7 +20,7 @@ describe('Config and Types Constants', () => {
     expect(ROUTES.HEALTH_CHECK).toBe('/api/health');
     expect(ROUTES.RUNTIME_CONFIG).toBe('/api/runtime-config');
     expect(PRISMA_ERRORS.NOT_FOUND).toBe('P2025');
-    expect(AUDIO_CONFIG.DEFAULT_MODEL).toBe('gemini-2.5-flash-native-audio-latest');
+    expect(AUDIO_CONFIG.DEFAULT_MODEL).toBe('gemini-3.1-flash-live-preview');
     expect(TIME.MS_TO_SEC).toBe(1000);
     expect(LOGGING.THROTTLE_CHUNKS).toBe(50);
     expect(MESSAGE_TYPE.START_CALL).toBe('start-call');

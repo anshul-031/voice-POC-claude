@@ -34,7 +34,7 @@ export const AUDIO_CONFIG = {
   SAMPLE_RATE_INPUT: 16000,
   SAMPLE_RATE_OUTPUT: 24000,
   DEFAULT_VOICE: 'Puck',
-  DEFAULT_MODEL: 'gemini-2.5-flash-native-audio-latest',
+  DEFAULT_MODEL: 'gemini-3.1-flash-live-preview',
 } as const;
 
 export const TIME = {

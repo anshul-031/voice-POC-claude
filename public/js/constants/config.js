@@ -23,7 +23,7 @@ export const CONFIG = {
     LIGHT: 'light',
   },
   DEFAULT_VOICE: 'Puck',
-  DEFAULT_MODEL: 'gemini-2.0-flash-exp',
+  DEFAULT_MODEL: 'gemini-3.1-flash-live-preview',
   SAMPLE_RATE_INPUT: 16000,
   SAMPLE_RATE_OUTPUT: 24000,
   AUDIO_UNLOCK_SILENT_FRAME_COUNT: 256,

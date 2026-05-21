@@ -29,14 +29,14 @@ export const AVAILABLE_VOICES: Voice[] = [
 
 export const AVAILABLE_MODELS: Model[] = [
   {
-    id: 'gemini-2.5-flash-native-audio-latest',
-    name: 'Gemini 2.5 Flash Native Audio (Latest)',
-    description: 'Latest stable native audio model',
-  },
-  {
     id: 'gemini-3.1-flash-live-preview',
     name: 'Gemini 3.1 Flash Live (Preview)',
     description: 'Newest real-time model with advanced capabilities',
+  },
+  {
+    id: 'gemini-2.5-flash-native-audio-latest',
+    name: 'Gemini 2.5 Flash Native Audio (Latest)',
+    description: 'Latest stable native audio model',
   },
   {
     id: 'gemini-2.5-flash-native-audio-preview-12-2025',
