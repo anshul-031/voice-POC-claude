@@ -19,7 +19,7 @@
     "db:generate": "npx prisma generate",
     "db:view": "npm run db:studio",
     "db:studio": "npx prisma studio",
-    "pr": "npm run build && npm run lint && npm run typecheck && npm run test:coverage"
+    "pr": "npm run build && npm run test:coverage && npm run lint && npm run typecheck"
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
