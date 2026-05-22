@@ -423,7 +423,14 @@ describe('SignalingServer branch helpers', () => {
     const mockClient = { streamId: 's1' } as any;
     (signalingServer as any)._sendVobizPlayAudio(mockWs, mockClient, 'audio-data');
     expect(mockWs.send).toHaveBeenCalledWith(
-      JSON.stringify({ event: 'media', streamId: 's1', media: { payload: 'audio-data' } }),
+      JSON.stringify({ 
+        event: 'playAudio', 
+        media: { 
+          contentType: 'audio/x-l16',
+          sampleRate: 8000,
+          payload: 'audio-data' 
+        } 
+      }),
     );
 
     // With closed socket

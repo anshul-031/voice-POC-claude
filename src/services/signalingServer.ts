@@ -302,7 +302,7 @@ class SignalingServer {
 
   /**
    * Send audio back to Vobiz via their playAudio protocol.
-   * Vobiz expects a JSON message with event: "media".
+   * Vobiz expects a JSON message with event: "playAudio" and explicit contentType/sampleRate.
    */
   private _sendVobizPlayAudio(socket: WSWebSocket, client: SignalingClient, audioData: string): void {
     if (socket.readyState !== WebSocket.OPEN) return;
@@ -312,9 +312,12 @@ class SignalingServer {
       // audioData from Gemini is 24kHz. Vobiz expects 8kHz.
       const resampledData = downsample24To8(audioData);
       socket.send(JSON.stringify({
-        event: 'media',
-        streamId: client.streamId,
-        media: { payload: resampledData },
+        event: 'playAudio',
+        media: { 
+          contentType: 'audio/x-l16',
+          sampleRate: 8000,
+          payload: resampledData 
+        },
       }));
     } catch {
       // Silently ignore — socket may have closed
