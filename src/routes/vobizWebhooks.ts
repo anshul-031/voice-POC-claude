@@ -13,13 +13,17 @@ const router = Router();
 
 /**
  * Build the WebSocket URL for the Vobiz media stream.
+ * Includes agentId as a query parameter so the signaling server
+ * knows which AI agent to start for this call.
  */
 function buildStreamUrl(req: Request): string {
   const forwardedProto = req.headers['x-forwarded-proto'] as string | undefined;
   const rawProto = forwardedProto || req.protocol;
   const wsProto = rawProto === 'https' ? 'wss' : 'ws';
   const host = (req.headers['x-forwarded-host'] as string) || req.get('host') || 'localhost:3000';
-  return `${wsProto}://${host}${ROUTES.WS_PATH}`;
+  const agentId = (req.query.agentId as string) || '';
+  const queryString = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  return `${wsProto}://${host}${ROUTES.WS_PATH}${queryString}`;
 }
 
 /**
@@ -38,11 +42,13 @@ router.post(
     const callUuid = req.body?.CallUUID || req.body?.callUuid || 'unknown';
     const from = req.body?.From || req.body?.from || 'unknown';
     const to = req.body?.To || req.body?.to || 'unknown';
+    const agentId = (req.query.agentId as string) || 'unknown';
 
     logger.info('Vobiz answer webhook received', {
       callUuid,
       from,
       to,
+      agentId,
     });
 
     const streamUrl = buildStreamUrl(req);
@@ -50,6 +56,7 @@ router.post(
     logger.info('Returning stream XML to Vobiz', {
       callUuid,
       streamUrl,
+      agentId,
     });
 
     // Return XML instructions with bidirectional audio stream

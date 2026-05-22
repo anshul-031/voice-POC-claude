@@ -30,7 +30,7 @@ describe('Vobiz Webhook Routes', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
   describe('POST /answer', () => {
-    it('returns valid XML with Stream element', () => {
+    it('returns valid XML with Stream element and agentId', () => {
       const res = mockRes();
       const req = {
         body: {
@@ -38,6 +38,7 @@ describe('Vobiz Webhook Routes', () => {
           From: '+91111',
           To: '+91222',
         },
+        query: { agentId: 'agent-abc' },
         headers: {},
         protocol: 'https',
         get: vi.fn().mockReturnValue('example.com'),
@@ -52,7 +53,7 @@ describe('Vobiz Webhook Routes', () => {
       expect(xml).toContain('<Stream');
       expect(xml).toContain('bidirectional="true"');
       expect(xml).toContain('keepCallAlive="true"');
-      expect(xml).toContain('wss://example.com/ws');
+      expect(xml).toContain('wss://example.com/ws?agentId=agent-abc');
       expect(xml).toContain('</Stream>');
       expect(xml).toContain('</Response>');
     });
@@ -61,6 +62,7 @@ describe('Vobiz Webhook Routes', () => {
       const res = mockRes();
       const req = {
         body: { callUuid: 'c1', from: '+1', to: '+2' },
+        query: { agentId: 'a1' },
         headers: {
           'x-forwarded-proto': 'https',
           'x-forwarded-host': 'my-app.render.com',
@@ -72,13 +74,14 @@ describe('Vobiz Webhook Routes', () => {
       getRouteHandler('/answer', 'post')(req as never, res);
 
       const xml = (res.send as MockFn).mock.calls[0][0] as string;
-      expect(xml).toContain('wss://my-app.render.com/ws');
+      expect(xml).toContain('wss://my-app.render.com/ws?agentId=a1');
     });
 
     it('uses ws:// for http protocol', () => {
       const res = mockRes();
       const req = {
         body: {},
+        query: {},
         headers: {},
         protocol: 'http',
         get: vi.fn().mockReturnValue('localhost:3000'),
@@ -94,6 +97,7 @@ describe('Vobiz Webhook Routes', () => {
       const res = mockRes();
       const req = {
         body: undefined,
+        query: {},
         headers: {},
         protocol: 'https',
         get: vi.fn().mockReturnValue('host.com'),
@@ -104,6 +108,23 @@ describe('Vobiz Webhook Routes', () => {
       expect(res.set).toHaveBeenCalledWith('Content-Type', 'application/xml');
       const xml = (res.send as MockFn).mock.calls[0][0] as string;
       expect(xml).toContain('<Response>');
+    });
+
+    it('omits query string when agentId is empty', () => {
+      const res = mockRes();
+      const req = {
+        body: {},
+        query: { agentId: '' },
+        headers: {},
+        protocol: 'https',
+        get: vi.fn().mockReturnValue('host.com'),
+      };
+
+      getRouteHandler('/answer', 'post')(req as never, res);
+
+      const xml = (res.send as MockFn).mock.calls[0][0] as string;
+      expect(xml).toContain('wss://host.com/ws');
+      expect(xml).not.toContain('?agentId');
     });
   });
 

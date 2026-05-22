@@ -291,4 +291,170 @@ describe('SignalingServer branch helpers', () => {
 
     expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('RAW_MESSAGE_FAIL'));
   });
+
+  it('covers _extractAgentIdFromUrl', () => {
+    const extract = (signalingServer as any)._extractAgentIdFromUrl.bind(signalingServer);
+
+    const withAgent = extract({
+      headers: { host: 'example.com' },
+      url: '/ws?agentId=agent-123',
+    });
+    expect(withAgent).toBe('agent-123');
+
+    const withoutAgent = extract({
+      headers: { host: 'example.com' },
+      url: '/ws',
+    });
+    expect(withoutAgent).toBeNull();
+
+    const emptyUrl = extract({
+      headers: { host: 'example.com' },
+      url: '',
+    });
+    expect(emptyUrl).toBeNull();
+  });
+
+  it('covers _handleVobizStreamEvent for all event types', async () => {
+    const req = {
+      headers: { host: 'example.com' },
+      url: '/ws?agentId=agent-v1',
+    };
+
+    // 'start' event — mocks the start call flow
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: 'agent-v1',
+      name: 'Vobiz Agent',
+      systemPrompt: 'Hello',
+      voiceName: 'Puck',
+      modelName: 'gemini-2.0-flash-exp',
+      publicPreviewEnabled: true,
+      userId: null,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
+    });
+    (geminiLiveService.createSession as any).mockResolvedValue(undefined);
+
+    await (signalingServer as any)._handleVobizStreamEvent(
+      mockWs,
+      { event: 'start', streamId: 's1' },
+      req,
+      'cid-vobiz',
+    );
+
+    // 'media' event — needs a registered client
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'sid-vobiz',
+      agentId: 'agent-v1',
+      correlationId: 'cid-vobiz',
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      startTime: Date.now(),
+      proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
+    });
+
+    await (signalingServer as any)._handleVobizStreamEvent(
+      mockWs,
+      { event: 'media', streamId: 's1', media: { payload: 'base64audio' } },
+      req,
+      'cid-vobiz',
+    );
+    expect(geminiLiveService.sendAudio).toHaveBeenCalledWith('sid-vobiz', 'base64audio');
+
+    // 'stop' event
+    await (signalingServer as any)._handleVobizStreamEvent(
+      mockWs,
+      { event: 'stop', streamId: 's1' },
+      req,
+      'cid-vobiz',
+    );
+
+    // unknown event
+    await (signalingServer as any)._handleVobizStreamEvent(
+      mockWs,
+      { event: 'checkpoint', streamId: 's1' },
+      req,
+      'cid-vobiz',
+    );
+  });
+
+  it('covers _handleVobizStart with missing agentId', async () => {
+    const req = {
+      headers: { host: 'example.com' },
+      url: '/ws',
+    };
+
+    await (signalingServer as any)._handleVobizStart(mockWs, 'stream-no-agent', req, 'cid');
+    // Should not crash — just log error and return
+  });
+
+  it('covers _handleVobizMedia with missing payload', async () => {
+    await (signalingServer as any)._handleVobizMedia(
+      mockWs,
+      { media: {} },
+      'cid-no-payload',
+    );
+    // Should not crash — early return
+  });
+
+  it('covers _handleVobizMedia with no client', async () => {
+    signalingServer.clients.clear();
+    await (signalingServer as any)._handleVobizMedia(
+      mockWs,
+      { media: { payload: 'audio' } },
+      'cid-no-client',
+    );
+    // Should not crash — early return
+  });
+
+  it('covers _sendVobizPlayAudio', () => {
+    mockWs.readyState = 1;
+    (signalingServer as any)._sendVobizPlayAudio(mockWs, 'audio-data');
+    expect(mockWs.send).toHaveBeenCalledWith(
+      JSON.stringify({ event: 'playAudio', media: { payload: 'audio-data' } }),
+    );
+
+    // With closed socket
+    mockWs.readyState = 3;
+    mockWs.send.mockClear();
+    (signalingServer as any)._sendVobizPlayAudio(mockWs, 'audio-data');
+    expect(mockWs.send).not.toHaveBeenCalled();
+
+    // With send throwing
+    mockWs.readyState = 1;
+    mockWs.send.mockImplementationOnce(() => { throw new Error('closed'); });
+    (signalingServer as any)._sendVobizPlayAudio(mockWs, 'audio-data');
+    // Should not throw
+  });
+
+  it('covers Vobiz media chunk logging at intervals', async () => {
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'sid-chunks',
+      agentId: '1',
+      correlationId: 'cid-chunks',
+      audioChunksRelayed: 49,
+      modelAudioChunksRelayed: 0,
+      startTime: Date.now(),
+      proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
+    });
+
+    await (signalingServer as any)._handleVobizMedia(
+      mockWs,
+      { media: { payload: 'chunk50' } },
+      'cid-chunks',
+    );
+    // 49 + 1 = 50, which triggers the modulo 50 logging
+  });
 });

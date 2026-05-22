@@ -21,10 +21,10 @@ function hasJsonContentType(contentType?: string): boolean {
 /**
  * Build the answer_url that Vobiz will call when the callee picks up.
  */
-function buildAnswerUrl(req: Request): string {
+function buildAnswerUrl(req: Request, agentId: string): string {
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.headers['x-forwarded-host'] || req.get('host');
-  return `${proto}://${host}/api/webhooks/vobiz/answer`;
+  return `${proto}://${host}/api/webhooks/vobiz/answer?agentId=${encodeURIComponent(agentId)}`;
 }
 
 /**
@@ -107,7 +107,7 @@ router.post(
       }
 
       // Build answer URL and initiate the call
-      const answerUrl = buildAnswerUrl(req);
+      const answerUrl = buildAnswerUrl(req, agentId);
       const result = await initiateVobizCall(
         creds,
         phoneNumber,
