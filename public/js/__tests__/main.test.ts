@@ -7,7 +7,8 @@ import {
   deleteAgent, showCallPanel, 
   handleSubmit, initApp, initDashboard,
   resetMainState, selectAgent, hideCallPanel, callCallbacks,
-  editAgent, hideForm, toggleMute
+  editAgent, hideForm, toggleMute,
+  copyPreviewUrl, togglePublicPreview,
 } from '../main.js';
 import * as apiModule from '../api.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
@@ -274,4 +275,20 @@ describe('Dashboard Logic (main.js) — 90%+ Exclusive Coverage', () => {
       callCallbacks.onTranscript('user', 't');
     });
   });
+
+  describe('Preview URL and Toggle', () => {
+    it('should handle copyPreviewUrl', async () => {
+      await copyPreviewUrl('a1');
+    });
+
+    it('should handle togglePublicPreview success', async () => {
+      await togglePublicPreview('a1', true);
+    });
+
+    it('should handle togglePublicPreview error', async () => {
+      vi.mocked(apiModule.api).mockRejectedValueOnce(new Error('fail'));
+      await togglePublicPreview('a1', false);
+    });
+  });
 });
+

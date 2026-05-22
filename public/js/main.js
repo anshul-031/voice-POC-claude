@@ -7,14 +7,13 @@ import { applyI18n, showPanel } from './ui.js';
 import { api, checkApiHealth } from './api.js';
 import { initWaveform } from './waveform.js';
 import {
-  toggleCall,
-  endCall,
+  toggleCall, endCall,
   toggleMute as callToggleMute,
   prepareAudioPlaybackOnGesture,
 } from './call.js';
 import { showToast, whitelabelModelName } from './utils.js';
 import { appendTranscript, clearDebugLogs } from './transcript.js';
-import { AGENT_FORM_SCHEMA } from './constants/inputSchemas.js';
+import { AGENT_FORM_SCHEMA, OUTBOUND_CALL_INPUT_SCHEMA } from './constants/inputSchemas.js';
 import { renderVoiceGrid, renderModelSelect, renderAgentList } from './render.js';
 import {
   copyPreviewUrl as copyPreviewUrlToClipboard,
@@ -22,17 +21,21 @@ import {
 } from './previewLinks.js';
 import { renderCallPanelTemplate } from './components/callPanel.js';
 import { getFormData, populateForm } from './agentForm.js';
+import { initTelephonyPanel } from './telephony.js';
+import { initSidebarNavigation, switchSection } from './sidebar.js';
+
+/** @type {any[]} */ let agents = [];
+/** @type {any[]} */ let voices = [];
+/** @type {any[]} */ let models = [];
+/** @type {string|null} */ let selectedAgentId = null;
+/** @type {string|null} */ let currentCallAgentId = null;
 
 // ── Auth Check ──
 export async function checkAuthAndInit() {
   try {
     const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
-    if (!res.ok) {
-      window.location.href = CONFIG.PAGE_PATHS.LOGIN;
-      return;
-    }
+    if (!res.ok) { window.location.href = CONFIG.PAGE_PATHS.LOGIN; return; }
     const data = await res.json();
-    // Show user menu
     const menu = document.getElementById('user-menu');
     if (menu) menu.style.display = 'flex';
     const nameEl = document.getElementById('user-name');
@@ -41,7 +44,6 @@ export async function checkAuthAndInit() {
     window.location.href = CONFIG.PAGE_PATHS.LOGIN;
     return;
   }
-  // Continue initialization
   initApp();
 }
 
@@ -52,23 +54,9 @@ export async function handleLogout() {
   window.location.href = CONFIG.PAGE_PATHS.LOGIN;
 }
 
-/** @type {any[]} */
-let agents = [];
-/** @type {any[]} */
-let voices = [];
-/** @type {any[]} */
-let models = [];
-/** @type {string | null} */
-let selectedAgentId = null;
-/** @type {string | null} */
-let currentCallAgentId = null;
-
 // ── Init ──
-export function initDashboard() {
-  checkAuthAndInit();
-}
+export function initDashboard() { checkAuthAndInit(); }
 
-// Auto-init on DOMContentLoaded
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', initDashboard);
 }
@@ -79,15 +67,13 @@ export function initApp() {
   loadModels();
   loadAgents();
   checkApiHealth();
-
   const callPanelContainer = document.getElementById('call-panel');
   if (callPanelContainer) {
     callPanelContainer.innerHTML = renderCallPanelTemplate({ hideDetails: false });
   }
-
   initWaveform();
-
-  // Set up event listeners
+  initSidebarNavigation();
+  initTelephonyPanel();
   document.getElementById('btn-new-agent')?.addEventListener('click', showCreateForm);
   document.getElementById('agent-form')?.addEventListener('submit', handleSubmit);
   document.getElementById('btn-mute')?.addEventListener('click', toggleMute);
@@ -106,73 +92,47 @@ export function initApp() {
   document.getElementById('btn-cancel-form')?.addEventListener('click', hideForm);
   document.getElementById('btn-close-form')?.addEventListener('click', hideForm);
   document.getElementById('btn-logout')?.addEventListener('click', handleLogout);
+  document.getElementById('btn-outbound-call')?.addEventListener('click', handleOutboundCall);
 }
 
 // ── API Operations ──
 export async function loadVoices() {
-  try {
-    voices = await api('/voices');
-    renderVoiceGrid(voices);
-  } catch (err) {
-    console.error('Failed to load voices:', err);
-  }
+  try { voices = await api('/voices'); renderVoiceGrid(voices); }
+  catch (err) { console.error('Failed to load voices:', err); }
 }
 
 export async function loadModels() {
-  try {
-    models = await api('/models');
-    renderModelSelect(models);
-  } catch (err) {
-    console.error('Failed to load models:', err);
-  }
+  try { models = await api('/models'); renderModelSelect(models); }
+  catch (err) { console.error('Failed to load models:', err); }
+}
+
+function reRenderAgentList() {
+  renderAgentList(
+    agents, selectedAgentId, selectAgent,
+    showCallPanel, editAgent, deleteAgent,
+    copyPreviewUrl, togglePublicPreview,
+  );
 }
 
 export async function loadAgents() {
   try {
     agents = await api('/agents');
-    renderAgentList(
-      agents,
-      selectedAgentId,
-      selectAgent,
-      showCallPanel,
-      editAgent,
-      deleteAgent,
-      copyPreviewUrl,
-      togglePublicPreview,
-    );
+    reRenderAgentList();
   } catch (_err) {
     showToast(UI_STRINGS.toasts.loadAgentsFailed, 'error');
     agents = [];
-    renderAgentList(
-      agents,
-      selectedAgentId,
-      selectAgent,
-      showCallPanel,
-      editAgent,
-      deleteAgent,
-      copyPreviewUrl,
-      togglePublicPreview,
-    );
+    reRenderAgentList();
   }
 }
+
 // ── Callbacks for call.js ──
 export const callCallbacks = {
-  /**
-   * @param {string} text 
-   * @param {string} className 
-   * @returns {void}
-   */
+  /** @param {string} text @param {string} className */
   onStatusChange: (text, className) => {
     const el = document.getElementById('call-status');
-    if (el) {
-      el.textContent = text;
-      el.className = `call-status ${className}`;
-    }
+    if (el) { el.textContent = text; el.className = `call-status ${className}`; }
   },
-  /**
-   * @param {number} seconds 
-   * @returns {void}
-   */
+  /** @param {number} seconds */
   onTimerUpdate: (seconds) => {
     const el = document.getElementById('call-timer');
     if (!el) return;
@@ -181,56 +141,32 @@ export const callCallbacks = {
     el.textContent = `${mins}:${secs}`;
     el.classList.remove('hidden');
   },
-  /**
-   * @param {string} role 
-   * @param {string} text 
-   * @returns {void}
-   */
+  /** @param {string} role @param {string} text */
   onTranscript: (role, text) => appendTranscript(role, text),
 };
+
 // ── Event Handlers ──
-/**
- * @param {string} id 
- * @returns {void}
- */
+/** @param {string} id */
 export const selectAgent = (id) => {
   selectedAgentId = id;
-  renderAgentList(
-    agents,
-    selectedAgentId,
-    selectAgent,
-    showCallPanel,
-    editAgent,
-    deleteAgent,
-    copyPreviewUrl,
-    togglePublicPreview,
-  );
+  reRenderAgentList();
   editAgent(id);
 };
-
 /** @type {any} */ (window).selectAgent = selectAgent;
 
-/**
- * @returns {void}
- */
 export const showCreateForm = () => {
   populateForm({});
   showPanel('form');
 };
 
-/**
- * @param {string} id 
- * @returns {void}
- */
+/** @param {string} id */
 export function editAgent(id) {
   const agent = agents.find(a => a.id === id);
   if (!agent) return;
   populateForm({
-    id: agent.id,
-    name: agent.name,
+    id: agent.id, name: agent.name,
     systemPrompt: agent.systemPrompt,
-    voiceName: agent.voiceName,
-    modelName: agent.modelName,
+    voiceName: agent.voiceName, modelName: agent.modelName,
     publicPreviewEnabled: agent.publicPreviewEnabled,
     inactivityTimeoutMs: agent.inactivityTimeoutMs,
     maxInactivityNudges: agent.maxInactivityNudges,
@@ -241,45 +177,28 @@ export function editAgent(id) {
   showPanel('form');
 }
 
-/**
- * @param {Event} event 
- * @returns {Promise<void>}
- */
+/** @param {Event} event */
 export async function handleSubmit(event) {
   event.preventDefault();
   const data = getFormData();
   if (!data) return;
-
   const parseResult = AGENT_FORM_SCHEMA.safeParse(data);
   if (!parseResult.success) {
     showToast(UI_STRINGS.form.validation.requiredFields, 'error');
     return;
   }
-
   const {
-    id,
-    name,
-    systemPrompt,
-    voiceName,
-    modelName,
-    publicPreviewEnabled,
-    inactivityTimeoutMs,
-    maxInactivityNudges,
-    maxCallDurationSecs,
+    id, name, systemPrompt, voiceName, modelName,
+    publicPreviewEnabled, inactivityTimeoutMs,
+    maxInactivityNudges, maxCallDurationSecs,
   } = parseResult.data;
-
   try {
     await api(id ? `/agents/${id}` : '/agents', {
       method: id ? 'PUT' : 'POST',
       body: JSON.stringify({
-        name,
-        systemPrompt,
-        voiceName,
-        modelName,
-        publicPreviewEnabled,
-        inactivityTimeoutMs,
-        maxInactivityNudges,
-        maxCallDurationSecs,
+        name, systemPrompt, voiceName, modelName,
+        publicPreviewEnabled, inactivityTimeoutMs,
+        maxInactivityNudges, maxCallDurationSecs,
       }),
     });
     showToast(id ? UI_STRINGS.toasts.agentUpdated : UI_STRINGS.toasts.agentCreated, 'success');
@@ -291,32 +210,16 @@ export async function handleSubmit(event) {
   }
 }
 
-/**
- * @param {string} id
- * @returns {Promise<void>}
- */
-export async function copyPreviewUrl(id) {
-  await copyPreviewUrlToClipboard(id);
-}
+/** @param {string} id */
+export async function copyPreviewUrl(id) { await copyPreviewUrlToClipboard(id); }
 
-/**
- * @param {string} id
- * @param {boolean} enabled
- * @returns {Promise<void>}
- */
+/** @param {string} id @param {boolean} enabled */
 export async function togglePublicPreview(id, enabled) {
-  try {
-    await togglePublicPreviewRequest(id, enabled);
-    await loadAgents();
-  } catch (_err) {
-    await loadAgents();
-  }
+  try { await togglePublicPreviewRequest(id, enabled); await loadAgents(); }
+  catch (_err) { await loadAgents(); }
 }
 
-/**
- * @param {string} id 
- * @returns {Promise<void>}
- */
+/** @param {string} id */
 export async function deleteAgent(id) {
   if (!confirm(UI_STRINGS.common.confirmDelete)) return;
   try {
@@ -329,10 +232,7 @@ export async function deleteAgent(id) {
   }
 }
 
-/**
- * @param {string} agentId 
- * @returns {void}
- */
+/** @param {string} agentId */
 export function showCallPanel(agentId) {
   const agent = agents.find(a => a.id === agentId);
   if (!agent) return;
@@ -353,27 +253,85 @@ export function showCallPanel(agentId) {
   clearDebugLogs();
   showPanel('call');
 }
-
 /** @type {any} */ (window).showCallPanel = showCallPanel;
 
-/**
- * @returns {void}
- */
-export function hideCallPanel() {
-  endCall();
-  showPanel('empty');
+/** @returns {Promise<void>} */
+export async function handleOutboundCall() {
+  if (!currentCallAgentId) return;
+
+  const phoneInput = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('outbound-phone-number')
+  );
+  const phoneNumber = phoneInput?.value?.trim() || '';
+
+  const inputParse = OUTBOUND_CALL_INPUT_SCHEMA.safeParse({
+    agentId: currentCallAgentId,
+    phoneNumber,
+  });
+  if (!inputParse.success) {
+    showToast(UI_STRINGS.callPanel.outbound.failed, 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-outbound-call');
+  const btnText = document.getElementById('outbound-call-btn-text');
+  const statusEl = document.getElementById('outbound-call-status');
+
+  // Set calling state
+  if (btn) {
+    btn.classList.add('calling');
+    btn.setAttribute('disabled', 'true');
+  }
+  if (btnText) {
+    btnText.textContent = UI_STRINGS.callPanel.outbound.calling;
+  }
+
+  try {
+    const result = await api('/outbound-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agentId: currentCallAgentId,
+        phoneNumber,
+      }),
+    });
+
+    showToast(
+      UI_STRINGS.toasts.outboundCallInitiated(phoneNumber),
+      'success',
+    );
+
+    if (statusEl) {
+      statusEl.textContent = `${UI_STRINGS.callPanel.outbound.initiated} — Call ID: ${result.callId || 'N/A'}`;
+      statusEl.className = 'outbound-call-status success';
+      statusEl.classList.remove('hidden');
+    }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    showToast(
+      UI_STRINGS.toasts.outboundCallFailed(errMsg),
+      'error',
+    );
+
+    if (statusEl) {
+      statusEl.textContent = `${UI_STRINGS.callPanel.outbound.failed}: ${errMsg}`;
+      statusEl.className = 'outbound-call-status error';
+      statusEl.classList.remove('hidden');
+    }
+  } finally {
+    if (btn) {
+      btn.classList.remove('calling');
+      btn.removeAttribute('disabled');
+    }
+    if (btnText) {
+      btnText.textContent = UI_STRINGS.callPanel.outbound.callBtn;
+    }
+  }
 }
 
-/**
- * @returns {void}
- */
-export function hideForm() {
-  showPanel('empty');
-}
+export function hideCallPanel() { endCall(); showPanel('empty'); }
+export function hideForm() { showPanel('empty'); }
 
-/**
- * @returns {void}
- */
 export function toggleMute() {
   const isMuted = callToggleMute();
   const btn = document.getElementById('btn-mute');
@@ -384,14 +342,10 @@ export function toggleMute() {
   if (iconOn) iconOn.classList.toggle('hidden', !isMuted);
 }
 
-/**
- * @returns {void}
- * @internal (For testing)
- */
+/** @internal (For testing) */
 export function resetMainState() {
-  agents = [];
-  voices = [];
-  models = [];
-  selectedAgentId = null;
-  currentCallAgentId = null;
+  agents = []; voices = []; models = [];
+  selectedAgentId = null; currentCallAgentId = null;
 }
+
+export { initSidebarNavigation, switchSection };

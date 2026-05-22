@@ -68,8 +68,59 @@ export const SIGNALING_MESSAGE_SCHEMA = z.discriminatedUnion('type', [
   SIGNALING_END_CALL_MESSAGE_SCHEMA,
 ]);
 
+export const TELEPHONY_PROVIDER_VALUES = ['vobiz', 'twilio', 'plivo'] as const;
+export const TELEPHONY_DIRECTION_VALUES = ['outbound', 'inbound'] as const;
+
+export const CREATE_TELEPHONY_PROVIDER_SCHEMA = z.object({
+  name: z.string().trim().min(1).max(100),
+  provider: z.enum(TELEPHONY_PROVIDER_VALUES),
+  direction: z.enum(TELEPHONY_DIRECTION_VALUES).optional().default('outbound'),
+  isActive: z.boolean().optional().default(true),
+  phoneNumber: z.string().trim().max(30).optional(),
+  sipServer: z.string().trim().max(255).optional(),
+  sipUsername: z.string().trim().max(255).optional(),
+  sipPassword: z.string().trim().max(255).optional(),
+  apiKey: z.string().trim().max(512).optional(),
+  apiSecret: z.string().trim().max(512).optional(),
+  accountSid: z.string().trim().max(255).optional(),
+  authToken: z.string().trim().max(512).optional(),
+  webhookUrl: z.string().trim().max(500).optional(),
+  extraConfig: z.string().trim().max(5000).optional(),
+}).strict();
+
+export const UPDATE_TELEPHONY_PROVIDER_SCHEMA = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  provider: z.enum(TELEPHONY_PROVIDER_VALUES).optional(),
+  direction: z.enum(TELEPHONY_DIRECTION_VALUES).optional(),
+  isActive: z.boolean().optional(),
+  phoneNumber: z.string().trim().max(30).optional().nullable(),
+  sipServer: z.string().trim().max(255).optional().nullable(),
+  sipUsername: z.string().trim().max(255).optional().nullable(),
+  sipPassword: z.string().trim().max(255).optional().nullable(),
+  apiKey: z.string().trim().max(512).optional().nullable(),
+  apiSecret: z.string().trim().max(512).optional().nullable(),
+  accountSid: z.string().trim().max(255).optional().nullable(),
+  authToken: z.string().trim().max(512).optional().nullable(),
+  webhookUrl: z.string().trim().max(500).optional().nullable(),
+  extraConfig: z.string().trim().max(5000).optional().nullable(),
+}).strict();
+
+export const TELEPHONY_ID_PARAMS_SCHEMA = z.object({
+  id: z.string().trim().min(1),
+});
+
+export const OUTBOUND_CALL_BODY_SCHEMA = z.object({
+  agentId: z.string().trim().min(1),
+  phoneNumber: z.string().trim().min(4).max(30),
+  providerId: z.string().trim().min(1).optional(),
+}).strict();
+
 export type AgentIdParams = z.infer<typeof AGENT_ID_PARAMS_SCHEMA>;
 export type CreateAgentBody = z.infer<typeof CREATE_AGENT_BODY_SCHEMA>;
 export type UpdateAgentBody = z.infer<typeof UPDATE_AGENT_BODY_SCHEMA>;
 export type SignalingMessage = z.infer<typeof SIGNALING_MESSAGE_SCHEMA>;
 export type RuntimeUiConfig = z.infer<typeof RUNTIME_UI_CONFIG_SCHEMA>;
+export type CreateTelephonyProviderBody = z.infer<typeof CREATE_TELEPHONY_PROVIDER_SCHEMA>;
+export type UpdateTelephonyProviderBody = z.infer<typeof UPDATE_TELEPHONY_PROVIDER_SCHEMA>;
+export type TelephonyIdParams = z.infer<typeof TELEPHONY_ID_PARAMS_SCHEMA>;
+export type OutboundCallBody = z.infer<typeof OUTBOUND_CALL_BODY_SCHEMA>;

@@ -83,3 +83,24 @@ export interface RuntimeUiConfig {
   websiteName: string;
   theme: 'dark' | 'light';
 }
+
+export interface TelephonyProviderConfig {
+  id: string;
+  name: string;
+  provider: string;
+  direction: string;
+  isActive: boolean;
+  phoneNumber?: string | null;
+  sipServer?: string | null;
+  sipUsername?: string | null;
+  sipPassword?: string | null;
+  apiKey?: string | null;
+  apiSecret?: string | null;
+  accountSid?: string | null;
+  authToken?: string | null;
+  webhookUrl?: string | null;
+  extraConfig?: string | null;
+  userId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}

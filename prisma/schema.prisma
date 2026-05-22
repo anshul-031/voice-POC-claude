@@ -8,15 +8,16 @@ datasource db {
 }
 
 model User {
-  id               String       @id @default(cuid())
-  email            String       @unique
-  name             String
-  passwordHash     String
-  resetToken       String?
-  resetTokenExpiry DateTime?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  agents           VoiceAgent[]
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  name                String
+  passwordHash        String
+  resetToken          String?
+  resetTokenExpiry    DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  agents              VoiceAgent[]
+  telephonyProviders  TelephonyProvider[]
 
   @@map("users")
 }
@@ -43,4 +44,28 @@ model VoiceAgent {
   updatedAt            DateTime @updatedAt
 
   @@map("voice_agents")
+}
+
+model TelephonyProvider {
+  id            String   @id @default(cuid())
+  name          String
+  provider      String   @default("vobiz")
+  direction     String   @default("outbound")
+  isActive      Boolean  @default(true)
+  phoneNumber   String?
+  sipServer     String?
+  sipUsername    String?
+  sipPassword   String?
+  apiKey        String?
+  apiSecret     String?
+  accountSid    String?
+  authToken     String?
+  webhookUrl    String?
+  extraConfig   String?  @db.Text
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("telephony_providers")
 }
