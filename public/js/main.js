@@ -74,6 +74,10 @@ export function initApp() {
   initWaveform();
   initSidebarNavigation();
   initTelephonyPanel();
+  initEventListeners();
+}
+
+function initEventListeners() {
   document.getElementById('btn-new-agent')?.addEventListener('click', showCreateForm);
   document.getElementById('agent-form')?.addEventListener('submit', handleSubmit);
   document.getElementById('btn-mute')?.addEventListener('click', toggleMute);
@@ -255,6 +259,41 @@ export function showCallPanel(agentId) {
 }
 /** @type {any} */ (window).showCallPanel = showCallPanel;
 
+/**
+ * @param {boolean} isCalling 
+ */
+function setOutboundCallBtnState(isCalling) {
+  const btn = document.getElementById('btn-outbound-call');
+  const btnText = document.getElementById('outbound-call-btn-text');
+  if (btn) {
+    if (isCalling) {
+      btn.classList.add('calling');
+      btn.setAttribute('disabled', 'true');
+    } else {
+      btn.classList.remove('calling');
+      btn.removeAttribute('disabled');
+    }
+  }
+  if (btnText) {
+    btnText.textContent = isCalling 
+      ? UI_STRINGS.callPanel.outbound.calling 
+      : UI_STRINGS.callPanel.outbound.callBtn;
+  }
+}
+
+/**
+ * @param {string} message 
+ * @param {boolean} isSuccess 
+ */
+function showOutboundCallStatus(message, isSuccess) {
+  const statusEl = document.getElementById('outbound-call-status');
+  if (statusEl) {
+    statusEl.textContent = message;
+    statusEl.className = isSuccess ? 'outbound-call-status success' : 'outbound-call-status error';
+    statusEl.classList.remove('hidden');
+  }
+}
+
 /** @returns {Promise<void>} */
 export async function handleOutboundCall() {
   if (!currentCallAgentId) return;
@@ -273,59 +312,23 @@ export async function handleOutboundCall() {
     return;
   }
 
-  const btn = document.getElementById('btn-outbound-call');
-  const btnText = document.getElementById('outbound-call-btn-text');
-  const statusEl = document.getElementById('outbound-call-status');
-
-  // Set calling state
-  if (btn) {
-    btn.classList.add('calling');
-    btn.setAttribute('disabled', 'true');
-  }
-  if (btnText) {
-    btnText.textContent = UI_STRINGS.callPanel.outbound.calling;
-  }
+  setOutboundCallBtnState(true);
 
   try {
     const result = await api('/outbound-call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        agentId: currentCallAgentId,
-        phoneNumber,
-      }),
+      body: JSON.stringify({ agentId: currentCallAgentId, phoneNumber }),
     });
 
-    showToast(
-      UI_STRINGS.toasts.outboundCallInitiated(phoneNumber),
-      'success',
-    );
-
-    if (statusEl) {
-      statusEl.textContent = `${UI_STRINGS.callPanel.outbound.initiated} — Call ID: ${result.callId || 'N/A'}`;
-      statusEl.className = 'outbound-call-status success';
-      statusEl.classList.remove('hidden');
-    }
+    showToast(UI_STRINGS.toasts.outboundCallInitiated(phoneNumber), 'success');
+    showOutboundCallStatus(`${UI_STRINGS.callPanel.outbound.initiated} — Call ID: ${result.callId || 'N/A'}`, true);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    showToast(
-      UI_STRINGS.toasts.outboundCallFailed(errMsg),
-      'error',
-    );
-
-    if (statusEl) {
-      statusEl.textContent = `${UI_STRINGS.callPanel.outbound.failed}: ${errMsg}`;
-      statusEl.className = 'outbound-call-status error';
-      statusEl.classList.remove('hidden');
-    }
+    showToast(UI_STRINGS.toasts.outboundCallFailed(errMsg), 'error');
+    showOutboundCallStatus(`${UI_STRINGS.callPanel.outbound.failed}: ${errMsg}`, false);
   } finally {
-    if (btn) {
-      btn.classList.remove('calling');
-      btn.removeAttribute('disabled');
-    }
-    if (btnText) {
-      btnText.textContent = UI_STRINGS.callPanel.outbound.callBtn;
-    }
+    setOutboundCallBtnState(false);
   }
 }
 

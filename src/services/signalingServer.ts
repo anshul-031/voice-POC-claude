@@ -242,33 +242,7 @@ class SignalingServer {
     if (client) {
       client.modelAudioChunksRelayed++;
       client.lastModelResponseAt = now;
-
-      if (!client.firstModelAudioRelayedAt) {
-        client.firstModelAudioRelayedAt = now;
-        const firstResponseMs = now - client.startTime;
-        logger.info('First model audio relayed to client', {
-          sessionId,
-          correlationId: client.correlationId,
-          elapsedMs: firstResponseMs,
-          sinceFirstUserTranscriptMs: client.firstUserTranscriptRelayedAt
-            ? now - client.firstUserTranscriptRelayedAt
-            : undefined,
-          proactiveGreetingSent: client.proactiveGreetingSent,
-          proactiveGreetingLatencyMs: client.proactiveGreetingSentAt
-            ? now - client.proactiveGreetingSentAt
-            : undefined,
-        });
-
-        if (firstResponseMs > LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS) {
-          logger.warn('First model audio relay exceeded target latency', {
-            sessionId,
-            correlationId: client.correlationId,
-            firstResponseMs,
-            thresholdMs: LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS,
-            clientAudioChunksRelayed: client.audioChunksRelayed,
-          });
-        }
-      }
+      this._trackFirstModelAudio(client, sessionId, now);
 
       if (client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
         logger.debug('Relaying model audio to client', {
@@ -279,7 +253,7 @@ class SignalingServer {
       }
     }
 
-    if (client && client.streamId) {
+    if (client?.streamId) {
       // Telephony stream (Vobiz)
       this._sendVobizPlayAudio(socket, client, audioData);
     } else {
@@ -300,6 +274,35 @@ class SignalingServer {
     }
   }
 
+  private _trackFirstModelAudio(client: SignalingClient, sessionId: string, now: number): void {
+    if (client.firstModelAudioRelayedAt) return;
+    
+    client.firstModelAudioRelayedAt = now;
+    const firstResponseMs = now - client.startTime;
+    logger.info('First model audio relayed to client', {
+      sessionId,
+      correlationId: client.correlationId,
+      elapsedMs: firstResponseMs,
+      sinceFirstUserTranscriptMs: client.firstUserTranscriptRelayedAt
+        ? now - client.firstUserTranscriptRelayedAt
+        : undefined,
+      proactiveGreetingSent: client.proactiveGreetingSent,
+      proactiveGreetingLatencyMs: client.proactiveGreetingSentAt
+        ? now - client.proactiveGreetingSentAt
+        : undefined,
+    });
+
+    if (firstResponseMs > LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS) {
+      logger.warn('First model audio relay exceeded target latency', {
+        sessionId,
+        correlationId: client.correlationId,
+        firstResponseMs,
+        thresholdMs: LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS,
+        clientAudioChunksRelayed: client.audioChunksRelayed,
+      });
+    }
+  }
+
   /**
    * Send audio back to Vobiz via their playAudio protocol.
    * Vobiz expects a JSON message with event: "playAudio" and explicit contentType/sampleRate.
@@ -316,7 +319,7 @@ class SignalingServer {
         media: { 
           contentType: 'audio/x-l16',
           sampleRate: 8000,
-          payload: resampledData 
+          payload: resampledData,
         },
       }));
     } catch {
@@ -411,7 +414,7 @@ class SignalingServer {
         logger.info('Model interrupted, relaying to client', { sessionId, correlationId });
         if (socket.readyState === WebSocket.OPEN) {
           const client = this.clients.get(socket);
-          if (client && client.streamId) {
+          if (client?.streamId) {
             socket.send(JSON.stringify({ event: 'clearAudio', streamId: client.streamId }));
           } else {
             socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));

@@ -50,6 +50,21 @@ async function findActiveProvider(
   return provider as Record<string, unknown> | null;
 }
 
+function validateOutboundRequest(req: AuthenticatedRequest, res: Response): Record<string, string> | null {
+  const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(req.headers ?? {});
+  if (!headersParse.success || !hasJsonContentType(headersParse.data['content-type'])) {
+    res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    return null;
+  }
+
+  const bodyParse = OUTBOUND_CALL_BODY_SCHEMA.safeParse(req.body);
+  if (!bodyParse.success) {
+    res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+    return null;
+  }
+  return bodyParse.data;
+}
+
 // POST /api/outbound-call — trigger an outbound call
 router.post(
   '/',
@@ -58,25 +73,10 @@ router.post(
   async (_req: Request, res: Response): Promise<any> => {
     const req = _req as AuthenticatedRequest;
 
-    const headersParse = REQUEST_HEADERS_SCHEMA.safeParse(
-      req.headers ?? {},
-    );
-    const headersValid = headersParse.success
-      && hasJsonContentType(headersParse.data['content-type']);
-    if (!headersValid) {
-      return res.status(400).json({
-        error: UI_STRINGS.api.errors.invalidInput,
-      });
-    }
+    const data = validateOutboundRequest(req, res);
+    if (!data) return;
 
-    const bodyParse = OUTBOUND_CALL_BODY_SCHEMA.safeParse(req.body);
-    if (!bodyParse.success) {
-      return res.status(400).json({
-        error: UI_STRINGS.api.errors.invalidInput,
-      });
-    }
-
-    const { agentId, phoneNumber, providerId } = bodyParse.data;
+    const { agentId, phoneNumber, providerId } = data;
     const userId = req.user?.id as string;
 
     try {

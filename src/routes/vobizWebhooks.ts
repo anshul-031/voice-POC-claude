@@ -11,6 +11,12 @@ import { ROUTES } from '../types/index.js';
 
 const router = Router();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getFromBody(body: any, key1: string, key2: string, def = 'unknown'): string {
+  if (!body) return def;
+  return String(body[key1] || body[key2] || def);
+}
+
 /**
  * Build the WebSocket URL for the Vobiz media stream.
  * Includes agentId as a query parameter so the signaling server
@@ -39,9 +45,9 @@ router.post(
   '/answer',
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (req: Request, res: Response): any => {
-    const callUuid = req.body?.CallUUID || req.body?.callUuid || 'unknown';
-    const from = req.body?.From || req.body?.from || 'unknown';
-    const to = req.body?.To || req.body?.to || 'unknown';
+    const callUuid = getFromBody(req.body, 'CallUUID', 'callUuid');
+    const from = getFromBody(req.body, 'From', 'from');
+    const to = getFromBody(req.body, 'To', 'to');
     const agentId = (req.query.agentId as string) || 'unknown';
 
     logger.info('Vobiz answer webhook received', {
@@ -63,7 +69,7 @@ router.post(
     const xml = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<Response>',
-      `  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">`,
+      '  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">',
       `    ${streamUrl}`,
       '  </Stream>',
       '</Response>',
@@ -84,9 +90,9 @@ router.post(
   '/hangup',
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (req: Request, res: Response): any => {
-    const callUuid = req.body?.CallUUID || req.body?.callUuid || 'unknown';
-    const cause = req.body?.HangupCause || req.body?.hangupCause || 'unknown';
-    const duration = req.body?.Duration || req.body?.duration || '0';
+    const callUuid = getFromBody(req.body, 'CallUUID', 'callUuid');
+    const cause = getFromBody(req.body, 'HangupCause', 'hangupCause');
+    const duration = getFromBody(req.body, 'Duration', 'duration', '0');
 
     logger.info('Vobiz hangup webhook received', {
       callUuid,
