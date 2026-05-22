@@ -17,6 +17,7 @@ import {
   SIGNALING_START_CALL_MESSAGE_SCHEMA,
   type SignalingMessage,
 } from '../constants/inputSchemas.js';
+import { downsample24To8, upsample8To16 } from '../utils/audioResampler.js';
 
 type StartCallAgent = {
   id: string;
@@ -304,9 +305,11 @@ class SignalingServer {
     if (socket.readyState !== WebSocket.OPEN) return;
 
     try {
+      // audioData from Gemini is 24kHz. Vobiz expects 8kHz.
+      const resampledData = downsample24To8(audioData);
       socket.send(JSON.stringify({
         event: 'playAudio',
-        media: { payload: audioData },
+        media: { payload: resampledData },
       }));
     } catch {
       // Silently ignore — socket may have closed
@@ -744,7 +747,9 @@ class SignalingServer {
       });
     }
 
-    await geminiLiveService.sendAudio(client.sessionId, payload);
+    // Payload from Vobiz is 8kHz, Gemini expects 16kHz
+    const resampledPayload = upsample8To16(payload);
+    await geminiLiveService.sendAudio(client.sessionId, resampledPayload);
   }
 
   /** @internal */

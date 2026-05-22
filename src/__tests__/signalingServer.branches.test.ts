@@ -36,6 +36,11 @@ vi.mock('../lib/prisma.js', () => ({
   },
 }));
 
+vi.mock('../utils/audioResampler.js', () => ({
+  upsample8To16: vi.fn((input) => input),
+  downsample24To8: vi.fn((input) => input),
+}));
+
 describe('SignalingServer branch helpers', () => {
   let mockWs: any;
 
