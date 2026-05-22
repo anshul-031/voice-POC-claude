@@ -279,13 +279,16 @@ class SignalingServer {
       }
     }
 
-    socket.send(JSON.stringify({
-      type: MESSAGE_TYPE.AUDIO_RESPONSE,
-      data: audioData,
-    }));
-
-    // Also send to Vobiz if this is a telephony stream
-    this._sendVobizPlayAudio(socket, audioData);
+    if (client && client.streamId) {
+      // Telephony stream (Vobiz)
+      this._sendVobizPlayAudio(socket, client, audioData);
+    } else {
+      // Browser client
+      socket.send(JSON.stringify({
+        type: MESSAGE_TYPE.AUDIO_RESPONSE,
+        data: audioData,
+      }));
+    }
 
     if (client && client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
       logger.debug('Model audio chunk relayed', {
@@ -299,16 +302,18 @@ class SignalingServer {
 
   /**
    * Send audio back to Vobiz via their playAudio protocol.
-   * Vobiz expects a JSON message with event: "playAudio".
+   * Vobiz expects a JSON message with event: "media".
    */
-  private _sendVobizPlayAudio(socket: WSWebSocket, audioData: string): void {
+  private _sendVobizPlayAudio(socket: WSWebSocket, client: SignalingClient, audioData: string): void {
     if (socket.readyState !== WebSocket.OPEN) return;
+    if (!client.streamId) return;
 
     try {
       // audioData from Gemini is 24kHz. Vobiz expects 8kHz.
       const resampledData = downsample24To8(audioData);
       socket.send(JSON.stringify({
-        event: 'playAudio',
+        event: 'media',
+        streamId: client.streamId,
         media: { payload: resampledData },
       }));
     } catch {
@@ -435,12 +440,14 @@ class SignalingServer {
     correlationId: string,
     startTime: number,
     agent: StartCallAgent,
+    streamId?: string,
   ): void {
     const now = Date.now();
     this.clients.set(socket, {
       sessionId,
       agentId,
       correlationId,
+      streamId,
       audioChunksRelayed: 0,
       modelAudioChunksRelayed: 0,
       startTime,
@@ -494,6 +501,7 @@ class SignalingServer {
     message: { agentId: string },
     requesterUserId: string | null = null,
     correlationId = uuidv4(),
+    streamId?: string,
   ): Promise<void> {
     const startCallAt = Date.now();
     const parseResult = SIGNALING_START_CALL_MESSAGE_SCHEMA.safeParse({
@@ -529,7 +537,7 @@ class SignalingServer {
       });
 
       const callStartedAt = Date.now();
-      this._registerClientSession(socket, sessionId, agentId, correlationId, callStartedAt, agent);
+      this._registerClientSession(socket, sessionId, agentId, correlationId, callStartedAt, agent, streamId);
 
       logger.info('Gemini session created', {
         sessionId,
@@ -711,7 +719,7 @@ class SignalingServer {
     }
 
     // Trigger the same start-call flow used by browser clients
-    await this._handleStartCall(socket, { agentId }, null, correlationId);
+    await this._handleStartCall(socket, { agentId }, null, correlationId, streamId);
   }
 
   /**

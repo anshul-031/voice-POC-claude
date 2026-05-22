@@ -35,6 +35,7 @@ export interface SignalingClient {
   sessionId: string;
   agentId: string;
   correlationId?: string;
+  streamId?: string;
   audioChunksRelayed: number;
   modelAudioChunksRelayed: number;
   startTime: number;

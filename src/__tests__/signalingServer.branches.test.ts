@@ -420,22 +420,29 @@ describe('SignalingServer branch helpers', () => {
 
   it('covers _sendVobizPlayAudio', () => {
     mockWs.readyState = 1;
-    (signalingServer as any)._sendVobizPlayAudio(mockWs, 'audio-data');
+    const mockClient = { streamId: 's1' } as any;
+    (signalingServer as any)._sendVobizPlayAudio(mockWs, mockClient, 'audio-data');
     expect(mockWs.send).toHaveBeenCalledWith(
-      JSON.stringify({ event: 'playAudio', media: { payload: 'audio-data' } }),
+      JSON.stringify({ event: 'media', streamId: 's1', media: { payload: 'audio-data' } }),
     );
 
     // With closed socket
     mockWs.readyState = 3;
     mockWs.send.mockClear();
-    (signalingServer as any)._sendVobizPlayAudio(mockWs, 'audio-data');
+    (signalingServer as any)._sendVobizPlayAudio(mockWs, mockClient, 'audio-data');
     expect(mockWs.send).not.toHaveBeenCalled();
 
     // With send throwing
     mockWs.readyState = 1;
     mockWs.send.mockImplementationOnce(() => { throw new Error('closed'); });
-    (signalingServer as any)._sendVobizPlayAudio(mockWs, 'audio-data');
+    (signalingServer as any)._sendVobizPlayAudio(mockWs, mockClient, 'audio-data');
     // Should not throw
+    
+    // With missing streamId
+    mockWs.readyState = 1;
+    mockWs.send.mockClear();
+    (signalingServer as any)._sendVobizPlayAudio(mockWs, {} as any, 'audio-data');
+    expect(mockWs.send).not.toHaveBeenCalled();
   });
 
   it('covers Vobiz media chunk logging at intervals', async () => {
