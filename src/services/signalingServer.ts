@@ -410,7 +410,12 @@ class SignalingServer {
       onInterrupted: (): void => {
         logger.info('Model interrupted, relaying to client', { sessionId, correlationId });
         if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
+          const client = this.clients.get(socket);
+          if (client && client.streamId) {
+            socket.send(JSON.stringify({ event: 'clearAudio', streamId: client.streamId }));
+          } else {
+            socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
+          }
         }
       },
       onError: (error: Error): void => {
