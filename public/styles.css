@@ -289,6 +289,22 @@ html[data-theme='light'] body::before {
 }
 
 /* ── Section Content ── */
+.preview-main {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 64px);
+  overflow: hidden;
+}
+
+.preview-main .detail-panel {
+  flex: 1;
+  min-height: 0;
+}
+
 .section-content {
   flex: 1;
   display: grid;
@@ -883,10 +899,11 @@ html[data-theme='light'] body::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 24px;
   gap: 20px;
   border-right: 1px solid var(--border-color);
+  overflow-y: auto;
 }
 
 .call-right {
@@ -1645,6 +1662,10 @@ html[data-theme='light'] body::before {
     overflow-y: auto;
   }
 
+  .preview-main {
+    padding: 16px;
+  }
+
   .agent-panel {
     max-height: none;
     order: 2;
@@ -1652,7 +1673,11 @@ html[data-theme='light'] body::before {
 
   .detail-panel {
     order: 1;
-    min-height: 500px;
+    height: 60vh;
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .agent-list {
