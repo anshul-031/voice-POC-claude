@@ -7,6 +7,9 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import agentRoutes from './routes/agents.js';
 import authRoutes from './routes/auth.js';
+import telephonyRoutes from './routes/telephony.js';
+import outboundCallRoutes from './routes/outboundCall.js';
+import vobizWebhookRoutes from './routes/vobizWebhooks.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
 import { renderSsrPage } from './utils/ssr.js';
@@ -26,6 +29,7 @@ const LANDING_PAGE_URL = process.env.LANDING_PAGE_URL || DEFAULT_LANDING_PAGE_UR
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Request logging middleware
@@ -40,6 +44,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use(ROUTES.API_PREFIX, agentRoutes);
+app.use('/api/telephony', telephonyRoutes);
+app.use('/api/outbound-call', outboundCallRoutes);
+app.use('/api/webhooks/vobiz', vobizWebhookRoutes);
 
 const sendPublicPage = (res: Response, pageFile: string): void => {
   try {

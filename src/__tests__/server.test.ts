@@ -53,6 +53,7 @@ vi.mock('express', () => {
   };
   const expressFunc: any = vi.fn(() => mockApp);
   expressFunc.json = vi.fn(() => (_req: any, _res: any, next: any) => next());
+  expressFunc.urlencoded = vi.fn(() => (_req: any, _res: any, next: any) => next());
   expressFunc.static = vi.fn(() => (_req: any, _res: any, next: any) => next());
   expressFunc.Router = vi.fn(() => ({
     get: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock('express', () => {
     default: expressFunc,
     Router: expressFunc.Router,
     json: expressFunc.json,
+    urlencoded: expressFunc.urlencoded,
     static: expressFunc.static,
   };
 });

@@ -22,6 +22,11 @@ export const START_CALL_INPUT_SCHEMA = z.object({
   agentId: z.string().trim().min(1),
 });
 
+export const OUTBOUND_CALL_INPUT_SCHEMA = z.object({
+  agentId: z.string().trim().min(1),
+  phoneNumber: z.string().trim().min(4).max(30),
+});
+
 export const WS_INBOUND_MESSAGE_SCHEMA = z.union([
   z.object({
     type: z.literal(MESSAGE_TYPE.CALL_STARTED),

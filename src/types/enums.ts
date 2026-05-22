@@ -83,6 +83,19 @@ export const VOICE_NAME = {
   FENRIR: 'Fenrir',
 } as const;
 
+export const TELEPHONY_PROVIDER = {
+  VOBIZ: 'vobiz',
+  TWILIO: 'twilio',
+  PLIVO: 'plivo',
+} as const;
+
+export const TELEPHONY_DIRECTION = {
+  OUTBOUND: 'outbound',
+  INBOUND: 'inbound',
+} as const;
+
 export type RoutePath = typeof ROUTES[keyof typeof ROUTES];
 export type MessageType = typeof MESSAGE_TYPE[keyof typeof MESSAGE_TYPE];
 export type VoiceName = typeof VOICE_NAME[keyof typeof VOICE_NAME];
+export type TelephonyProviderType = typeof TELEPHONY_PROVIDER[keyof typeof TELEPHONY_PROVIDER];
+export type TelephonyDirectionType = typeof TELEPHONY_DIRECTION[keyof typeof TELEPHONY_DIRECTION];

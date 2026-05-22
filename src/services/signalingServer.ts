@@ -2,6 +2,7 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import type { WebSocket as WSWebSocket, WebSocketServer as WSWebSocketServer } from 'ws';
 import type { IncomingMessage, Server } from 'http';
+import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
 import prisma from '../lib/prisma.js';
@@ -16,6 +17,7 @@ import {
   SIGNALING_START_CALL_MESSAGE_SCHEMA,
   type SignalingMessage,
 } from '../constants/inputSchemas.js';
+import { downsample24To8, upsample8To16 } from '../utils/audioResampler.js';
 
 type StartCallAgent = {
   id: string;
@@ -52,9 +54,16 @@ class SignalingServer {
       socket.on('message', async (data: Buffer | string | ArrayBuffer | Buffer[]) => {
         try {
           const messageStart = Date.now();
-          const requesterUserId = this._resolveRequesterUserId(req);
           const dataString = data.toString();
           const rawMessage = JSON.parse(dataString);
+
+          // Detect Vobiz stream protocol (uses 'event' field, not 'type')
+          if (rawMessage.event) {
+            await this._handleVobizStreamEvent(socket, rawMessage, req, correlationId);
+            return;
+          }
+
+          const requesterUserId = this._resolveRequesterUserId(req);
           const messageParse = SIGNALING_MESSAGE_SCHEMA.safeParse(rawMessage);
           if (!messageParse.success) {
             logger.warn('Invalid signaling message payload', {
@@ -233,33 +242,7 @@ class SignalingServer {
     if (client) {
       client.modelAudioChunksRelayed++;
       client.lastModelResponseAt = now;
-
-      if (!client.firstModelAudioRelayedAt) {
-        client.firstModelAudioRelayedAt = now;
-        const firstResponseMs = now - client.startTime;
-        logger.info('First model audio relayed to client', {
-          sessionId,
-          correlationId: client.correlationId,
-          elapsedMs: firstResponseMs,
-          sinceFirstUserTranscriptMs: client.firstUserTranscriptRelayedAt
-            ? now - client.firstUserTranscriptRelayedAt
-            : undefined,
-          proactiveGreetingSent: client.proactiveGreetingSent,
-          proactiveGreetingLatencyMs: client.proactiveGreetingSentAt
-            ? now - client.proactiveGreetingSentAt
-            : undefined,
-        });
-
-        if (firstResponseMs > LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS) {
-          logger.warn('First model audio relay exceeded target latency', {
-            sessionId,
-            correlationId: client.correlationId,
-            firstResponseMs,
-            thresholdMs: LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS,
-            clientAudioChunksRelayed: client.audioChunksRelayed,
-          });
-        }
-      }
+      this._trackFirstModelAudio(client, sessionId, now);
 
       if (client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
         logger.debug('Relaying model audio to client', {
@@ -270,10 +253,16 @@ class SignalingServer {
       }
     }
 
-    socket.send(JSON.stringify({
-      type: MESSAGE_TYPE.AUDIO_RESPONSE,
-      data: audioData,
-    }));
+    if (client?.streamId) {
+      // Telephony stream (Vobiz)
+      this._sendVobizPlayAudio(socket, client, audioData);
+    } else {
+      // Browser client
+      socket.send(JSON.stringify({
+        type: MESSAGE_TYPE.AUDIO_RESPONSE,
+        data: audioData,
+      }));
+    }
 
     if (client && client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
       logger.debug('Model audio chunk relayed', {
@@ -282,6 +271,59 @@ class SignalingServer {
         chunkIndex: client.modelAudioChunksRelayed,
         chunkBytes: audioData.length,
       });
+    }
+  }
+
+  private _trackFirstModelAudio(client: SignalingClient, sessionId: string, now: number): void {
+    if (client.firstModelAudioRelayedAt) return;
+    
+    client.firstModelAudioRelayedAt = now;
+    const firstResponseMs = now - client.startTime;
+    logger.info('First model audio relayed to client', {
+      sessionId,
+      correlationId: client.correlationId,
+      elapsedMs: firstResponseMs,
+      sinceFirstUserTranscriptMs: client.firstUserTranscriptRelayedAt
+        ? now - client.firstUserTranscriptRelayedAt
+        : undefined,
+      proactiveGreetingSent: client.proactiveGreetingSent,
+      proactiveGreetingLatencyMs: client.proactiveGreetingSentAt
+        ? now - client.proactiveGreetingSentAt
+        : undefined,
+    });
+
+    if (firstResponseMs > LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS) {
+      logger.warn('First model audio relay exceeded target latency', {
+        sessionId,
+        correlationId: client.correlationId,
+        firstResponseMs,
+        thresholdMs: LIVE_CALL.FIRST_RESPONSE_WARN_THRESHOLD_MS,
+        clientAudioChunksRelayed: client.audioChunksRelayed,
+      });
+    }
+  }
+
+  /**
+   * Send audio back to Vobiz via their playAudio protocol.
+   * Vobiz expects a JSON message with event: "playAudio" and explicit contentType/sampleRate.
+   */
+  private _sendVobizPlayAudio(socket: WSWebSocket, client: SignalingClient, audioData: string): void {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    if (!client.streamId) return;
+
+    try {
+      // audioData from Gemini is 24kHz. Vobiz expects 8kHz.
+      const resampledData = downsample24To8(audioData);
+      socket.send(JSON.stringify({
+        event: 'playAudio',
+        media: { 
+          contentType: 'audio/x-l16',
+          sampleRate: 8000,
+          payload: resampledData,
+        },
+      }));
+    } catch {
+      // Silently ignore — socket may have closed
     }
   }
 
@@ -371,7 +413,12 @@ class SignalingServer {
       onInterrupted: (): void => {
         logger.info('Model interrupted, relaying to client', { sessionId, correlationId });
         if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
+          const client = this.clients.get(socket);
+          if (client?.streamId) {
+            socket.send(JSON.stringify({ event: 'clearAudio', streamId: client.streamId }));
+          } else {
+            socket.send(JSON.stringify({ type: MESSAGE_TYPE.INTERRUPTED }));
+          }
         }
       },
       onError: (error: Error): void => {
@@ -404,12 +451,14 @@ class SignalingServer {
     correlationId: string,
     startTime: number,
     agent: StartCallAgent,
+    streamId?: string,
   ): void {
     const now = Date.now();
     this.clients.set(socket, {
       sessionId,
       agentId,
       correlationId,
+      streamId,
       audioChunksRelayed: 0,
       modelAudioChunksRelayed: 0,
       startTime,
@@ -463,6 +512,7 @@ class SignalingServer {
     message: { agentId: string },
     requesterUserId: string | null = null,
     correlationId = uuidv4(),
+    streamId?: string,
   ): Promise<void> {
     const startCallAt = Date.now();
     const parseResult = SIGNALING_START_CALL_MESSAGE_SCHEMA.safeParse({
@@ -498,7 +548,7 @@ class SignalingServer {
       });
 
       const callStartedAt = Date.now();
-      this._registerClientSession(socket, sessionId, agentId, correlationId, callStartedAt, agent);
+      this._registerClientSession(socket, sessionId, agentId, correlationId, callStartedAt, agent, streamId);
 
       logger.info('Gemini session created', {
         sessionId,
@@ -617,6 +667,108 @@ class SignalingServer {
         reason: UI_STRINGS.signaling.status.userEnded, 
       }));
     }
+  }
+
+  /**
+   * Extract agentId from WebSocket upgrade request URL query params.
+   */
+  private _extractAgentIdFromUrl(req: IncomingMessage): string | null {
+    try {
+      const baseUrl = `http://${req.headers.host || 'localhost'}`;
+      const parsed = new URL(req.url || '', baseUrl);
+      return parsed.searchParams.get('agentId') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Handle Vobiz media stream protocol events.
+   * Vobiz sends JSON with an 'event' field instead of 'type'.
+   */
+  private async _handleVobizStreamEvent(
+    socket: WSWebSocket,
+    message: Record<string, unknown>,
+    req: IncomingMessage,
+    correlationId: string,
+  ): Promise<void> {
+    const event = message.event as string;
+    const streamId = (message.streamId as string) || 'unknown';
+
+    switch (event) {
+      case 'start':
+        await this._handleVobizStart(socket, streamId, req, correlationId);
+        break;
+      case 'media':
+        await this._handleVobizMedia(socket, message, correlationId);
+        break;
+      case 'stop':
+        logger.info('Vobiz stream stopped', { streamId, correlationId });
+        await this._handleEndCall(socket, correlationId);
+        break;
+      default:
+        logger.debug('Unknown Vobiz stream event', { event, streamId, correlationId });
+        break;
+    }
+  }
+
+  /**
+   * Handle Vobiz 'start' event: auto-start a Gemini session for the agent.
+   */
+  private async _handleVobizStart(
+    socket: WSWebSocket,
+    streamId: string,
+    req: IncomingMessage,
+    correlationId: string,
+  ): Promise<void> {
+    const agentId = this._extractAgentIdFromUrl(req);
+    logger.info('Vobiz stream started', { streamId, agentId, correlationId });
+
+    if (!agentId) {
+      logger.error('No agentId in Vobiz stream URL', { streamId, correlationId });
+      return;
+    }
+
+    // Trigger the same start-call flow used by browser clients
+    await this._handleStartCall(socket, { agentId }, null, correlationId, streamId);
+  }
+
+  /**
+   * Handle Vobiz 'media' event: relay base64 audio to Gemini.
+   */
+  private async _handleVobizMedia(
+    socket: WSWebSocket,
+    message: Record<string, unknown>,
+    correlationId: string,
+  ): Promise<void> {
+    const media = message.media as Record<string, unknown> | undefined;
+    if (!media?.payload) return;
+
+    const payload = media.payload as string;
+    const client = this.clients.get(socket);
+    if (!client) return;
+
+    client.audioChunksRelayed++;
+    client.lastUserAudioAt = Date.now();
+    client.nudgeCount = 0;
+
+    if (client.audioChunksRelayed === 1) {
+      logger.info('First Vobiz audio chunk relayed to Gemini', {
+        sessionId: client.sessionId,
+        correlationId,
+      });
+    }
+    if (client.audioChunksRelayed % 50 === 1) {
+      logger.debug('Relaying Vobiz audio chunks', {
+        sessionId: client.sessionId,
+        chunkCount: client.audioChunksRelayed,
+        correlationId,
+      });
+    }
+
+    // Payload from Vobiz is 8kHz, Gemini expects 16kHz
+    const resampledPayload = upsample8To16(payload);
+    await geminiLiveService.sendAudio(client.sessionId, resampledPayload);
   }
 
   /** @internal */

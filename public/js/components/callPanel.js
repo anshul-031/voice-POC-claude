@@ -45,6 +45,29 @@ export function renderCallPanelTemplate(options = {}) {
         </div>
         `}
 
+        ${hideDetails ? '' : `
+        <div class="outbound-call-section" id="outbound-call-section">
+          <div class="outbound-call-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+            <span data-i18n="callPanel.outbound.title">Outbound Call</span>
+          </div>
+          <div class="outbound-call-form">
+            <input type="tel" id="outbound-phone-number" class="outbound-phone-input" placeholder="Enter phone number (e.g. +919876543210)" data-i18n-attr="placeholder:callPanel.outbound.phonePlaceholder" />
+            <button class="btn btn-outbound-call" id="btn-outbound-call" data-i18n="callPanel.outbound.callBtn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              <span id="outbound-call-btn-text">Call via Phone</span>
+            </button>
+          </div>
+          <div class="outbound-call-status hidden" id="outbound-call-status"></div>
+        </div>
+        <div class="call-separator" data-i18n="callPanel.outbound.separator">OR</div>
+        `}
+
+        <div class="call-controls-label">${hideDetails ? '' : '<span>Browser Call</span>'}</div>
         <div class="call-controls">
           <button class="btn-call btn-mute" id="btn-mute" data-i18n-attr="title:callPanel.mute" title="Mute/Unmute">
             <svg id="mute-icon-off" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
