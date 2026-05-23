@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   initSidebarNavigation, switchSection,
   resetSidebarState,
@@ -68,5 +68,67 @@ describe('Sidebar Navigation (sidebar.js)', () => {
     switchSection('agents');
     switchSection('nonexistent');
     // Should not throw
+  });
+
+  describe('Routing', () => {
+    let originalPathname: string;
+    
+    beforeEach(() => {
+      originalPathname = window.location.pathname;
+      vi.spyOn(window.history, 'pushState');
+      vi.spyOn(window.history, 'replaceState');
+    });
+    
+    afterEach(() => {
+      Object.defineProperty(window, 'location', {
+        value: { pathname: originalPathname },
+        writable: true,
+      });
+      vi.restoreAllMocks();
+    });
+    
+    it('handleInitialRoute matches specific dashboard route', async () => {
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/dashboard/telephony' },
+        writable: true,
+      });
+      const { handleInitialRoute } = await import('../sidebar.js');
+      handleInitialRoute();
+      expect(window.history.replaceState).toHaveBeenCalledWith({ section: 'telephony' }, '', '/dashboard/telephony');
+      expect(document.getElementById('section-telephony')?.classList.contains('hidden')).toBe(false);
+    });
+
+    it('handleInitialRoute defaults to agents on base dashboard path', async () => {
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/dashboard' },
+        writable: true,
+      });
+      const { handleInitialRoute } = await import('../sidebar.js');
+      handleInitialRoute();
+      expect(window.history.replaceState).toHaveBeenCalledWith({ section: 'agents' }, '', '/dashboard/agents');
+    });
+
+    it('switchSection uses pushState when requested', () => {
+      switchSection('telephony', true);
+      expect(window.history.pushState).toHaveBeenCalledWith({ section: 'telephony' }, '', '/dashboard/telephony');
+    });
+
+    it('handles popstate event with state', () => {
+      initSidebarNavigation();
+      const popStateEvent = new PopStateEvent('popstate', { state: { section: 'telephony' } });
+      window.dispatchEvent(popStateEvent);
+      expect(document.getElementById('section-telephony')?.classList.contains('hidden')).toBe(false);
+    });
+
+    it('handles popstate event without state', () => {
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/dashboard/agents' },
+        writable: true,
+      });
+      initSidebarNavigation();
+      const popStateEvent = new PopStateEvent('popstate', { state: null });
+      window.dispatchEvent(popStateEvent);
+      expect(window.history.replaceState).toHaveBeenCalledWith({ section: 'agents' }, '', '/dashboard/agents');
+    });
   });
 });
