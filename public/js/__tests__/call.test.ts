@@ -16,8 +16,10 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
     onTranscript: ReturnType<typeof vi.fn>;
   };
   let mockAudioTrack: { stop: ReturnType<typeof vi.fn>; enabled: boolean };
+  let shouldRecorderStopThrow = false;
 
   beforeEach(() => {
+    shouldRecorderStopThrow = false;
     resetState();
     vi.useFakeTimers();
     mockCallbacks = {
@@ -49,6 +51,31 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       },
     });
 
+    class MockMediaRecorder {
+      state = 'inactive';
+      static isTypeSupported = vi.fn().mockReturnValue(true);
+      ondataavailable: ((e: any) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start = vi.fn().mockImplementation(() => {
+        this.state = 'recording';
+        this.ondataavailable?.({ data: new Blob(['chunk'], { type: 'audio/webm' }) });
+      });
+      stop = vi.fn().mockImplementation(() => {
+        if (shouldRecorderStopThrow) {
+          throw new Error('stop fail');
+        }
+        this.state = 'inactive';
+        this.onstop?.();
+      });
+      constructor(public stream: any, public options?: any) {}
+    }
+    vi.stubGlobal('MediaRecorder', MockMediaRecorder);
+
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn().mockReturnValue('blob:mock-url'),
+      revokeObjectURL: vi.fn(),
+    });
+
     const mockAudioContextInstance = {
       createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
       createGain: vi.fn().mockReturnValue({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }),
@@ -58,6 +85,11 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       createBuffer: vi.fn().mockReturnValue({ getChannelData: vi.fn().mockReturnValue(new Float32Array(1024)) }),
       createBufferSource: vi.fn().mockReturnValue({
         buffer: null, connect: vi.fn(), start: vi.fn(), onended: null, disconnect: vi.fn(), stop: vi.fn(),
+      }),
+      createMediaStreamDestination: vi.fn().mockReturnValue({
+        stream: { id: 'mock-stream' },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
       }),
       destination: {}, close: vi.fn().mockResolvedValue(undefined), state: 'running',
       resume: vi.fn().mockResolvedValue(undefined),
@@ -82,6 +114,8 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
         <svg id="mute-icon-off"></svg>
         <svg id="mute-icon-on" class="hidden"></svg>
       </button>
+      <button id="btn-download" class="hidden" disabled></button>
+      <div id="toast-container"></div>
       <canvas id="waveform-canvas"></canvas>
     `;
   });
@@ -376,6 +410,73 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       sp.onaudioprocess({ inputBuffer: { getChannelData: () => loudFrame } });
       sp.onaudioprocess({ inputBuffer: { getChannelData: () => loudFrame } });
       expect(source.stop).toHaveBeenCalled();
+    });
+
+    it('should initialize recording, stop on endCall, and enable the download button', async () => {
+      await startCall('a1', mockCallbacks);
+      const btnDownload = document.getElementById('btn-download') as HTMLButtonElement;
+      expect(btnDownload).toBeDefined();
+      expect(btnDownload.disabled).toBe(true);
+
+      await (await import('../call.js')).endCall();
+      await Promise.resolve();
+
+      expect(btnDownload.disabled).toBe(false);
+      expect(btnDownload.classList.contains('hidden')).toBe(false);
+      expect(btnDownload.classList.contains('available')).toBe(true);
+
+      btnDownload.click();
+      const toastContainer = document.getElementById('toast-container');
+      expect(toastContainer?.innerHTML).toContain('Audio recording ready');
+      
+      await startCall('a1', mockCallbacks);
+      expect(btnDownload.disabled).toBe(true);
+      expect(btnDownload.classList.contains('hidden')).toBe(true);
+      expect(btnDownload.classList.contains('available')).toBe(false);
+    });
+
+    it('should fall back to mp4, ogg, or empty mime type if webm is unsupported', async () => {
+      const isTypeSupportedSpy = vi.spyOn(window.MediaRecorder, 'isTypeSupported');
+      const btnDownload = document.getElementById('btn-download') as HTMLButtonElement;
+
+      // Case 1: webm unsupported, mp4 supported
+      isTypeSupportedSpy.mockImplementation((type) => type === 'audio/mp4');
+      await startCall('a1', mockCallbacks);
+      await (await import('../call.js')).endCall();
+      await Promise.resolve();
+      btnDownload.click();
+
+      // Case 2: webm and mp4 unsupported, ogg supported
+      isTypeSupportedSpy.mockImplementation((type) => type === 'audio/ogg');
+      await startCall('a1', mockCallbacks);
+      await (await import('../call.js')).endCall();
+      await Promise.resolve();
+      btnDownload.click();
+
+      // Case 3: all unsupported
+      isTypeSupportedSpy.mockImplementation(() => false);
+      await startCall('a1', mockCallbacks);
+      await (await import('../call.js')).endCall();
+      await Promise.resolve();
+      btnDownload.click();
+    });
+
+    it('should handle errors during recording initialization gracefully', async () => {
+      await startCall('a1', mockCallbacks);
+      const ctx = getAudioContext() as any;
+      const originalCreateMediaStreamDestination = ctx.createMediaStreamDestination;
+      ctx.createMediaStreamDestination = () => {
+        throw new Error('mock init error');
+      };
+
+      await startCall('a1', mockCallbacks);
+      ctx.createMediaStreamDestination = originalCreateMediaStreamDestination;
+    });
+
+    it('should handle MediaRecorder stop errors gracefully', async () => {
+      await startCall('a1', mockCallbacks);
+      shouldRecorderStopThrow = true;
+      await (await import('../call.js')).endCall();
     });
   });
 });

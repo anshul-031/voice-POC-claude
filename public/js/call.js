@@ -12,6 +12,7 @@ import {
   interruptModelPlayback,
   processAudioQueue as processPlaybackQueue,
   resetAudioPlaybackState,
+  setPlaybackRecordingDestination,
 } from './audioPlayback.js';
 
 /** @typedef {Window & { webkitAudioContext?: typeof AudioContext }} WindowWithWebkitAudio */
@@ -25,6 +26,65 @@ import {
 let hasPrimedAudioOutput = false;
 let audioContextResumeFailures = 0;
 let hasShownAudioRecoveryToast = false;
+
+/** @type {MediaStreamAudioDestinationNode | null} */ let recordingDestination = null;
+/** @type {MediaRecorder | null} */ let mediaRecorder = null;
+/** @type {Blob[]} */ let recordedChunks = [];
+let recordingMimeType = 'audio/webm';
+
+/**
+ * Enables the download button with the recorded audio URL.
+ * @param {string} url
+ * @returns {void}
+ */
+function enableDownloadButton(url) {
+  const btnDownload = document.getElementById('btn-download');
+  if (!btnDownload) return;
+
+  btnDownload.dataset.url = url;
+  btnDownload.removeAttribute('disabled');
+  btnDownload.classList.remove('hidden');
+  btnDownload.classList.add('available');
+
+  btnDownload.onclick = (e) => {
+    e.preventDefault();
+    const a = document.createElement('a');
+    a.href = url;
+    let recordingExtension = 'webm';
+    if (recordingMimeType.includes('mp4')) {
+      recordingExtension = 'mp4';
+    } else if (recordingMimeType.includes('ogg')) {
+      recordingExtension = 'ogg';
+    }
+    a.download = `call-conversation-${Date.now()}.${recordingExtension}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast(UI_STRINGS.toasts.audioRecorded, 'success');
+  };
+}
+
+/**
+ * Resets and disables the download button, revoking any object URLs.
+ * @returns {void}
+ */
+function resetDownloadButton() {
+  const btnDownload = document.getElementById('btn-download');
+  if (!btnDownload) return;
+
+  btnDownload.setAttribute('disabled', 'true');
+  btnDownload.classList.add('hidden');
+  btnDownload.classList.remove('available');
+  btnDownload.onclick = null;
+
+  if (btnDownload.dataset.url) {
+    try {
+      URL.revokeObjectURL(btnDownload.dataset.url);
+    } catch (_e) { /* ignore */ }
+    delete btnDownload.dataset.url;
+  }
+}
+
 
 /**
  * @typedef {Object} CallCallbacks
@@ -377,6 +437,56 @@ function setupAudioGraph() {
     }
     relayAudioChunk(inputData);
   };
+
+  setupAudioRecording(processedSource);
+}
+
+/**
+ * @param {AudioNode} processedSource
+ * @returns {void}
+ */
+function setupAudioRecording(processedSource) {
+  if (!audioContext || typeof audioContext.createMediaStreamDestination !== 'function') {
+    return;
+  }
+  try {
+    recordingDestination = audioContext.createMediaStreamDestination();
+    processedSource.connect(recordingDestination);
+    setPlaybackRecordingDestination(recordingDestination);
+
+    if (typeof MediaRecorder !== 'undefined') {
+      recordedChunks = [];
+      recordingMimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported(recordingMimeType)) {
+        recordingMimeType = 'audio/mp4';
+      }
+      if (!MediaRecorder.isTypeSupported(recordingMimeType)) {
+        recordingMimeType = 'audio/ogg';
+      }
+      if (!MediaRecorder.isTypeSupported(recordingMimeType)) {
+        recordingMimeType = '';
+      }
+
+      const options = recordingMimeType ? { mimeType: recordingMimeType } : undefined;
+      mediaRecorder = new MediaRecorder(recordingDestination.stream, options);
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
+      mediaRecorder.onstop = () => {
+        if (recordedChunks.length > 0) {
+          const blob = new Blob(recordedChunks, { type: recordingMimeType || 'audio/octet-stream' });
+          const url = URL.createObjectURL(blob);
+          enableDownloadButton(url);
+        }
+      };
+      mediaRecorder.start();
+      appendDebugLog('Live call audio recording started', 'info');
+    }
+  } catch (err) {
+    appendDebugLog(`Failed to initialize audio recorder: ${err}`, 'error');
+  }
 }
 
 /** @returns {void} */
@@ -496,6 +606,7 @@ export async function startCall(agentId, callbacks) {
   callbacks.onStatusChange(UI_STRINGS.callPanel.connecting, 'connecting');
   audioContextResumeFailures = 0;
   hasShownAudioRecoveryToast = false;
+  resetDownloadButton();
 
   try {
     audioContext = getOrCreateAudioContext();
@@ -709,6 +820,18 @@ export async function endCall() {
   hasPrimedAudioOutput = false;
   audioContextResumeFailures = 0;
   hasShownAudioRecoveryToast = false;
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try {
+      mediaRecorder.stop();
+      appendDebugLog('Live call audio recording stopped', 'info');
+    } catch (e) {
+      appendDebugLog(`Error stopping MediaRecorder: ${e}`, 'error');
+    }
+  }
+  mediaRecorder = null;
+  setPlaybackRecordingDestination(null);
+  recordingDestination = null;
+
   analyserNode = null;
   audioChunksSent = 0;
   stopTimer();

@@ -89,6 +89,14 @@ export function renderCallPanelTemplate(options = {}) {
               <path d="M23.71 16.67C20.66 13.78 16.54 12 12 12S3.34 13.78.29 16.67c-.18.18-.29.43-.29.71s.11.53.29.71l2.48 2.48c.18.18.43.29.71.29s.53-.11.71-.29l2.79-2.79c.18-.18.29-.43.29-.71v-3.39c1.69-.64 3.53-1 5.43-1h.1c1.9 0 3.74.36 5.43 1v3.39c0 .28.11.53.29.71l2.79 2.79c.18.18.43.29.71.29s.53-.11.71-.29l2.48-2.48c.18-.18.29-.43.29-.71s-.11-.53-.29-.71z"/>
             </svg>
           </button>
+
+          <button class="btn-call btn-download hidden" id="btn-download" data-i18n-attr="title:callPanel.download" title="Download Call Audio" disabled>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </button>
         </div>
       </div>
 

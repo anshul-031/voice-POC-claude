@@ -11,9 +11,25 @@ const activePlaybackSources = new Set();
 let playbackGainNode = null;
 /** @type {AudioContext | null} */
 let playbackGainNodeContext = null;
+/** @type {AudioNode | null} */
+let recordingDestinationNode = null;
 let speechFrameStreak = 0;
 let lastBargeInAtMs = 0;
 let adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
+
+/**
+ * Set the recording destination node for model playback audio.
+ * @param {AudioNode | null} node
+ * @returns {void}
+ */
+export function setPlaybackRecordingDestination(node) {
+  recordingDestinationNode = node;
+  if (playbackGainNode && node) {
+    try {
+      playbackGainNode.connect(node);
+    } catch (_e) { /* ignore */ }
+  }
+}
 
 let nextPlaybackTime = 0;
 let chunksPlayed = 0;
@@ -59,6 +75,11 @@ function getOrCreatePlaybackGainNode(audioContext) {
   playbackGainNode = audioContext.createGain();
   playbackGainNode.gain.value = 1;
   playbackGainNode.connect(audioContext.destination);
+  if (recordingDestinationNode) {
+    try {
+      playbackGainNode.connect(recordingDestinationNode);
+    } catch (_e) { /* ignore */ }
+  }
   playbackGainNodeContext = audioContext;
 
   return playbackGainNode;
