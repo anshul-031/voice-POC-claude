@@ -212,6 +212,60 @@ describe('call.js iOS audio hardening branches', () => {
     await expect(startCall('agent-1', createCallbacks())).resolves.toBeUndefined();
   });
 
+  it('does not force the earpiece-routing audio session type on iOS', async () => {
+    const assignedTypes: string[] = [];
+    const audioSession = {};
+    Object.defineProperty(audioSession, 'type', {
+      set: (value: string) => {
+        assignedTypes.push(value);
+      },
+      get: () => assignedTypes[assignedTypes.length - 1] ?? 'auto',
+    });
+
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [{ stop: vi.fn(), enabled: true }],
+        }),
+      },
+      audioSession,
+    });
+
+    class StableAudioContext {
+      state = 'running';
+      sampleRate = 16000;
+      destination = {};
+      resume = vi.fn().mockResolvedValue(undefined);
+      close = vi.fn().mockResolvedValue(undefined);
+      createBuffer = vi.fn().mockReturnValue({
+        getChannelData: vi.fn().mockReturnValue(new Float32Array(8)),
+      });
+      createBufferSource = vi.fn().mockReturnValue({
+        buffer: null,
+        connect: vi.fn(),
+        start: vi.fn(),
+        onended: null,
+        disconnect: vi.fn(),
+        stop: vi.fn(),
+      });
+      createMediaStreamSource = vi.fn().mockReturnValue({ connect: vi.fn() });
+      createAnalyser = vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256 });
+      createScriptProcessor = vi.fn().mockReturnValue({
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        onaudioprocess: null,
+      });
+    }
+
+    vi.stubGlobal('AudioContext', StableAudioContext as unknown as typeof AudioContext);
+    vi.stubGlobal('webkitAudioContext', StableAudioContext as unknown as typeof AudioContext);
+
+    await startCall('agent-1', createCallbacks());
+
+    expect(assignedTypes).not.toContain('play-and-record');
+    expect(assignedTypes.at(-1)).toBe('auto');
+  });
+
   it('handles non-Error microphone failures with a generic startup error', async () => {
     vi.stubGlobal('navigator', {
       mediaDevices: {
