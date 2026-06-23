@@ -30,7 +30,12 @@ export const CONFIG = {
   AUDIO_CONTEXT_RESUME_MAX_ATTEMPTS: 3,
   AUDIO_CONTEXT_RESUME_RETRY_DELAY_MS: 40,
   AUDIO_CONTEXT_FAILURE_TOAST_THRESHOLD: 2,
-  IOS_AUDIO_SESSION_TYPE: 'play-and-record',
+  // iOS Safari only (navigator.audioSession is undefined elsewhere). The previous
+  // 'play-and-record' value maps to AVAudioSessionCategoryPlayAndRecord WITHOUT
+  // defaultToSpeaker, which forces output to the quiet earpiece on iPhone so the
+  // call appears "not working". 'auto' restores the default getUserMedia behavior,
+  // which routes playback to the main loudspeaker while still capturing the mic.
+  IOS_AUDIO_SESSION_TYPE: 'auto',
   WS_CONNECT_TIMEOUT_MS: 10000,
   MEDIA_ACCESS_TIMEOUT_MS: 15000,
   CALL_START_ERROR_NAMES: {
