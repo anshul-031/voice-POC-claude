@@ -61,6 +61,7 @@ export const UI_STRINGS = {
     promptLabel: 'System Prompt',
     publicPreviewLabel: 'Enable public preview URL',
     promptPlaceholder: 'You are a helpful customer support agent for Acme Corp. Be friendly, professional, and concise in your responses...',
+    promptVariablesHint: 'Use {{variable_name}} to insert values you set per call (e.g. Hello {{customer_name}}).',
     validation: {
       requiredFields: 'Please fill in all fields',
     },
@@ -76,6 +77,11 @@ export const UI_STRINGS = {
     transcriptEmpty: 'Transcription will appear here during the call...',
     debugTitle: 'Signaling Logs',
     debugEmpty: 'Runtime signaling logs will appear here during the call...',
+    variables: {
+      title: 'Call Variables',
+      hint: 'Set values for the variables used in this agent\'s system prompt.',
+      placeholder: (name: string): string => `Value for ${name}`,
+    },
     roles: {
       user: '🎤 You',
       agent: '🤖 Agent',

@@ -20,6 +20,7 @@ import {
   togglePublicPreview as togglePublicPreviewRequest,
 } from './previewLinks.js';
 import { renderCallPanelTemplate } from './components/callPanel.js';
+import { renderCallVariableInputs, collectCallVariableValues } from './components/callVariables.js';
 import { getFormData, populateForm } from './agentForm.js';
 import { initTelephonyPanel } from './telephony.js';
 import { initSidebarNavigation, switchSection } from './sidebar.js';
@@ -89,7 +90,7 @@ function initEventListeners() {
     btnCall.addEventListener('mousedown', primeAudio);
     btnCall.addEventListener('click', () => {
       primeAudio();
-      if (currentCallAgentId) toggleCall(currentCallAgentId, callCallbacks);
+      if (currentCallAgentId) toggleCall(currentCallAgentId, callCallbacks, collectCallVariableValues());
     });
   }
   document.getElementById('btn-back-call')?.addEventListener('click', hideCallPanel);
@@ -254,6 +255,7 @@ export function showCallPanel(agentId) {
   }
   const bodyEl = document.getElementById('transcript-body');
   if (bodyEl) bodyEl.innerHTML = '';
+  renderCallVariableInputs(agent.systemPrompt);
   clearDebugLogs();
   showPanel('call');
 }

@@ -15,6 +15,7 @@ import {
 import { showToast } from './utils.js';
 import { appendTranscript, clearDebugLogs } from './transcript.js';
 import { renderCallPanelTemplate } from './components/callPanel.js';
+import { renderCallVariableInputs, collectCallVariableValues } from './components/callVariables.js';
 
 /** @type {string | null} */
 let previewAgentId = null;
@@ -81,6 +82,7 @@ async function loadPreviewAgent() {
     const data = await api(`/public/agents/${encodeURIComponent(previewAgentId)}/preview`);
     const titleEl = document.getElementById('call-agent-name');
     if (titleEl) titleEl.textContent = data.name;
+    renderCallVariableInputs(data.systemPrompt);
   } catch {
     showToast(UI_STRINGS.preview.unavailable, 'error');
     const btnCall = document.getElementById('btn-call');
@@ -133,7 +135,7 @@ function initPreviewPage() {
     btnCall.addEventListener('click', () => {
       if (!previewAgentId) return;
       primeAudio();
-      toggleCall(previewAgentId, callCallbacks);
+      toggleCall(previewAgentId, callCallbacks, collectCallVariableValues());
     });
   }
 

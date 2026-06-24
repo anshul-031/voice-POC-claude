@@ -18,6 +18,7 @@ import {
   type SignalingMessage,
 } from '../constants/inputSchemas.js';
 import { downsample24To8, upsample8To16 } from '../utils/audioResampler.js';
+import { substituteTemplateVariables } from '../utils/templateVariables.js';
 
 type StartCallAgent = {
   id: string;
@@ -509,7 +510,7 @@ class SignalingServer {
   /** @internal */
   public async _handleStartCall(
     socket: WSWebSocket,
-    message: { agentId: string },
+    message: { agentId: string; variables?: Record<string, string> },
     requesterUserId: string | null = null,
     correlationId = uuidv4(),
     streamId?: string,
@@ -518,19 +519,26 @@ class SignalingServer {
     const parseResult = SIGNALING_START_CALL_MESSAGE_SCHEMA.safeParse({
       type: MESSAGE_TYPE.START_CALL,
       agentId: message.agentId,
+      ...(message.variables !== undefined && { variables: message.variables }),
     });
     if (!parseResult.success) {
       this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentIdRequired);
       return;
     }
 
-    const { agentId } = parseResult.data;
-    logger.info('Start call request', { agentId, correlationId });
+    const { agentId, variables } = parseResult.data;
+    logger.info('Start call request', {
+      agentId,
+      correlationId,
+      variableCount: variables ? Object.keys(variables).length : 0,
+    });
 
     const agent = await this._fetchAgentForCall(socket, agentId, requesterUserId, correlationId);
     if (!agent) {
       return;
     }
+
+    const resolvedSystemPrompt = substituteTemplateVariables(agent.systemPrompt, variables);
 
     const sessionId = uuidv4();
     await this._closeExistingClientSession(socket);
@@ -540,7 +548,7 @@ class SignalingServer {
       logger.info('Creating Gemini Live session', { sessionId, correlationId });
 
       await geminiLiveService.createSession(sessionId, {
-        systemPrompt: agent.systemPrompt,
+        systemPrompt: resolvedSystemPrompt,
         voiceName: agent.voiceName,
         modelName: agent.modelName || undefined,
         correlationId,

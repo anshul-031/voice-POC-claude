@@ -1108,6 +1108,68 @@ html[data-theme='light'] body::before {
   50% { box-shadow: 0 4px 30px rgba(239, 68, 68, 0.6); }
 }
 
+/* ── Call Variables Section ── */
+.call-variables {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 4px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.call-variables-header {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.call-variables-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.call-variable-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.call-variable-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.call-variable-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  transition: border-color var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.call-variable-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.call-variable-input::placeholder {
+  color: var(--text-muted);
+}
+
 /* ── Outbound Call Section ── */
 .outbound-call-section {
   background: var(--bg-glass);

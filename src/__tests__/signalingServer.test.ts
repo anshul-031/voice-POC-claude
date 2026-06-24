@@ -243,6 +243,30 @@ describe('SignalingServer', () => {
     expect(geminiLiveService.sendText).toHaveBeenCalled();
   });
 
+  it('should substitute call variables into the system prompt before creating the session', async () => {
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: '1',
+      name: 'A',
+      systemPrompt: 'Hello {{customer_name}}, welcome to {{company}}.',
+      voiceName: 'Puck',
+      modelName: 'gemini-2.0-flash-exp',
+      publicPreviewEnabled: true,
+      userId: null,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
+    });
+    (geminiLiveService.createSession as any).mockResolvedValue({});
+
+    await signalingServer._handleStartCall(
+      mockWs,
+      { agentId: '1', variables: { customer_name: 'Sam', company: 'Acme' } },
+    );
+
+    const [, config] = (geminiLiveService.createSession as any).mock.calls.at(-1);
+    expect(config.systemPrompt).toBe('Hello Sam, welcome to Acme.');
+  });
+
   it('should reject invalid audio payloads in _handleAudioData', async () => {
     await signalingServer._handleAudioData(mockWs, { data: '' }, 'cid-invalid-audio');
     expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('error'));

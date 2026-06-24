@@ -69,7 +69,7 @@ describe('preview.js', () => {
     expect(document.getElementById('call-agent-name')?.textContent).toBe('Preview Agent');
 
     document.getElementById('btn-call')?.click();
-    expect(callModule.toggleCall).toHaveBeenCalledWith('agent-1', expect.any(Object));
+    expect(callModule.toggleCall).toHaveBeenCalledWith('agent-1', expect.any(Object), expect.any(Object));
 
     const callbacks = vi.mocked(callModule.toggleCall).mock.calls[0]?.[1] as {
       onStatusChange: (text: string, className: string) => void;

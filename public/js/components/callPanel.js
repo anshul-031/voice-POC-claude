@@ -33,6 +33,8 @@ export function renderCallPanelTemplate(options = {}) {
           <div class="call-timer hidden" id="call-timer">00:00</div>
         </div>
 
+        <div class="call-variables hidden" id="call-variables"></div>
+
         ${hideDetails ? '' : `
         <div class="call-voice-info" id="call-voice-info">
           <div class="voice-badge">

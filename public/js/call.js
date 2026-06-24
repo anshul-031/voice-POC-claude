@@ -340,12 +340,12 @@ export function getCallState() {
   return { isInCall, isMuted, callSeconds };
 }
 
-/** @param {string | null} agentId @param {CallCallbacks} callbacks @returns {Promise<void>} */
-export async function toggleCall(agentId, callbacks) {
+/** @param {string | null} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} [variables] @returns {Promise<void>} */
+export async function toggleCall(agentId, callbacks, variables = {}) {
   if (isInCall) await endCall();
   else {
     prepareAudioPlaybackOnGesture();
-    await startCall(agentId, callbacks);
+    await startCall(agentId, callbacks, variables);
   }
 }
 
@@ -500,8 +500,8 @@ function resetMuteButtonUI() {
 }
 
 
-/** @param {string} agentId @param {CallCallbacks} callbacks @returns {Promise<void>} */
-function setupSocket(agentId, callbacks) {
+/** @param {string} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} variables @returns {Promise<void>} */
+function setupSocket(agentId, callbacks, variables) {
   const wsConnectStart = Date.now();
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   appendDebugLog(UI_STRINGS.signaling.logs.wsConnecting, 'info');
@@ -524,7 +524,12 @@ function setupSocket(agentId, callbacks) {
       appendDebugLog(UI_STRINGS.signaling.logs.wsOpen, 'info');
       appendDebugLog(UI_STRINGS.signaling.logs.wsOpenElapsed(Date.now() - wsConnectStart), 'info');
       appendDebugLog(UI_STRINGS.signaling.logs.sendingStart(agentId), 'info');
-      socket.send(JSON.stringify({ type: MESSAGE_TYPE.START_CALL, agentId }));
+      /** @type {{ type: string, agentId: string, variables?: Record<string, string> }} */
+      const startMessage = { type: MESSAGE_TYPE.START_CALL, agentId };
+      if (variables && Object.keys(variables).length > 0) {
+        startMessage.variables = variables;
+      }
+      socket.send(JSON.stringify(startMessage));
       appendDebugLog(UI_STRINGS.signaling.logs.startSentElapsed(getStartupElapsedMs()), 'info');
       appendDebugLog(UI_STRINGS.signaling.logs.startupComplete(getStartupElapsedMs()), 'info');
       resolve();
@@ -580,8 +585,8 @@ function setupSocket(agentId, callbacks) {
   });
 }
 
-/** @param {string | null} agentId @param {CallCallbacks} callbacks @returns {Promise<void>} */
-export async function startCall(agentId, callbacks) {
+/** @param {string | null} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} [variables] @returns {Promise<void>} */
+export async function startCall(agentId, callbacks, variables = {}) {
   const runId = createRunId();
   startupTrace = {
     runId,
@@ -595,7 +600,7 @@ export async function startCall(agentId, callbacks) {
   appendDebugLog(UI_STRINGS.signaling.logs.callRunId(runId), 'info');
   appendDebugLog(UI_STRINGS.signaling.logs.startupBegin, 'info');
 
-  const callInputParse = START_CALL_INPUT_SCHEMA.safeParse({ agentId });
+  const callInputParse = START_CALL_INPUT_SCHEMA.safeParse({ agentId, variables });
   if (!callInputParse.success) {
     showToast(UI_STRINGS.api.errors.invalidInput, 'error');
     appendDebugLog(UI_STRINGS.api.errors.invalidInput, 'error');
@@ -645,7 +650,7 @@ export async function startCall(agentId, callbacks) {
       CONFIG.MEDIA_ACCESS_TIMEOUT_MS,
       new Error(UI_STRINGS.signaling.errors.micAccessTimeout),
     );
-    const socketPromise = setupSocket(callInputParse.data.agentId, callbacks);
+    const socketPromise = setupSocket(callInputParse.data.agentId, callbacks, callInputParse.data.variables || {});
     socketPromise.catch((socketError) => {
       handleCallStartFailure(socketError, callbacks);
       endCall();

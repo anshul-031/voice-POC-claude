@@ -20,6 +20,7 @@ export const AGENT_FORM_SCHEMA = z.object({
 
 export const START_CALL_INPUT_SCHEMA = z.object({
   agentId: z.string().trim().min(1),
+  variables: z.record(z.string().trim().min(1), z.string()).optional(),
 });
 
 export const OUTBOUND_CALL_INPUT_SCHEMA = z.object({

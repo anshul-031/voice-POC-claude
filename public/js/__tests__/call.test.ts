@@ -126,6 +126,14 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       const ws = getWs() as any; ws?.onopen?.();
       expect(ws?.send).toHaveBeenCalled();
     });
+    it('should include call variables in the start-call message when provided', async () => {
+      await startCall('a1', mockCallbacks, { customer_name: 'Sam' });
+      const ws = getWs() as any; ws?.onopen?.();
+      const startPayloads = ws.send.mock.calls
+        .map((args: any[]) => String(args[0]))
+        .filter((raw: string) => raw.includes(MESSAGE_TYPE.START_CALL));
+      expect(startPayloads.some((raw: string) => raw.includes('"variables"') && raw.includes('Sam'))).toBe(true);
+    });
     it('should handle ws.onmessage success and trace events', async () => {
       await startCall('a1', mockCallbacks);
       const ws = getWs() as any;
