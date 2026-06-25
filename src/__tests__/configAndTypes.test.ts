@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CONFIG, RUNTIME_UI_CONFIG } from '../constants/config.js';
+import { CONFIG, RUNTIME_UI_CONFIG, resolveR2Config } from '../constants/config.js';
 import { DEFAULT_PORT } from '../constants/index.js';
 import { ROUTES, PRISMA_ERRORS, AUDIO_CONFIG, TIME, LOGGING, MESSAGE_TYPE, VOICE_NAME } from '../types/index.js';
 import { AVAILABLE_MODELS, getWhitelabeledModelName, getWhitelabeledModels } from '../constants/agents.js';
@@ -39,5 +39,55 @@ describe('Config and Types Constants', () => {
     expect(brandedModels[0].id).toBe(AVAILABLE_MODELS[0].id);
     expect(brandedModels[0].description).toBe(AVAILABLE_MODELS[0].description);
     expect(brandedModels[0].name.startsWith('Branding.site')).toBe(true);
+  });
+});
+
+describe('resolveR2Config', () => {
+  const R2_KEYS = [
+    'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY',
+    'R2_BUCKET', 'R2_ENDPOINT', 'R2_PUBLIC_URL',
+  ];
+
+  const clearR2Env = (): void => {
+    for (const key of R2_KEYS) delete process.env[key];
+  };
+
+  it('returns null when R2 env vars are missing', () => {
+    clearR2Env();
+    expect(resolveR2Config()).toBeNull();
+  });
+
+  it('derives the endpoint from the account id when configured', () => {
+    clearR2Env();
+    process.env.R2_ACCOUNT_ID = 'acc123';
+    process.env.R2_ACCESS_KEY_ID = 'ak';
+    process.env.R2_SECRET_ACCESS_KEY = 'sk';
+    process.env.R2_BUCKET = 'bucket';
+    const config = resolveR2Config();
+    expect(config).not.toBeNull();
+    expect(config?.endpoint).toBe('https://acc123.r2.cloudflarestorage.com');
+    expect(config?.publicUrl).toBeUndefined();
+    clearR2Env();
+  });
+
+  it('honors an explicit endpoint and public url', () => {
+    clearR2Env();
+    process.env.R2_ACCOUNT_ID = 'acc123';
+    process.env.R2_ACCESS_KEY_ID = 'ak';
+    process.env.R2_SECRET_ACCESS_KEY = 'sk';
+    process.env.R2_BUCKET = 'bucket';
+    process.env.R2_ENDPOINT = 'https://custom.example.com';
+    process.env.R2_PUBLIC_URL = 'https://cdn.example.com';
+    const config = resolveR2Config();
+    expect(config?.endpoint).toBe('https://custom.example.com');
+    expect(config?.publicUrl).toBe('https://cdn.example.com');
+    clearR2Env();
+  });
+
+  it('returns null when only some credentials are present', () => {
+    clearR2Env();
+    process.env.R2_ACCOUNT_ID = 'acc123';
+    expect(resolveR2Config()).toBeNull();
+    clearR2Env();
   });
 });

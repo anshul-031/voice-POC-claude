@@ -3,11 +3,14 @@
  */
 import { loadTelephonyProviders } from './telephony.js';
 import { loadCampaigns } from './campaigns.js';
+import { loadCallHistory } from './callHistory.js';
 
 /** @type {boolean} */
 let telephonyLoaded = false;
 /** @type {boolean} */
 let campaignsLoaded = false;
+/** @type {boolean} */
+let callHistoryLoaded = false;
 
 const VALID_SECTIONS = ['agents', 'telephony', 'call-history', 'campaigns'];
 
@@ -87,16 +90,26 @@ export function switchSection(sectionName, pushState = false) {
   const target = document.getElementById(`section-${sectionName}`);
   if (target) target.classList.remove('hidden');
 
-  // Lazy-load telephony data on first visit
+  lazyLoadSection(sectionName);
+}
+
+/**
+ * Lazy-load a section's data on first visit.
+ * @param {string} sectionName
+ * @returns {void}
+ */
+function lazyLoadSection(sectionName) {
   if (sectionName === 'telephony' && !telephonyLoaded) {
     telephonyLoaded = true;
     loadTelephonyProviders();
   }
-
-  // Lazy-load campaigns on first visit
   if (sectionName === 'campaigns' && !campaignsLoaded) {
     campaignsLoaded = true;
     loadCampaigns();
+  }
+  if (sectionName === 'call-history' && !callHistoryLoaded) {
+    callHistoryLoaded = true;
+    loadCallHistory();
   }
 }
 
@@ -108,4 +121,5 @@ export function switchSection(sectionName, pushState = false) {
 export function resetSidebarState() {
   telephonyLoaded = false;
   campaignsLoaded = false;
+  callHistoryLoaded = false;
 }

@@ -128,6 +128,10 @@ export const UI_STRINGS = {
     campaignTriggered: (/** @type {number} */ n) => `Campaign triggered — ${n} call(s) initiated`,
     campaignFormInvalid: 'Please provide a campaign name, voice agent, and contacts file',
     campaignSelectAgentFirst: 'Select a voice agent first to download its template',
+    callHistoryLoadFailed: 'Failed to load call history',
+    callHistoryDeleted: 'Call record deleted',
+    callHistoryDeleteFailed: 'Failed to delete call record',
+    callHistoryDetailFailed: 'Failed to load call details',
   },
   sidebar: {
     agents: 'Voice Agents',
@@ -208,6 +212,51 @@ export const UI_STRINGS = {
       failed: 'Failed',
     },
     confirmTrigger: 'Trigger calls to all pending contacts in this campaign?',
+  },
+  callHistory: {
+    title: 'Call History',
+    emptyTitle: 'No calls yet',
+    emptyDescription: 'Calls placed from the preview page, test calls, and telephony calls will appear here with their recordings and transcripts.',
+    refresh: 'Refresh',
+    backToList: 'Back to calls',
+    transcriptTitle: 'Transcript',
+    transcriptEmpty: 'No transcript was captured for this call.',
+    recordingTitle: 'Recording',
+    recordingUnavailable: 'No recording is available for this call.',
+    detailTitle: 'Call Details',
+    fields: {
+      agent: 'Agent',
+      type: 'Type',
+      status: 'Status',
+      duration: 'Duration',
+      started: 'Started',
+      phone: 'Phone',
+    },
+    types: {
+      preview: 'Preview',
+      test: 'Test',
+      telephony: 'Telephony',
+    },
+    statuses: {
+      in_progress: 'In progress',
+      completed: 'Completed',
+      failed: 'Failed',
+    },
+    card: {
+      view: 'View',
+      delete: 'Delete',
+      hasRecording: 'Recording',
+      noRecording: 'No recording',
+    },
+    duration: (/** @type {number} */ secs) => {
+      const mins = Math.floor(secs / 60).toString().padStart(2, '0');
+      const rem = (secs % 60).toString().padStart(2, '0');
+      return `${mins}:${rem}`;
+    },
+    startedAt: (/** @type {string} */ date) =>
+      new Date(date).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      }),
   },
   api: {
     errors: {

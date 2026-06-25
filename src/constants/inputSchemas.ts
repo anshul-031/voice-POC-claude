@@ -134,6 +134,23 @@ export const CAMPAIGN_ID_PARAMS_SCHEMA = z.object({
   id: z.string().trim().min(1),
 });
 
+export const CALL_HISTORY_ID_PARAMS_SCHEMA = z.object({
+  id: z.string().trim().min(1),
+});
+
+export const CALL_HISTORY_SESSION_PARAMS_SCHEMA = z.object({
+  sessionId: z.string().trim().min(1),
+});
+
+export const R2_CONFIG_SCHEMA = z.object({
+  accountId: z.string().trim().min(1),
+  accessKeyId: z.string().trim().min(1),
+  secretAccessKey: z.string().trim().min(1),
+  bucket: z.string().trim().min(1),
+  endpoint: z.string().trim().url(),
+  publicUrl: z.string().trim().url().optional(),
+}).strict();
+
 export type AgentIdParams = z.infer<typeof AGENT_ID_PARAMS_SCHEMA>;
 export type CreateAgentBody = z.infer<typeof CREATE_AGENT_BODY_SCHEMA>;
 export type UpdateAgentBody = z.infer<typeof UPDATE_AGENT_BODY_SCHEMA>;
@@ -146,3 +163,6 @@ export type OutboundCallBody = z.infer<typeof OUTBOUND_CALL_BODY_SCHEMA>;
 export type CreateCampaignBody = z.infer<typeof CREATE_CAMPAIGN_BODY_SCHEMA>;
 export type UpdateCampaignBody = z.infer<typeof UPDATE_CAMPAIGN_BODY_SCHEMA>;
 export type CampaignIdParams = z.infer<typeof CAMPAIGN_ID_PARAMS_SCHEMA>;
+export type CallHistoryIdParams = z.infer<typeof CALL_HISTORY_ID_PARAMS_SCHEMA>;
+export type CallHistorySessionParams = z.infer<typeof CALL_HISTORY_SESSION_PARAMS_SCHEMA>;
+export type R2Config = z.infer<typeof R2_CONFIG_SCHEMA>;

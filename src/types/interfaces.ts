@@ -52,6 +52,10 @@ export interface SignalingClient {
   maxCallDurationSecs: number;
   inactivityTimer?: ReturnType<typeof setInterval>;
   callDurationTimer?: ReturnType<typeof setTimeout>;
+  callType?: string;
+  transcriptEntries?: Transcript[];
+  recordingChunks?: Buffer[];
+  callHistoryFinalized?: boolean;
 }
 
 export interface Transcript {
@@ -121,4 +125,29 @@ export interface CampaignTriggerSummary {
   total: number;
   initiated: number;
   failed: number;
+}
+
+export interface CallHistoryAgentContext {
+  id: string;
+  name: string;
+  userId: string | null;
+}
+
+export interface CreateCallRecordInput {
+  sessionId: string;
+  callType: string;
+  agentId: string;
+  agentName: string;
+  userId: string | null;
+  phoneNumber?: string | null;
+  direction?: string | null;
+}
+
+export interface FinalizeCallRecordInput {
+  sessionId: string;
+  status: string;
+  durationSecs: number;
+  transcript: Transcript[];
+  recordingChunks?: Buffer[];
+  recordingSampleRate?: number;
 }

@@ -4,7 +4,13 @@
  */
 
 import { DEFAULT_THEME, DEFAULT_WEBSITE_NAME } from './index.js';
-import { RUNTIME_THEME_SCHEMA, RUNTIME_UI_CONFIG_SCHEMA, WEBSITE_NAME_SCHEMA } from './inputSchemas.js';
+import {
+  R2_CONFIG_SCHEMA,
+  RUNTIME_THEME_SCHEMA,
+  RUNTIME_UI_CONFIG_SCHEMA,
+  WEBSITE_NAME_SCHEMA,
+  type R2Config,
+} from './inputSchemas.js';
 
 export const CONFIG = {
   API_PREFIX: '/api',
@@ -41,3 +47,34 @@ const runtimeUiConfigParseResult = RUNTIME_UI_CONFIG_SCHEMA.safeParse(runtimeUiC
 export const RUNTIME_UI_CONFIG = runtimeUiConfigParseResult.success
   ? runtimeUiConfigParseResult.data
   : defaultRuntimeUiConfig;
+
+/**
+ * Resolve Cloudflare R2 object-store configuration from the environment.
+ * Returns null (R2 disabled) when required variables are missing or invalid,
+ * so the app keeps working without call-recording storage configured.
+ */
+const trimmedEnv = (key: string): string | undefined => {
+  const value = process.env[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
+export const resolveR2Config = (): R2Config | null => {
+  const accountId = trimmedEnv('R2_ACCOUNT_ID');
+  const endpoint = trimmedEnv('R2_ENDPOINT')
+    ?? (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
+  const publicUrl = trimmedEnv('R2_PUBLIC_URL');
+
+  const candidate = {
+    accountId,
+    accessKeyId: trimmedEnv('R2_ACCESS_KEY_ID'),
+    secretAccessKey: trimmedEnv('R2_SECRET_ACCESS_KEY'),
+    bucket: trimmedEnv('R2_BUCKET'),
+    endpoint,
+    ...(publicUrl && { publicUrl }),
+  };
+
+  const parseResult = R2_CONFIG_SCHEMA.safeParse(candidate);
+  return parseResult.success ? parseResult.data : null;
+};
+
+export const R2_CONFIG = resolveR2Config();

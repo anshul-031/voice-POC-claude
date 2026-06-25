@@ -19,6 +19,7 @@ model User {
   agents              VoiceAgent[]
   telephonyProviders  TelephonyProvider[]
   campaigns           Campaign[]
+  callHistory         CallHistory[]
 
   @@map("users")
 }
@@ -42,6 +43,7 @@ model VoiceAgent {
   userId               String?
   user                 User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaigns            Campaign[]
+  callHistory          CallHistory[]
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -104,4 +106,30 @@ model CampaignContact {
   updatedAt    DateTime @updatedAt
 
   @@map("campaign_contacts")
+}
+
+model CallHistory {
+  id                String      @id @default(cuid())
+  sessionId         String      @unique
+  callType          String      @default("test")
+  status            String      @default("in_progress")
+  direction         String?
+  phoneNumber       String?
+  agentName         String
+  durationSecs      Int         @default(0)
+  recordingKey      String?
+  recordingMimeType String?
+  transcript        Json        @default("[]")
+  startedAt         DateTime    @default(now())
+  endedAt           DateTime?
+  agentId           String?
+  agent             VoiceAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  userId            String?
+  user              User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([agentId])
+  @@map("call_history")
 }

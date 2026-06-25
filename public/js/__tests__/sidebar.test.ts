@@ -11,6 +11,14 @@ vi.mock('../telephony.js', () => ({
   loadTelephonyProviders: vi.fn(),
 }));
 
+vi.mock('../campaigns.js', () => ({
+  loadCampaigns: vi.fn(),
+}));
+
+vi.mock('../callHistory.js', () => ({
+  loadCallHistory: vi.fn(),
+}));
+
 describe('Sidebar Navigation (sidebar.js)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -61,6 +69,20 @@ describe('Sidebar Navigation (sidebar.js)', () => {
     switchSection('agents');
     switchSection('telephony');
     expect(loadTelephonyProviders).toHaveBeenCalledTimes(1);
+  });
+
+  it('lazy-loads campaigns and call history only once each', async () => {
+    const { loadCampaigns } = await import('../campaigns.js');
+    const { loadCallHistory } = await import('../callHistory.js');
+    switchSection('campaigns');
+    switchSection('call-history');
+    expect(loadCampaigns).toHaveBeenCalledTimes(1);
+    expect(loadCallHistory).toHaveBeenCalledTimes(1);
+    switchSection('agents');
+    switchSection('campaigns');
+    switchSection('call-history');
+    expect(loadCampaigns).toHaveBeenCalledTimes(1);
+    expect(loadCallHistory).toHaveBeenCalledTimes(1);
   });
 
   it('handles missing section elements', () => {

@@ -24,6 +24,7 @@ import { renderCallVariableInputs, collectCallVariableValues } from './component
 import { getFormData, populateForm } from './agentForm.js';
 import { initTelephonyPanel } from './telephony.js';
 import { initCampaignPanel } from './campaigns.js';
+import { initCallHistoryPanel } from './callHistory.js';
 import { initSidebarNavigation, switchSection } from './sidebar.js';
 
 /** @type {any[]} */ let agents = [];
@@ -77,6 +78,7 @@ export function initApp() {
   initSidebarNavigation();
   initTelephonyPanel();
   initCampaignPanel();
+  initCallHistoryPanel();
   initEventListeners();
 }
 
@@ -114,11 +116,8 @@ export async function loadModels() {
 }
 
 function reRenderAgentList() {
-  renderAgentList(
-    agents, selectedAgentId, selectAgent,
-    showCallPanel, editAgent, deleteAgent,
-    copyPreviewUrl, togglePublicPreview,
-  );
+  renderAgentList(agents, selectedAgentId, selectAgent, showCallPanel,
+    editAgent, deleteAgent, copyPreviewUrl, togglePublicPreview);
 }
 
 export async function loadAgents() {

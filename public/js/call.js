@@ -31,6 +31,37 @@ let hasShownAudioRecoveryToast = false;
 /** @type {MediaRecorder | null} */ let mediaRecorder = null;
 /** @type {Blob[]} */ let recordedChunks = [];
 let recordingMimeType = 'audio/webm';
+/** @type {string | null} */ let currentSessionId = null;
+
+/**
+ * Upload the recorded call audio to the server so it appears in Call History.
+ * Works for both authenticated (test) and public (preview) calls; the server
+ * authorizes by the unguessable session id. Failures are non-fatal.
+ * @param {string | null} sessionId
+ * @param {Blob} blob
+ * @returns {Promise<void>}
+ */
+export async function uploadCallRecording(sessionId, blob) {
+  if (!sessionId || !blob || blob.size === 0) return;
+  try {
+    const res = await fetch(
+      `${CONFIG.API_PREFIX}/call-history/${encodeURIComponent(sessionId)}/recording`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+        body: blob,
+        credentials: 'same-origin',
+      },
+    );
+    if (!res.ok) {
+      appendDebugLog(`Recording upload failed (${res.status})`, 'warn');
+      return;
+    }
+    appendDebugLog('Call recording uploaded for history', 'info');
+  } catch (err) {
+    appendDebugLog(`Recording upload error: ${err}`, 'warn');
+  }
+}
 
 /**
  * Enables the download button with the recorded audio URL.
@@ -479,6 +510,7 @@ function setupAudioRecording(processedSource) {
           const blob = new Blob(recordedChunks, { type: recordingMimeType || 'audio/octet-stream' });
           const url = URL.createObjectURL(blob);
           enableDownloadButton(url);
+          void uploadCallRecording(currentSessionId, blob);
         }
       };
       mediaRecorder.start();
@@ -611,6 +643,7 @@ export async function startCall(agentId, callbacks, variables = {}) {
   callbacks.onStatusChange(UI_STRINGS.callPanel.connecting, 'connecting');
   audioContextResumeFailures = 0;
   hasShownAudioRecoveryToast = false;
+  currentSessionId = null;
   resetDownloadButton();
 
   try {
@@ -673,6 +706,7 @@ export function handleWsMessage(message, callbacks) {
     [MESSAGE_TYPE.CALL_STARTED]: () => {
       isInCall = true;
       audioChunksSent = 0;
+      currentSessionId = message.sessionId || null;
       updateCallUI(true);
       onStatusChange(UI_STRINGS.callPanel.connected, 'active');
       startTimer(callbacks.onTimerUpdate);

@@ -108,6 +108,24 @@ export const CAMPAIGN_CONTACT_STATUS = {
   FAILED: 'failed',
 } as const;
 
+export const CALL_TYPE = {
+  PREVIEW: 'preview',
+  TEST: 'test',
+  TELEPHONY: 'telephony',
+} as const;
+
+export const CALL_STATUS = {
+  IN_PROGRESS: 'in_progress',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
+
+export const RECORDING = {
+  TELEPHONY_SAMPLE_RATE: 8000,
+  TELEPHONY_MIME_TYPE: 'audio/wav',
+  MAX_UPLOAD_BYTES: 50_000_000,
+} as const;
+
 export const CAMPAIGN_LIMITS = {
   MAX_CONTACTS: 1000,
   MAX_FILE_BASE64_LENGTH: 15_000_000,
@@ -121,3 +139,5 @@ export type TelephonyProviderType = typeof TELEPHONY_PROVIDER[keyof typeof TELEP
 export type TelephonyDirectionType = typeof TELEPHONY_DIRECTION[keyof typeof TELEPHONY_DIRECTION];
 export type CampaignStatus = typeof CAMPAIGN_STATUS[keyof typeof CAMPAIGN_STATUS];
 export type CampaignContactStatus = typeof CAMPAIGN_CONTACT_STATUS[keyof typeof CAMPAIGN_CONTACT_STATUS];
+export type CallType = typeof CALL_TYPE[keyof typeof CALL_TYPE];
+export type CallStatus = typeof CALL_STATUS[keyof typeof CALL_STATUS];

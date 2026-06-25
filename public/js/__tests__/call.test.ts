@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  toggleCall, getCallState, toggleMute, handleWsMessage, startTimer, stopTimer, playAudioResponse, startCall, resetState, getWs, getAudioProcessor, getAudioContext, processAudioQueue,
+  toggleCall, getCallState, toggleMute, handleWsMessage, startTimer, stopTimer, playAudioResponse, startCall, resetState, getWs, getAudioProcessor, getAudioContext, processAudioQueue, uploadCallRecording,
 } from '../call.js';
 import { MESSAGE_TYPE } from '../constants/config.js';
 const mockMedia = () => ({ getTracks: () => [{ stop: vi.fn(), enabled: true }], getAudioTracks: () => [{ stop: vi.fn(), enabled: true }] });
@@ -486,5 +486,49 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       shouldRecorderStopThrow = true;
       await (await import('../call.js')).endCall();
     });
+  });
+});
+
+describe('uploadCallRecording (call.js)', () => {
+  beforeEach(() => {
+    resetState();
+  });
+
+  it('does nothing when there is no session id', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await uploadCallRecording(null, new Blob(['x'], { type: 'audio/webm' }));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for an empty blob', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await uploadCallRecording('s1', new Blob([], { type: 'audio/webm' }));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('posts the recording to the call-history endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    await uploadCallRecording('s1', new Blob(['data'], { type: 'audio/webm' }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/call-history/s1/recording',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('handles a non-ok upload response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(uploadCallRecording('s1', new Blob(['data'], { type: 'audio/webm' })))
+      .resolves.toBeUndefined();
+  });
+
+  it('handles a fetch error', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network'));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(uploadCallRecording('s1', new Blob(['data'], { type: 'audio/webm' })))
+      .resolves.toBeUndefined();
   });
 });

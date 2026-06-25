@@ -22,6 +22,8 @@
     "pr": "npm run build && npm run test:coverage && npm run lint && npm run typecheck"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@google/genai": "^1.0.0",
     "@prisma/client": "^6.0.0",
     "bcrypt": "^6.0.0",

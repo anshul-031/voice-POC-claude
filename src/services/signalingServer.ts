@@ -7,10 +7,26 @@ import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
 import prisma from '../lib/prisma.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { LIVE_CALL, LOGGING, ROUTES, TIME, MESSAGE_TYPE, CAMPAIGN_CONTACT_STATUS } from '../types/index.js';
+import {
+  LIVE_CALL,
+  LOGGING,
+  ROUTES,
+  TIME,
+  MESSAGE_TYPE,
+  CAMPAIGN_CONTACT_STATUS,
+  CALL_STATUS,
+  RECORDING,
+  TELEPHONY_DIRECTION,
+} from '../types/index.js';
 import type { SignalingClient } from '../types/index.js';
 import logger from '../utils/logger.js';
 import { verifyToken } from './auth.js';
+import {
+  createCallRecord,
+  finalizeCallRecord,
+  appendTranscriptEntry,
+  resolveCallType,
+} from './callHistoryService.js';
 import {
   SIGNALING_AUDIO_DATA_MESSAGE_SCHEMA,
   SIGNALING_MESSAGE_SCHEMA,
@@ -315,6 +331,7 @@ class SignalingServer {
     try {
       // audioData from Gemini is 24kHz. Vobiz expects 8kHz.
       const resampledData = downsample24To8(audioData);
+      client.recordingChunks?.push(Buffer.from(resampledData, 'base64'));
       socket.send(JSON.stringify({
         event: 'playAudio',
         media: { 
@@ -363,6 +380,10 @@ class SignalingServer {
   ): void {
     if (!client) {
       return;
+    }
+
+    if (client.transcriptEntries) {
+      appendTranscriptEntry(client.transcriptEntries, transcript);
     }
 
     if (transcript.role === 'user' && !client.firstUserTranscriptRelayedAt) {
@@ -434,6 +455,10 @@ class SignalingServer {
       },
       onClose: (): void => {
         logger.info('Gemini session closed, notifying client', { sessionId, correlationId });
+        const client = this.clients.get(socket);
+        if (client) {
+          this._finalizeCall(client, CALL_STATUS.COMPLETED);
+        }
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({
             type: MESSAGE_TYPE.CALL_ENDED,
@@ -453,8 +478,10 @@ class SignalingServer {
     startTime: number,
     agent: StartCallAgent,
     streamId?: string,
+    requesterUserId?: string | null,
   ): void {
     const now = Date.now();
+    const callType = resolveCallType(streamId, requesterUserId);
     this.clients.set(socket, {
       sessionId,
       agentId,
@@ -467,6 +494,10 @@ class SignalingServer {
       lastModelResponseAt: now,
       lastUserAudioAt: now,
       nudgeCount: 0,
+      callType,
+      transcriptEntries: [],
+      recordingChunks: [],
+      callHistoryFinalized: false,
       inactivityTimeoutMs: agent.inactivityTimeoutMs ?? LIVE_CALL.DEFAULT_INACTIVITY_TIMEOUT_MS,
       maxInactivityNudges: agent.maxInactivityNudges ?? LIVE_CALL.DEFAULT_MAX_INACTIVITY_NUDGES,
       maxCallDurationSecs: agent.maxCallDurationSecs ?? LIVE_CALL.DEFAULT_MAX_CALL_DURATION_SECS,
@@ -504,6 +535,53 @@ class SignalingServer {
       sessionId,
       correlationId,
       elapsedMs: Date.now() - greetingSendStart,
+    });
+  }
+
+  /**
+   * Persist a new in-progress call history record for a started call.
+   * Best-effort: failures are swallowed inside the service.
+   */
+  private async _createCallHistoryRecord(
+    socket: WSWebSocket,
+    sessionId: string,
+    agent: StartCallAgent,
+    streamId?: string,
+    requesterUserId?: string | null,
+  ): Promise<void> {
+    const client = this.clients.get(socket);
+    await createCallRecord({
+      sessionId,
+      callType: client?.callType ?? resolveCallType(streamId, requesterUserId),
+      agentId: agent.id,
+      agentName: agent.name,
+      userId: agent.userId,
+      ...(streamId && { direction: TELEPHONY_DIRECTION.OUTBOUND }),
+    });
+  }
+
+  /**
+   * Finalize the call history record (duration, transcript, recording, status).
+   * Idempotent — guarded by a per-client flag so end + disconnect don't double-write.
+   */
+  private _finalizeCall(client: SignalingClient, status: string): void {
+    if (client.callHistoryFinalized) {
+      return;
+    }
+    client.callHistoryFinalized = true;
+
+    const durationSecs = Math.round((Date.now() - client.startTime) / TIME.MS_TO_SEC);
+    const isTelephony = !!client.streamId;
+    const recordingChunks = client.recordingChunks ?? [];
+    void finalizeCallRecord({
+      sessionId: client.sessionId,
+      status,
+      durationSecs,
+      transcript: client.transcriptEntries ?? [],
+      ...(isTelephony && recordingChunks.length > 0 && {
+        recordingChunks,
+        recordingSampleRate: RECORDING.TELEPHONY_SAMPLE_RATE,
+      }),
     });
   }
 
@@ -556,7 +634,10 @@ class SignalingServer {
       });
 
       const callStartedAt = Date.now();
-      this._registerClientSession(socket, sessionId, agentId, correlationId, callStartedAt, agent, streamId);
+      this._registerClientSession(
+        socket, sessionId, agentId, correlationId, callStartedAt, agent, streamId, requesterUserId,
+      );
+      await this._createCallHistoryRecord(socket, sessionId, agent, streamId, requesterUserId);
 
       logger.info('Gemini session created', {
         sessionId,
@@ -668,6 +749,7 @@ class SignalingServer {
         correlationId,
       });
       await geminiLiveService.closeSession(client.sessionId);
+      this._finalizeCall(client, CALL_STATUS.COMPLETED);
       this._stopClientTimers(client);
       this.clients.delete(socket);
       socket.send(JSON.stringify({ 
@@ -803,6 +885,7 @@ class SignalingServer {
     const client = this.clients.get(socket);
     if (!client) return;
 
+    client.recordingChunks?.push(Buffer.from(payload, 'base64'));
     client.audioChunksRelayed++;
     client.lastUserAudioAt = Date.now();
     client.nudgeCount = 0;
@@ -837,6 +920,7 @@ class SignalingServer {
         correlationId: client.correlationId,
       });
       this._stopClientTimers(client);
+      this._finalizeCall(client, CALL_STATUS.COMPLETED);
       geminiLiveService.closeSession(client.sessionId).catch((err: Error) => {
         logger.error('Error closing session on disconnect', { error: err.message });
       });
@@ -987,6 +1071,7 @@ class SignalingServer {
     });
 
     this._stopClientTimers(client);
+    this._finalizeCall(client, CALL_STATUS.COMPLETED);
     await geminiLiveService.closeSession(sessionId);
     this.clients.delete(socket);
 
