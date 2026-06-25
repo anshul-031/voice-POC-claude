@@ -34,6 +34,10 @@ vi.mock('../lib/prisma.js', () => ({
     voiceAgent: {
       findUnique: vi.fn(),
     },
+    campaignContact: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
   },
 }));
 
@@ -398,6 +402,59 @@ describe('SignalingServer branch helpers', () => {
 
     await (signalingServer as any)._handleVobizStart(mockWs, 'stream-no-agent', req, 'cid');
     // Should not crash — just log error and return
+  });
+
+  it('loads campaign contact variables for a campaign call', async () => {
+    const req = {
+      headers: { host: 'example.com' },
+      url: '/ws?agentId=agent-v1&contactId=ct-1',
+    };
+    (prisma.voiceAgent.findUnique as any).mockResolvedValue({
+      id: 'agent-v1',
+      name: 'Vobiz Agent',
+      systemPrompt: 'Hello {{name}}',
+      voiceName: 'Puck',
+      modelName: 'gemini-2.0-flash-exp',
+      publicPreviewEnabled: true,
+      userId: null,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
+    });
+    (prisma.campaignContact.findUnique as any).mockResolvedValue({
+      id: 'ct-1',
+      variables: { name: 'Sam', age: 30 },
+    });
+    (prisma.campaignContact.update as any).mockResolvedValue({});
+    (geminiLiveService.createSession as any).mockResolvedValue(undefined);
+
+    await (signalingServer as any)._handleVobizStart(mockWs, 's1', req, 'cid-campaign');
+
+    expect(prisma.campaignContact.update).toHaveBeenCalledWith({
+      where: { id: 'ct-1' },
+      data: { status: 'completed' },
+    });
+    const [, config] = (geminiLiveService.createSession as any).mock.calls.at(-1);
+    expect(config.systemPrompt).toBe('Hello Sam');
+  });
+
+  it('handles a missing campaign contact gracefully', async () => {
+    (prisma.campaignContact.findUnique as any).mockResolvedValue(null);
+    const variables = await (signalingServer as any)._loadCampaignContactVariables('missing', 'cid');
+    expect(variables).toBeUndefined();
+  });
+
+  it('returns undefined when contact variables are not an object', async () => {
+    (prisma.campaignContact.findUnique as any).mockResolvedValue({ id: 'ct-2', variables: null });
+    (prisma.campaignContact.update as any).mockResolvedValue({});
+    const variables = await (signalingServer as any)._loadCampaignContactVariables('ct-2', 'cid');
+    expect(variables).toBeUndefined();
+  });
+
+  it('swallows errors while loading campaign contact variables', async () => {
+    (prisma.campaignContact.findUnique as any).mockRejectedValue(new Error('DB down'));
+    const variables = await (signalingServer as any)._loadCampaignContactVariables('ct-3', 'cid');
+    expect(variables).toBeUndefined();
   });
 
   it('covers _handleVobizMedia with missing payload', async () => {

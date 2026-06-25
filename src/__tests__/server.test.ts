@@ -102,6 +102,7 @@ describe('Server initialization and Routes', () => {
     vi.stubEnv('GEMINI_API_KEY', 'key');
     vi.stubEnv('DATABASE_URL', 'url');
     vi.stubEnv('PORT', '4000');
+    vi.stubEnv('LANDING_PAGE_URL', 'https://landing.example.com');
     vi.stubEnv('NODE_ENV', 'production');
     // @ts-expect-error import
     await import('../server.ts?test=env-all-yes');

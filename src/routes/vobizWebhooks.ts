@@ -19,8 +19,8 @@ function getFromBody(body: any, key1: string, key2: string, def = 'unknown'): st
 
 /**
  * Build the WebSocket URL for the Vobiz media stream.
- * Includes agentId as a query parameter so the signaling server
- * knows which AI agent to start for this call.
+ * Includes agentId (which AI agent to start) and, for campaign calls, contactId
+ * (so the signaling server can load that contact's per-row prompt variables).
  */
 function buildStreamUrl(req: Request): string {
   const forwardedProto = req.headers['x-forwarded-proto'] as string | undefined;
@@ -28,7 +28,11 @@ function buildStreamUrl(req: Request): string {
   const wsProto = rawProto === 'https' ? 'wss' : 'ws';
   const host = (req.headers['x-forwarded-host'] as string) || req.get('host') || 'localhost:3000';
   const agentId = (req.query.agentId as string) || '';
-  const queryString = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  const contactId = (req.query.contactId as string) || '';
+  const params = new URLSearchParams();
+  if (agentId) params.set('agentId', agentId);
+  if (contactId) params.set('contactId', contactId);
+  const queryString = params.toString() ? `?${params.toString()}` : '';
   return `${wsProto}://${host}${ROUTES.WS_PATH}${queryString}`;
 }
 

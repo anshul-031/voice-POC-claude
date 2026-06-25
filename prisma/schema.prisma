@@ -18,6 +18,7 @@ model User {
   updatedAt           DateTime             @updatedAt
   agents              VoiceAgent[]
   telephonyProviders  TelephonyProvider[]
+  campaigns           Campaign[]
 
   @@map("users")
 }
@@ -40,6 +41,7 @@ model VoiceAgent {
   maxCallDurationSecs  Int      @default(0)
   userId               String?
   user                 User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns            Campaign[]
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -64,8 +66,42 @@ model TelephonyProvider {
   extraConfig   String?  @db.Text
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns     Campaign[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@map("telephony_providers")
+}
+
+model Campaign {
+  id              String             @id @default(cuid())
+  name            String
+  status          String             @default("draft")
+  agentId         String
+  agent           VoiceAgent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  providerId      String?
+  provider        TelephonyProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  variableColumns Json               @default("[]")
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contacts        CampaignContact[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@map("campaigns")
+}
+
+model CampaignContact {
+  id           String   @id @default(cuid())
+  campaignId   String
+  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  phoneNumber  String
+  variables    Json     @default("{}")
+  status       String   @default("pending")
+  callId       String?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("campaign_contacts")
 }

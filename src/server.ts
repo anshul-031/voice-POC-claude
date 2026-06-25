@@ -9,6 +9,7 @@ import agentRoutes from './routes/agents.js';
 import authRoutes from './routes/auth.js';
 import telephonyRoutes from './routes/telephony.js';
 import outboundCallRoutes from './routes/outboundCall.js';
+import campaignRoutes from './routes/campaigns.js';
 import vobizWebhookRoutes from './routes/vobizWebhooks.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
@@ -46,6 +47,7 @@ app.use('/api/auth', authRoutes);
 app.use(ROUTES.API_PREFIX, agentRoutes);
 app.use('/api/telephony', telephonyRoutes);
 app.use('/api/outbound-call', outboundCallRoutes);
+app.use('/api/campaigns', campaignRoutes);
 app.use('/api/webhooks/vobiz', vobizWebhookRoutes);
 
 const sendPublicPage = (res: Response, pageFile: string): void => {

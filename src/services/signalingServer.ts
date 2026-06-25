@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import geminiLiveService from './geminiLive.js';
 import prisma from '../lib/prisma.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { LIVE_CALL, LOGGING, ROUTES, TIME, MESSAGE_TYPE } from '../types/index.js';
+import { LIVE_CALL, LOGGING, ROUTES, TIME, MESSAGE_TYPE, CAMPAIGN_CONTACT_STATUS } from '../types/index.js';
 import type { SignalingClient } from '../types/index.js';
 import logger from '../utils/logger.js';
 import { verifyToken } from './auth.js';
@@ -681,12 +681,53 @@ class SignalingServer {
    * Extract agentId from WebSocket upgrade request URL query params.
    */
   private _extractAgentIdFromUrl(req: IncomingMessage): string | null {
+    return this._extractQueryParam(req, 'agentId');
+  }
+
+  /** Extract a single query parameter from the WS upgrade request URL. */
+  private _extractQueryParam(req: IncomingMessage, key: string): string | null {
     try {
       const baseUrl = `http://${req.headers.host || 'localhost'}`;
       const parsed = new URL(req.url || '', baseUrl);
-      return parsed.searchParams.get('agentId') || null;
+      return parsed.searchParams.get(key) || null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Load a campaign contact's per-row variables (for telephony campaign calls).
+   * Marks the contact as connected. Failures are swallowed so a bad/expired
+   * contactId never blocks the call from starting.
+   */
+  private async _loadCampaignContactVariables(
+    contactId: string,
+    correlationId: string,
+  ): Promise<Record<string, string> | undefined> {
+    try {
+      const contact = await prisma.campaignContact.findUnique({ where: { id: contactId } });
+      if (!contact) {
+        logger.warn('Campaign contact not found for stream', { contactId, correlationId });
+        return undefined;
+      }
+
+      await prisma.campaignContact.update({
+        where: { id: contactId },
+        data: { status: CAMPAIGN_CONTACT_STATUS.COMPLETED },
+      });
+
+      const raw = contact.variables as Record<string, unknown> | null;
+      if (!raw || typeof raw !== 'object') return undefined;
+
+      const variables: Record<string, string> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        variables[key] = typeof value === 'string' ? value : String(value);
+      }
+      return variables;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to load campaign contact variables', { contactId, error: errMsg, correlationId });
+      return undefined;
     }
   }
 
@@ -730,15 +771,21 @@ class SignalingServer {
     correlationId: string,
   ): Promise<void> {
     const agentId = this._extractAgentIdFromUrl(req);
-    logger.info('Vobiz stream started', { streamId, agentId, correlationId });
+    const contactId = this._extractQueryParam(req, 'contactId');
+    logger.info('Vobiz stream started', { streamId, agentId, contactId, correlationId });
 
     if (!agentId) {
       logger.error('No agentId in Vobiz stream URL', { streamId, correlationId });
       return;
     }
 
+    // Campaign calls carry a contactId; load that contact's prompt variables.
+    const variables = contactId
+      ? await this._loadCampaignContactVariables(contactId, correlationId)
+      : undefined;
+
     // Trigger the same start-call flow used by browser clients
-    await this._handleStartCall(socket, { agentId }, null, correlationId, streamId);
+    await this._handleStartCall(socket, { agentId, variables }, null, correlationId, streamId);
   }
 
   /**

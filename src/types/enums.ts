@@ -94,8 +94,30 @@ export const TELEPHONY_DIRECTION = {
   INBOUND: 'inbound',
 } as const;
 
+export const CAMPAIGN_STATUS = {
+  DRAFT: 'draft',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
+
+export const CAMPAIGN_CONTACT_STATUS = {
+  PENDING: 'pending',
+  CALLING: 'calling',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
+
+export const CAMPAIGN_LIMITS = {
+  MAX_CONTACTS: 1000,
+  MAX_FILE_BASE64_LENGTH: 15_000_000,
+  PHONE_COLUMN_PATTERN: /^(phone|phonenumber|mobile|mobilenumber|number|msisdn|contact|contactnumber)$/i,
+} as const;
+
 export type RoutePath = typeof ROUTES[keyof typeof ROUTES];
 export type MessageType = typeof MESSAGE_TYPE[keyof typeof MESSAGE_TYPE];
 export type VoiceName = typeof VOICE_NAME[keyof typeof VOICE_NAME];
 export type TelephonyProviderType = typeof TELEPHONY_PROVIDER[keyof typeof TELEPHONY_PROVIDER];
 export type TelephonyDirectionType = typeof TELEPHONY_DIRECTION[keyof typeof TELEPHONY_DIRECTION];
+export type CampaignStatus = typeof CAMPAIGN_STATUS[keyof typeof CAMPAIGN_STATUS];
+export type CampaignContactStatus = typeof CAMPAIGN_CONTACT_STATUS[keyof typeof CAMPAIGN_CONTACT_STATUS];

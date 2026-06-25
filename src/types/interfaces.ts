@@ -105,3 +105,20 @@ export interface TelephonyProviderConfig {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface ParsedCampaignContact {
+  phoneNumber: string;
+  variables: Record<string, string>;
+}
+
+export interface ParsedCampaignSpreadsheet {
+  phoneColumn: string;
+  variableColumns: string[];
+  contacts: ParsedCampaignContact[];
+}
+
+export interface CampaignTriggerSummary {
+  total: number;
+  initiated: number;
+  failed: number;
+}

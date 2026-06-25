@@ -28,6 +28,14 @@ export const OUTBOUND_CALL_INPUT_SCHEMA = z.object({
   phoneNumber: z.string().trim().min(4).max(30),
 });
 
+export const CAMPAIGN_FORM_SCHEMA = z.object({
+  name: z.string().trim().min(1),
+  agentId: z.string().trim().min(1),
+  providerId: z.string().trim().optional(),
+  fileName: z.string().trim().optional(),
+  fileBase64: z.string().min(1),
+});
+
 export const WS_INBOUND_MESSAGE_SCHEMA = z.union([
   z.object({
     type: z.literal(MESSAGE_TYPE.CALL_STARTED),

@@ -126,6 +126,23 @@ describe('Vobiz Webhook Routes', () => {
       expect(xml).toContain('wss://host.com/ws');
       expect(xml).not.toContain('?agentId');
     });
+
+    it('includes contactId in the stream URL for campaign calls', () => {
+      const res = mockRes();
+      const req = {
+        body: {},
+        query: { agentId: 'agent-abc', contactId: 'ct-1' },
+        headers: {},
+        protocol: 'https',
+        get: vi.fn().mockReturnValue('example.com'),
+      };
+
+      getRouteHandler('/answer', 'post')(req as never, res);
+
+      const xml = (res.send as MockFn).mock.calls[0][0] as string;
+      expect(xml).toContain('agentId=agent-abc');
+      expect(xml).toContain('contactId=ct-1');
+    });
   });
 
   describe('POST /hangup', () => {

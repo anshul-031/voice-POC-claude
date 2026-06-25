@@ -116,6 +116,24 @@ export const OUTBOUND_CALL_BODY_SCHEMA = z.object({
   providerId: z.string().trim().min(1).optional(),
 }).strict();
 
+export const CREATE_CAMPAIGN_BODY_SCHEMA = z.object({
+  name: z.string().trim().min(1).max(120),
+  agentId: z.string().trim().min(1),
+  providerId: z.string().trim().min(1).optional(),
+  fileName: z.string().trim().max(255).optional(),
+  fileBase64: z.string().min(1).max(15_000_000),
+}).strict();
+
+export const UPDATE_CAMPAIGN_BODY_SCHEMA = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  agentId: z.string().trim().min(1).optional(),
+  providerId: z.string().trim().min(1).nullable().optional(),
+}).strict();
+
+export const CAMPAIGN_ID_PARAMS_SCHEMA = z.object({
+  id: z.string().trim().min(1),
+});
+
 export type AgentIdParams = z.infer<typeof AGENT_ID_PARAMS_SCHEMA>;
 export type CreateAgentBody = z.infer<typeof CREATE_AGENT_BODY_SCHEMA>;
 export type UpdateAgentBody = z.infer<typeof UPDATE_AGENT_BODY_SCHEMA>;
@@ -125,3 +143,6 @@ export type CreateTelephonyProviderBody = z.infer<typeof CREATE_TELEPHONY_PROVID
 export type UpdateTelephonyProviderBody = z.infer<typeof UPDATE_TELEPHONY_PROVIDER_SCHEMA>;
 export type TelephonyIdParams = z.infer<typeof TELEPHONY_ID_PARAMS_SCHEMA>;
 export type OutboundCallBody = z.infer<typeof OUTBOUND_CALL_BODY_SCHEMA>;
+export type CreateCampaignBody = z.infer<typeof CREATE_CAMPAIGN_BODY_SCHEMA>;
+export type UpdateCampaignBody = z.infer<typeof UPDATE_CAMPAIGN_BODY_SCHEMA>;
+export type CampaignIdParams = z.infer<typeof CAMPAIGN_ID_PARAMS_SCHEMA>;

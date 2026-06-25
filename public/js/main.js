@@ -23,6 +23,7 @@ import { renderCallPanelTemplate } from './components/callPanel.js';
 import { renderCallVariableInputs, collectCallVariableValues } from './components/callVariables.js';
 import { getFormData, populateForm } from './agentForm.js';
 import { initTelephonyPanel } from './telephony.js';
+import { initCampaignPanel } from './campaigns.js';
 import { initSidebarNavigation, switchSection } from './sidebar.js';
 
 /** @type {any[]} */ let agents = [];
@@ -75,6 +76,7 @@ export function initApp() {
   initWaveform();
   initSidebarNavigation();
   initTelephonyPanel();
+  initCampaignPanel();
   initEventListeners();
 }
 

@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 /**
  * Centralized UI Strings for Internationalization (i18n)
  * This object contains all user-facing literals used in the application.
@@ -120,6 +121,13 @@ export const UI_STRINGS = {
     telephonyLoadFailed: 'Failed to load telephony providers',
     outboundCallInitiated: (/** @type {string} */ phone) => `Outbound call initiated to ${phone}`,
     outboundCallFailed: (/** @type {string} */ reason) => `Outbound call failed: ${reason}`,
+    campaignCreated: 'Campaign created',
+    campaignUpdated: 'Campaign updated',
+    campaignDeleted: 'Campaign deleted',
+    campaignLoadFailed: 'Failed to load campaigns',
+    campaignTriggered: (/** @type {number} */ n) => `Campaign triggered — ${n} call(s) initiated`,
+    campaignFormInvalid: 'Please provide a campaign name, voice agent, and contacts file',
+    campaignSelectAgentFirst: 'Select a voice agent first to download its template',
   },
   sidebar: {
     agents: 'Voice Agents',
@@ -165,6 +173,41 @@ export const UI_STRINGS = {
       edit: 'Edit',
       delete: 'Delete',
     },
+  },
+  campaigns: {
+    title: 'Campaigns',
+    addBtn: 'New Campaign',
+    editTitle: 'Edit Campaign',
+    addTitle: 'New Campaign',
+    emptyTitle: 'No campaigns yet',
+    emptyDescription: 'Create a campaign, upload a contacts spreadsheet, and trigger outbound calls at scale.',
+    form: {
+      nameLabel: 'Campaign Name',
+      namePlaceholder: 'e.g. March Outreach',
+      agentLabel: 'Voice Agent',
+      agentPlaceholder: 'Select a voice agent',
+      providerLabel: 'Telephony Provider',
+      providerNone: 'Auto-select active provider',
+      fileLabel: 'Contacts Spreadsheet (.xlsx / .csv)',
+      fileHint: 'Must include a phone number column. Every other column becomes a prompt variable.',
+      downloadTemplate: 'Download sample template',
+      downloadHint: 'Download a template pre-filled with the columns this agent needs.',
+      saveBtn: 'Create Campaign',
+      updateBtn: 'Save Changes',
+    },
+    card: {
+      contacts: (/** @type {number} */ n) => `${n} contact${n === 1 ? '' : 's'}`,
+      trigger: 'Trigger Calls',
+      edit: 'Edit',
+      delete: 'Delete',
+    },
+    status: {
+      draft: 'Draft',
+      running: 'Running',
+      completed: 'Completed',
+      failed: 'Failed',
+    },
+    confirmTrigger: 'Trigger calls to all pending contacts in this campaign?',
   },
   api: {
     errors: {

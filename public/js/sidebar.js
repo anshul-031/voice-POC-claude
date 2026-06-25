@@ -2,9 +2,12 @@
  * Sidebar navigation module for the dashboard.
  */
 import { loadTelephonyProviders } from './telephony.js';
+import { loadCampaigns } from './campaigns.js';
 
 /** @type {boolean} */
 let telephonyLoaded = false;
+/** @type {boolean} */
+let campaignsLoaded = false;
 
 const VALID_SECTIONS = ['agents', 'telephony', 'call-history', 'campaigns'];
 
@@ -89,6 +92,12 @@ export function switchSection(sectionName, pushState = false) {
     telephonyLoaded = true;
     loadTelephonyProviders();
   }
+
+  // Lazy-load campaigns on first visit
+  if (sectionName === 'campaigns' && !campaignsLoaded) {
+    campaignsLoaded = true;
+    loadCampaigns();
+  }
 }
 
 /**
@@ -98,4 +107,5 @@ export function switchSection(sectionName, pushState = false) {
  */
 export function resetSidebarState() {
   telephonyLoaded = false;
+  campaignsLoaded = false;
 }
