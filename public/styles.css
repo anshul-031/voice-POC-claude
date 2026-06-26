@@ -1800,6 +1800,9 @@ html[data-theme='light'] body::before {
 
   .preview-main {
     padding: 16px;
+    height: auto;
+    min-height: calc(100vh - 64px);
+    overflow-y: auto;
   }
 
   .agent-panel {
@@ -1809,11 +1812,16 @@ html[data-theme='light'] body::before {
 
   .detail-panel {
     order: 1;
-    height: 60vh;
+    height: auto;
     min-height: 400px;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: visible;
+  }
+
+  .call-panel {
+    height: auto;
+    overflow: visible;
   }
 
   .agent-list {
@@ -1830,20 +1838,31 @@ html[data-theme='light'] body::before {
 
   .call-body-split {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    height: auto;
+    overflow: visible;
   }
 
   .call-left {
     border-right: none;
     border-bottom: 1px solid var(--border-color);
     padding: 24px 16px;
+    height: auto;
+    overflow: visible;
   }
 
   .call-right {
-    min-height: 300px;
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  .transcript-body {
+    max-height: 300px;
   }
 
   .debug-log-body {
-    height: 140px;
+    height: 100px;
   }
 
   .telephony-row-2 {
