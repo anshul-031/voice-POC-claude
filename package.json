@@ -13,7 +13,7 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "tsc -p tsconfig.build.json && npx prisma generate",
+    "build": "npx prisma generate && tsc -p tsconfig.build.json",
     "db:migrate": "npx prisma migrate dev",
     "db:deploy": "npx prisma migrate deploy",
     "db:generate": "npx prisma generate",
