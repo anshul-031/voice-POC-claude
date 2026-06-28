@@ -1955,3 +1955,42 @@ html[data-theme='light'] body::before {
   }
 }
 
+
+/* Integrations panel */
+.integration-card {
+  padding: 20px 22px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-glass);
+  max-width: 560px;
+}
+
+.integration-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.integration-card-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.integration-card .form-hint {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.integration-unavailable {
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fcd588;
+  font-size: 0.82rem;
+}

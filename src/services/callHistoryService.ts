@@ -20,6 +20,7 @@ import type {
   Transcript,
 } from '../types/interfaces.js';
 import { uploadRecording } from './r2Storage.js';
+import { triggerCallAnalysis } from './salesAnalyserService.js';
 const WAV_HEADER_BYTES = 44;
 const BITS_PER_SAMPLE = 16;
 const CHANNELS = 1;
@@ -134,6 +135,27 @@ export async function finalizeCallRecord(input: FinalizeCallRecordInput): Promis
       durationSecs: input.durationSecs,
       hasRecording: !!recording,
     });
+
+    // Best-effort: forward the recording to the Sales Analyser app when the
+    // agent has call analysis enabled. Fire-and-forget so it never delays the
+    // ending call; the service itself swallows all errors.
+    if (recording) {
+      const updated = await prisma.callHistory.findUnique({
+        where: { sessionId: input.sessionId },
+        select: {
+          id: true,
+          sessionId: true,
+          agentId: true,
+          userId: true,
+          phoneNumber: true,
+          recordingKey: true,
+          recordingMimeType: true,
+        },
+      });
+      if (updated) {
+        void triggerCallAnalysis(updated);
+      }
+    }
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     logger.error('Failed to finalize call history record', { sessionId: input.sessionId, error: errMsg });

@@ -21,6 +21,7 @@ import {
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { RECORDING } from '../types/index.js';
 import { buildRecordingKey } from '../services/callHistoryService.js';
+import { triggerCallAnalysis } from '../services/salesAnalyserService.js';
 import { uploadRecording, getSignedRecordingUrl, deleteRecording } from '../services/r2Storage.js';
 
 const router = Router();
@@ -144,11 +145,25 @@ async function storeUploadedRecording(
     return { status: 502, body: { error: UI_STRINGS.api.errors.recordingUploadFailed } };
   }
 
-  await prisma.callHistory.update({
+  const updated = await prisma.callHistory.update({
     where: { sessionId },
     data: { recordingKey: storedKey, recordingMimeType: contentType },
   });
   logger.info('Browser call recording stored', { sessionId, bytes: body.length });
+
+  // Best-effort: forward to the Sales Analyser app when the agent has call
+  // analysis enabled and the account has credentials. Public preview calls
+  // (no userId/agentId) are safely ignored inside the service.
+  void triggerCallAnalysis({
+    id: updated.id,
+    sessionId: updated.sessionId,
+    agentId: updated.agentId,
+    userId: updated.userId,
+    phoneNumber: updated.phoneNumber,
+    recordingKey: updated.recordingKey,
+    recordingMimeType: updated.recordingMimeType,
+  });
+
   return { status: 200, body: { message: UI_STRINGS.api.success.recordingUploaded } };
 }
 

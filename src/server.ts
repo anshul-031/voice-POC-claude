@@ -12,6 +12,7 @@ import outboundCallRoutes from './routes/outboundCall.js';
 import campaignRoutes from './routes/campaigns.js';
 import callHistoryRoutes from './routes/callHistory.js';
 import vobizWebhookRoutes from './routes/vobizWebhooks.js';
+import integrationRoutes from './routes/integration.js';
 import signalingServer from './services/signalingServer.js';
 import logger from './utils/logger.js';
 import { renderSsrPage } from './utils/ssr.js';
@@ -51,6 +52,7 @@ app.use('/api/outbound-call', outboundCallRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/call-history', callHistoryRoutes);
 app.use('/api/webhooks/vobiz', vobizWebhookRoutes);
+app.use('/api/integration', integrationRoutes);
 
 const sendPublicPage = (res: Response, pageFile: string): void => {
   try {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CONFIG, RUNTIME_UI_CONFIG, resolveR2Config } from '../constants/config.js';
+import { CONFIG, RUNTIME_UI_CONFIG, resolveR2Config, isSalesAnalyserConfigured, SALES_ANALYSER_URL } from '../constants/config.js';
 import { DEFAULT_PORT } from '../constants/index.js';
 import { ROUTES, PRISMA_ERRORS, AUDIO_CONFIG, TIME, LOGGING, MESSAGE_TYPE, VOICE_NAME } from '../types/index.js';
 import { AVAILABLE_MODELS, getWhitelabeledModelName, getWhitelabeledModels } from '../constants/agents.js';
@@ -39,6 +39,11 @@ describe('Config and Types Constants', () => {
     expect(brandedModels[0].id).toBe(AVAILABLE_MODELS[0].id);
     expect(brandedModels[0].description).toBe(AVAILABLE_MODELS[0].description);
     expect(brandedModels[0].name.startsWith('Branding.site')).toBe(true);
+  });
+
+  it('isSalesAnalyserConfigured reflects whether SALES_ANALYSER_URL is set', () => {
+    expect(isSalesAnalyserConfigured()).toBe(SALES_ANALYSER_URL !== null);
+    expect(typeof isSalesAnalyserConfigured()).toBe('boolean');
   });
 });
 

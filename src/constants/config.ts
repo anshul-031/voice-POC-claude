@@ -78,3 +78,15 @@ export const resolveR2Config = (): R2Config | null => {
 };
 
 export const R2_CONFIG = resolveR2Config();
+
+/**
+ * Sales Analyser integration configuration.
+ *
+ * The base URL of the Sales Analyser application that exposes
+ * POST /api/external/analyze. When unset, call-recording analysis is disabled
+ * regardless of per-agent settings (the integration simply no-ops).
+ */
+export const SALES_ANALYSER_URL = trimmedEnv('SALES_ANALYSER_URL') ?? null;
+
+/** Whether the Sales Analyser integration is configured at the environment level. */
+export const isSalesAnalyserConfigured = (): boolean => SALES_ANALYSER_URL !== null;

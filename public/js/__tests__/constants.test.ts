@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CONFIG } from '../constants/config.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
-import { API_REQUEST_SCHEMA } from '../constants/inputSchemas.js';
+import { API_REQUEST_SCHEMA, AGENT_FORM_SCHEMA } from '../constants/inputSchemas.js';
 
 describe('Frontend Constants', () => {
   it('should have valid CONFIG', () => {
@@ -46,5 +46,39 @@ describe('Frontend Constants', () => {
 
     const invalid = { path: 123, options: 'invalid' };
     expect(API_REQUEST_SCHEMA.safeParse(invalid).success).toBe(false);
+  });
+
+  describe('AGENT_FORM_SCHEMA call-analysis rule', () => {
+    const base = {
+      id: '',
+      name: 'Agent',
+      systemPrompt: 'Prompt',
+      voiceName: 'Puck',
+      modelName: 'gemini-2.5-flash-native-audio-latest',
+      publicPreviewEnabled: false,
+    };
+
+    it('passes when analysis is disabled regardless of template', () => {
+      expect(AGENT_FORM_SCHEMA.safeParse({ ...base, callAnalysisEnabled: false }).success).toBe(true);
+    });
+
+    it('passes when analysis is enabled with a template name', () => {
+      const result = AGENT_FORM_SCHEMA.safeParse({
+        ...base, callAnalysisEnabled: true, analysisTemplateName: 'QA Template',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('fails when analysis is enabled but the template name is blank', () => {
+      const result = AGENT_FORM_SCHEMA.safeParse({
+        ...base, callAnalysisEnabled: true, analysisTemplateName: '   ',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('fails when analysis is enabled but the template name is missing', () => {
+      const result = AGENT_FORM_SCHEMA.safeParse({ ...base, callAnalysisEnabled: true });
+      expect(result.success).toBe(false);
+    });
   });
 });

@@ -4,6 +4,7 @@
 import { loadTelephonyProviders } from './telephony.js';
 import { loadCampaigns } from './campaigns.js';
 import { loadCallHistory } from './callHistory.js';
+import { loadIntegrationStatus } from './integrations.js';
 
 /** @type {boolean} */
 let telephonyLoaded = false;
@@ -11,8 +12,10 @@ let telephonyLoaded = false;
 let campaignsLoaded = false;
 /** @type {boolean} */
 let callHistoryLoaded = false;
+/** @type {boolean} */
+let integrationsLoaded = false;
 
-const VALID_SECTIONS = ['agents', 'telephony', 'call-history', 'campaigns'];
+const VALID_SECTIONS = ['agents', 'telephony', 'call-history', 'campaigns', 'integrations'];
 
 /**
  * Handle initial route based on URL path.
@@ -111,6 +114,10 @@ function lazyLoadSection(sectionName) {
     callHistoryLoaded = true;
     loadCallHistory();
   }
+  if (sectionName === 'integrations' && !integrationsLoaded) {
+    integrationsLoaded = true;
+    loadIntegrationStatus();
+  }
 }
 
 /**
@@ -122,4 +129,5 @@ export function resetSidebarState() {
   telephonyLoaded = false;
   campaignsLoaded = false;
   callHistoryLoaded = false;
+  integrationsLoaded = false;
 }

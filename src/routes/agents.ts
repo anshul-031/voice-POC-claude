@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import type { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import logger from '../utils/logger.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
@@ -25,6 +26,8 @@ type CreateAgentBody = {
   inactivityTimeoutMs?: number;
   maxInactivityNudges?: number;
   maxCallDurationSecs?: number;
+  callAnalysisEnabled?: boolean;
+  analysisTemplateName?: string | null;
 };
 
 type UpdateAgentBody = Partial<CreateAgentBody>;
@@ -42,6 +45,8 @@ type AgentUpdateData = {
   inactivityTimeoutMs?: number;
   maxInactivityNudges?: number;
   maxCallDurationSecs?: number;
+  callAnalysisEnabled?: boolean;
+  analysisTemplateName?: string | null;
 };
 
 function getAgentValidationError(error: { issues: Array<{ path: PropertyKey[] }> }): string {
@@ -153,29 +158,8 @@ router.post('/agents', requireAuth, async (_req: Request, res: Response): Promis
       return res.status(400).json({ error: parsedRequest.error });
     }
 
-    const {
-      name,
-      systemPrompt,
-      voiceName,
-      modelName,
-      publicPreviewEnabled,
-      inactivityTimeoutMs,
-      maxInactivityNudges,
-      maxCallDurationSecs,
-    } = parsedRequest.data;
-
     const agent = await prisma.voiceAgent.create({
-      data: {
-        name,
-        systemPrompt,
-        voiceName: voiceName || AUDIO_CONFIG.DEFAULT_VOICE,
-        modelName: modelName || AUDIO_CONFIG.DEFAULT_MODEL,
-        publicPreviewEnabled: publicPreviewEnabled || false,
-        ...(inactivityTimeoutMs !== undefined && { inactivityTimeoutMs }),
-        ...(maxInactivityNudges !== undefined && { maxInactivityNudges }),
-        ...(maxCallDurationSecs !== undefined && { maxCallDurationSecs }),
-        userId: req.user?.id,
-      },
+      data: buildCreateData(parsedRequest.data, req.user?.id),
     });
     logger.info('Agent created', { id: agent.id, name: agent.name });
     res.status(201).json({
@@ -187,31 +171,48 @@ router.post('/agents', requireAuth, async (_req: Request, res: Response): Promis
   }
 });
 
+/** Optional Sales Analyser fields shared by the create and update payloads. */
+function buildAnalysisFields(
+  body: UpdateAgentBody,
+): Pick<AgentUpdateData, 'callAnalysisEnabled' | 'analysisTemplateName'> {
+  return {
+    ...(body.callAnalysisEnabled !== undefined && { callAnalysisEnabled: body.callAnalysisEnabled }),
+    ...(body.analysisTemplateName !== undefined && { analysisTemplateName: body.analysisTemplateName }),
+  };
+}
+
+/** Build the Prisma create payload from a validated body and owner id. */
+function buildCreateData(data: CreateAgentBody, userId?: string): Prisma.VoiceAgentUncheckedCreateInput {
+  return {
+    name: data.name,
+    systemPrompt: data.systemPrompt,
+    voiceName: data.voiceName || AUDIO_CONFIG.DEFAULT_VOICE,
+    modelName: data.modelName || AUDIO_CONFIG.DEFAULT_MODEL,
+    publicPreviewEnabled: data.publicPreviewEnabled || false,
+    ...(data.inactivityTimeoutMs !== undefined && { inactivityTimeoutMs: data.inactivityTimeoutMs }),
+    ...(data.maxInactivityNudges !== undefined && { maxInactivityNudges: data.maxInactivityNudges }),
+    ...(data.maxCallDurationSecs !== undefined && { maxCallDurationSecs: data.maxCallDurationSecs }),
+    ...buildAnalysisFields(data),
+    userId,
+  };
+}
+
 /**
  * Prepares the data object for Prisma update.
  */
 function prepareUpdateData(
   body: UpdateAgentBody,
 ): AgentUpdateData {
-  const {
-    name,
-    systemPrompt,
-    voiceName,
-    modelName,
-    publicPreviewEnabled,
-    inactivityTimeoutMs,
-    maxInactivityNudges,
-    maxCallDurationSecs,
-  } = body;
   return {
-    ...(name && { name }),
-    ...(systemPrompt && { systemPrompt }),
-    ...(voiceName && { voiceName }),
-    ...(modelName && { modelName }),
-    ...(publicPreviewEnabled !== undefined && { publicPreviewEnabled }),
-    ...(inactivityTimeoutMs !== undefined && { inactivityTimeoutMs }),
-    ...(maxInactivityNudges !== undefined && { maxInactivityNudges }),
-    ...(maxCallDurationSecs !== undefined && { maxCallDurationSecs }),
+    ...(body.name && { name: body.name }),
+    ...(body.systemPrompt && { systemPrompt: body.systemPrompt }),
+    ...(body.voiceName && { voiceName: body.voiceName }),
+    ...(body.modelName && { modelName: body.modelName }),
+    ...(body.publicPreviewEnabled !== undefined && { publicPreviewEnabled: body.publicPreviewEnabled }),
+    ...(body.inactivityTimeoutMs !== undefined && { inactivityTimeoutMs: body.inactivityTimeoutMs }),
+    ...(body.maxInactivityNudges !== undefined && { maxInactivityNudges: body.maxInactivityNudges }),
+    ...(body.maxCallDurationSecs !== undefined && { maxCallDurationSecs: body.maxCallDurationSecs }),
+    ...buildAnalysisFields(body),
   };
 }
 

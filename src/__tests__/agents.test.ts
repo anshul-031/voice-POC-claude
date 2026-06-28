@@ -144,6 +144,16 @@ describe('Agents Routes', () => {
     expect(prisma.voiceAgent.create).toHaveBeenCalled();
     res.status.mockClear();
 
+    // 2.2 Call-analysis fields on create (covers buildAnalysisFields/buildCreateData branches)
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'Puck', callAnalysisEnabled: true, analysisTemplateName: 'QA Template' } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(201);
+    res.status.mockClear();
+
+    // 2.3 Create with analysis disabled sends a null template (covers nullable branch)
+    await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'Puck', callAnalysisEnabled: false, analysisTemplateName: null } } as any, res);
+    expect(res.status).toHaveBeenCalledWith(201);
+    res.status.mockClear();
+
     // 3. Invalid voice
     await getRouteHandler('/agents', 'post')({ body: { name: 'A', systemPrompt: 'S', voiceName: 'INV' } } as any, res);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -241,6 +251,16 @@ describe('Agents Routes', () => {
       params: { id: '1' },
       body: { publicPreviewEnabled: true },
     } as any, res);
+    expect(res.json).toHaveBeenCalled();
+    res.json.mockClear();
+
+    // 4.4 Call-analysis fields on update (covers buildAnalysisFields branches)
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { callAnalysisEnabled: true, analysisTemplateName: 'QA Template' } } as any, res);
+    expect(res.json).toHaveBeenCalled();
+    res.json.mockClear();
+
+    // 4.5 Disable analysis and clear the template via null
+    await getRouteHandler('/agents/:id', 'put')({ params: { id: '1' }, body: { callAnalysisEnabled: false, analysisTemplateName: null } } as any, res);
     expect(res.json).toHaveBeenCalled();
     res.json.mockClear();
 

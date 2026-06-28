@@ -35,6 +35,8 @@ export const CREATE_AGENT_BODY_SCHEMA = z.object({
   inactivityTimeoutMs: z.number().int().min(3000).max(60000).optional(),
   maxInactivityNudges: z.number().int().min(0).max(10).optional(),
   maxCallDurationSecs: z.number().int().min(0).max(3600).optional(),
+  callAnalysisEnabled: z.boolean().optional(),
+  analysisTemplateName: z.string().trim().min(1).max(200).nullable().optional(),
 }).strict();
 
 export const UPDATE_AGENT_BODY_SCHEMA = z.object({
@@ -46,6 +48,8 @@ export const UPDATE_AGENT_BODY_SCHEMA = z.object({
   inactivityTimeoutMs: z.number().int().min(3000).max(60000).optional(),
   maxInactivityNudges: z.number().int().min(0).max(10).optional(),
   maxCallDurationSecs: z.number().int().min(0).max(3600).optional(),
+  callAnalysisEnabled: z.boolean().optional(),
+  analysisTemplateName: z.string().trim().min(1).max(200).nullable().optional(),
 }).strict();
 
 export const SIGNALING_START_CALL_MESSAGE_SCHEMA = z.object({
@@ -71,6 +75,11 @@ export const SIGNALING_MESSAGE_SCHEMA = z.discriminatedUnion('type', [
 
 export const TELEPHONY_PROVIDER_VALUES = ['vobiz', 'twilio', 'plivo'] as const;
 export const TELEPHONY_DIRECTION_VALUES = ['outbound', 'inbound'] as const;
+
+export const SALES_ANALYSER_CREDENTIALS_SCHEMA = z.object({
+  email: z.string().trim().email().max(255),
+  password: z.string().min(1).max(512),
+}).strict();
 
 export const CREATE_TELEPHONY_PROVIDER_SCHEMA = z.object({
   name: z.string().trim().min(1).max(100),
@@ -166,3 +175,4 @@ export type CampaignIdParams = z.infer<typeof CAMPAIGN_ID_PARAMS_SCHEMA>;
 export type CallHistoryIdParams = z.infer<typeof CALL_HISTORY_ID_PARAMS_SCHEMA>;
 export type CallHistorySessionParams = z.infer<typeof CALL_HISTORY_SESSION_PARAMS_SCHEMA>;
 export type R2Config = z.infer<typeof R2_CONFIG_SCHEMA>;
+export type SalesAnalyserCredentials = z.infer<typeof SALES_ANALYSER_CREDENTIALS_SCHEMA>;

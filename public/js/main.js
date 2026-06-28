@@ -25,6 +25,7 @@ import { getFormData, populateForm } from './agentForm.js';
 import { initTelephonyPanel } from './telephony.js';
 import { initCampaignPanel } from './campaigns.js';
 import { initCallHistoryPanel } from './callHistory.js';
+import { initIntegrationsPanel } from './integrations.js';
 import { initSidebarNavigation, switchSection } from './sidebar.js';
 
 /** @type {any[]} */ let agents = [];
@@ -71,14 +72,13 @@ export function initApp() {
   loadAgents();
   checkApiHealth();
   const callPanelContainer = document.getElementById('call-panel');
-  if (callPanelContainer) {
-    callPanelContainer.innerHTML = renderCallPanelTemplate({ hideDetails: false });
-  }
+  if (callPanelContainer) callPanelContainer.innerHTML = renderCallPanelTemplate({ hideDetails: false });
   initWaveform();
   initSidebarNavigation();
   initTelephonyPanel();
   initCampaignPanel();
   initCallHistoryPanel();
+  initIntegrationsPanel();
   initEventListeners();
 }
 
@@ -170,13 +170,13 @@ export function editAgent(id) {
   const agent = agents.find(a => a.id === id);
   if (!agent) return;
   populateForm({
-    id: agent.id, name: agent.name,
-    systemPrompt: agent.systemPrompt,
+    id: agent.id, name: agent.name, systemPrompt: agent.systemPrompt,
     voiceName: agent.voiceName, modelName: agent.modelName,
     publicPreviewEnabled: agent.publicPreviewEnabled,
     inactivityTimeoutMs: agent.inactivityTimeoutMs,
     maxInactivityNudges: agent.maxInactivityNudges,
     maxCallDurationSecs: agent.maxCallDurationSecs,
+    callAnalysisEnabled: agent.callAnalysisEnabled, analysisTemplateName: agent.analysisTemplateName,
     title: UI_STRINGS.form.editTitle || 'Edit Agent',
     submitText: UI_STRINGS.common.save || 'Save Changes',
   });
@@ -197,6 +197,7 @@ export async function handleSubmit(event) {
     id, name, systemPrompt, voiceName, modelName,
     publicPreviewEnabled, inactivityTimeoutMs,
     maxInactivityNudges, maxCallDurationSecs,
+    callAnalysisEnabled, analysisTemplateName,
   } = parseResult.data;
   try {
     await api(id ? `/agents/${id}` : '/agents', {
@@ -204,7 +205,8 @@ export async function handleSubmit(event) {
       body: JSON.stringify({
         name, systemPrompt, voiceName, modelName,
         publicPreviewEnabled, inactivityTimeoutMs,
-        maxInactivityNudges, maxCallDurationSecs,
+        maxInactivityNudges, maxCallDurationSecs, callAnalysisEnabled,
+        analysisTemplateName: callAnalysisEnabled ? analysisTemplateName : null,
       }),
     });
     showToast(id ? UI_STRINGS.toasts.agentUpdated : UI_STRINGS.toasts.agentCreated, 'success');

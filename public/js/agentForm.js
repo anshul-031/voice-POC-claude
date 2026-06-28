@@ -16,6 +16,8 @@ import { selectVoiceInGrid } from './transcript.js';
  * @property {number=} inactivityTimeoutMs
  * @property {number=} maxInactivityNudges
  * @property {number=} maxCallDurationSecs
+ * @property {boolean=} callAnalysisEnabled
+ * @property {string=} analysisTemplateName
  * @property {string=} title
  * @property {string=} submitText
  */
@@ -31,6 +33,8 @@ import { selectVoiceInGrid } from './transcript.js';
  * @property {number} inactivityTimeoutMs
  * @property {number} maxInactivityNudges
  * @property {number} maxCallDurationSecs
+ * @property {boolean} callAnalysisEnabled
+ * @property {string} analysisTemplateName
  */
 
 /** @param {string} elId @param {string} value @returns {void} */
@@ -140,6 +144,9 @@ export function populateForm(fields) {
     'form-max-call-duration',
     String(getNumberOrFallback(fields.maxCallDurationSecs, CONFIG.DEFAULT_MAX_CALL_DURATION_SECS)),
   );
+
+  setCheckboxValue('form-call-analysis-enabled', !!fields.callAnalysisEnabled);
+  setInputValue('form-analysis-template', getStringOrEmpty(fields.analysisTemplateName));
 }
 
 /**
@@ -172,5 +179,7 @@ export function getFormData() {
     inactivityTimeoutMs: inactivityTimeoutSecs * 1000,
     maxInactivityNudges: maxNudges,
     maxCallDurationSecs,
+    callAnalysisEnabled: isChecked('form-call-analysis-enabled'),
+    analysisTemplateName: getInputValue('form-analysis-template').trim(),
   };
 }

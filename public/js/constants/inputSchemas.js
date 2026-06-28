@@ -16,7 +16,12 @@ export const AGENT_FORM_SCHEMA = z.object({
   inactivityTimeoutMs: z.number().int().min(3000).max(60000).optional(),
   maxInactivityNudges: z.number().int().min(0).max(10).optional(),
   maxCallDurationSecs: z.number().int().min(0).max(3600).optional(),
-});
+  callAnalysisEnabled: z.boolean().optional(),
+  analysisTemplateName: z.string().trim().max(200).optional(),
+}).refine(
+  (data) => !data.callAnalysisEnabled || !!data.analysisTemplateName?.trim(),
+  { message: 'Analysis template name is required when call analysis is enabled', path: ['analysisTemplateName'] },
+);
 
 export const START_CALL_INPUT_SCHEMA = z.object({
   agentId: z.string().trim().min(1),
