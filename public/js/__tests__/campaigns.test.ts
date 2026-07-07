@@ -23,6 +23,14 @@ import {
   handleDownloadTemplate,
   initCampaignPanel,
   resetCampaignState,
+  showScheduleForm,
+  hideScheduleForm,
+  handleScheduleSubmit,
+  pauseCampaign,
+  resumeCampaign,
+  retriggerCampaign,
+  viewCampaignStatus,
+  hideStatusView,
 } from '../campaigns.js';
 import { api } from '../api.js';
 import { showToast } from '../utils.js';
@@ -43,6 +51,13 @@ function setupDOM() {
     <select id="campaign-provider"></select>
     <input id="campaign-file" type="file">
     <button id="btn-download-template"></button>
+    <div id="campaign-schedule-container" class="hidden"></div>
+    <form id="campaign-schedule-form"></form>
+    <input id="campaign-scheduled-at" value="">
+    <input id="campaign-window-start" value="">
+    <input id="campaign-window-end" value="">
+    <button id="btn-cancel-schedule"></button>
+    <div id="campaign-status-container" class="hidden"></div>
   `;
 }
 
@@ -476,6 +491,331 @@ describe('campaigns.js', () => {
       document.body.innerHTML = '';
       await handleCampaignSubmit({ preventDefault: vi.fn() } as unknown as Event);
       expect(showToast).toHaveBeenCalled();
+    });
+  });
+
+  describe('status-aware card actions', () => {
+    async function renderWithStatus(status: string, extra: Record<string, unknown> = {}) {
+      vi.mocked(api).mockResolvedValue([
+        { id: 'c1', name: 'Camp', status, agent: { name: 'A' }, _count: { contacts: 2 }, ...extra },
+      ]);
+      await loadCampaigns();
+      return document.getElementById('campaign-list')?.innerHTML || '';
+    }
+
+    it('shows trigger + schedule for draft', async () => {
+      const html = await renderWithStatus('draft');
+      expect(html).toContain('btn-trigger-campaign');
+      expect(html).toContain('btn-schedule-campaign');
+    });
+
+    it('shows re-trigger + schedule for completed/failed', async () => {
+      expect(await renderWithStatus('completed')).toContain('btn-retrigger-campaign');
+      const failedHtml = await renderWithStatus('failed');
+      expect(failedHtml).toContain('btn-retrigger-campaign');
+      expect(failedHtml).toContain('btn-schedule-campaign');
+    });
+
+    it('shows pause for scheduled/running', async () => {
+      expect(await renderWithStatus('scheduled')).toContain('btn-pause-campaign');
+      expect(await renderWithStatus('running')).toContain('btn-pause-campaign');
+    });
+
+    it('shows resume for paused', async () => {
+      expect(await renderWithStatus('paused')).toContain('btn-resume-campaign');
+    });
+
+    it('always shows a view-status button', async () => {
+      expect(await renderWithStatus('running')).toContain('btn-view-campaign');
+    });
+
+    it('renders schedule metadata when present', async () => {
+      const html = await renderWithStatus('scheduled', {
+        scheduledAt: '2026-07-07T10:00:00.000Z',
+        windowStart: '09:00',
+        windowEnd: '18:00',
+      });
+      expect(html).toContain('campaign-schedule-meta');
+      expect(html).toContain('09:00');
+    });
+  });
+
+  describe('showScheduleForm / handleScheduleSubmit', () => {
+    beforeEach(async () => {
+      vi.mocked(api).mockResolvedValue([
+        {
+          id: 'c1', name: 'Camp', status: 'draft', agent: { name: 'A' }, _count: { contacts: 1 },
+          scheduledAt: '2026-07-07T10:00:00.000Z', windowStart: '09:00', windowEnd: '18:00',
+        },
+      ]);
+      await loadCampaigns();
+      vi.clearAllMocks();
+    });
+
+    it('opens the schedule form pre-filled and hides it again', () => {
+      showScheduleForm('c1');
+      expect(document.getElementById('campaign-schedule-container')?.classList.contains('hidden')).toBe(false);
+      expect((document.getElementById('campaign-window-start') as HTMLInputElement).value).toBe('09:00');
+      hideScheduleForm();
+      expect(document.getElementById('campaign-schedule-container')?.classList.contains('hidden')).toBe(true);
+    });
+
+    it('returns early when the container is missing', () => {
+      document.getElementById('campaign-schedule-container')?.remove();
+      showScheduleForm('c1');
+      expect(true).toBe(true);
+    });
+
+    it('submits a valid schedule', async () => {
+      showScheduleForm('c1');
+      (document.getElementById('campaign-scheduled-at') as HTMLInputElement).value = '2026-07-07T10:00';
+      vi.mocked(api).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      await handleScheduleSubmit({ preventDefault: vi.fn() } as unknown as Event);
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/schedule', expect.objectContaining({ method: 'POST' }));
+      expect(showToast).toHaveBeenCalledWith('Campaign scheduled', 'success');
+    });
+
+    it('rejects an invalid schedule (mismatched window)', async () => {
+      showScheduleForm('c1');
+      (document.getElementById('campaign-scheduled-at') as HTMLInputElement).value = '';
+      (document.getElementById('campaign-window-start') as HTMLInputElement).value = '09:00';
+      (document.getElementById('campaign-window-end') as HTMLInputElement).value = '';
+      await handleScheduleSubmit({ preventDefault: vi.fn() } as unknown as Event);
+      expect(showToast).toHaveBeenCalledWith('Provide a valid start time and matching call-window times', 'error');
+      expect(api).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when no campaign is being scheduled', async () => {
+      hideScheduleForm();
+      await handleScheduleSubmit({ preventDefault: vi.fn() } as unknown as Event);
+      expect(api).not.toHaveBeenCalled();
+    });
+
+    it('shows an error when the schedule request fails', async () => {
+      showScheduleForm('c1');
+      vi.mocked(api).mockRejectedValue(new Error('sched fail'));
+      await handleScheduleSubmit({ preventDefault: vi.fn() } as unknown as Event);
+      expect(showToast).toHaveBeenCalledWith('sched fail', 'error');
+    });
+
+    it('is wired via initCampaignPanel', () => {
+      initCampaignPanel();
+      document.getElementById('btn-cancel-schedule')?.click();
+      expect(document.getElementById('campaign-schedule-container')?.classList.contains('hidden')).toBe(true);
+    });
+  });
+
+  describe('pauseCampaign / resumeCampaign', () => {
+    it('pauses a campaign when confirmed', async () => {
+      vi.mocked(api).mockResolvedValue({ id: 'c1', status: 'paused' });
+      await pauseCampaign('c1');
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/pause', { method: 'POST' });
+      expect(showToast).toHaveBeenCalledWith('Campaign paused', 'success');
+    });
+
+    it('aborts pause when not confirmed', async () => {
+      vi.mocked(confirm).mockReturnValue(false);
+      await pauseCampaign('c1');
+      expect(api).not.toHaveBeenCalled();
+    });
+
+    it('shows an error when pause fails', async () => {
+      vi.mocked(api).mockRejectedValue('pause raw');
+      await pauseCampaign('c1');
+      expect(showToast).toHaveBeenCalledWith('pause raw', 'error');
+    });
+
+    it('resumes a campaign', async () => {
+      vi.mocked(api).mockResolvedValue({ id: 'c1', status: 'running' });
+      await resumeCampaign('c1');
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/resume', { method: 'POST' });
+      expect(showToast).toHaveBeenCalledWith('Campaign resumed', 'success');
+    });
+
+    it('shows an error when resume fails', async () => {
+      vi.mocked(api).mockRejectedValue(new Error('resume fail'));
+      await resumeCampaign('c1');
+      expect(showToast).toHaveBeenCalledWith('resume fail', 'error');
+    });
+  });
+
+  describe('retriggerCampaign', () => {
+    it('re-triggers a campaign when confirmed', async () => {
+      vi.mocked(api).mockResolvedValue({ status: 'completed', initiated: 3 });
+      await retriggerCampaign('c1');
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/retrigger', { method: 'POST' });
+      expect(showToast).toHaveBeenCalled();
+    });
+
+    it('aborts when not confirmed', async () => {
+      vi.mocked(confirm).mockReturnValue(false);
+      await retriggerCampaign('c1');
+      expect(api).not.toHaveBeenCalled();
+    });
+
+    it('defaults the initiated count to zero when absent', async () => {
+      vi.mocked(api).mockResolvedValue({ status: 'completed' });
+      await retriggerCampaign('c1');
+      expect(showToast).toHaveBeenCalled();
+    });
+
+    it('shows an error when re-trigger fails', async () => {
+      vi.mocked(api).mockRejectedValue(new Error('retrigger fail'));
+      await retriggerCampaign('c1');
+      expect(showToast).toHaveBeenCalledWith('retrigger fail', 'error');
+    });
+
+    it('is triggered from the completed campaign card', async () => {
+      vi.mocked(api).mockResolvedValue([
+        { id: 'c1', name: 'Camp', status: 'completed', agent: { name: 'A' }, _count: { contacts: 1 } },
+      ]);
+      await loadCampaigns();
+      vi.mocked(api).mockResolvedValue({ status: 'completed', initiated: 1 });
+      (document.querySelector('.btn-retrigger-campaign') as HTMLButtonElement).click();
+      await Promise.resolve();
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/retrigger', { method: 'POST' });
+    });
+  });
+
+  describe('viewCampaignStatus', () => {
+    it('renders per-number status, summary, progress and closes the view', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp',
+        contacts: [
+          { phoneNumber: '+111', status: 'completed', errorMessage: null },
+          { phoneNumber: '+222', status: 'failed', errorMessage: 'busy' },
+          { phoneNumber: '+333', status: 'pending', errorMessage: null },
+          { phoneNumber: '+444', status: 'calling', errorMessage: null },
+        ],
+      });
+      await viewCampaignStatus('c1');
+      const container = document.getElementById('campaign-status-container');
+      expect(container?.classList.contains('hidden')).toBe(false);
+      expect(container?.innerHTML).toContain('+111');
+      expect(container?.innerHTML).toContain('busy');
+      expect(container?.innerHTML).toContain('campaign-status-summary');
+      expect(container?.innerHTML).toContain('campaign-progress-bar');
+      expect(container?.innerHTML).toContain('50%');
+
+      (document.getElementById('btn-close-campaign-status') as HTMLButtonElement).click();
+      expect(container?.classList.contains('hidden')).toBe(true);
+    });
+
+    it('refreshes and re-triggers from the status view', async () => {
+      vi.mocked(api).mockResolvedValue({ id: 'c1', name: 'Camp', contacts: [] });
+      await viewCampaignStatus('c1');
+
+      vi.clearAllMocks();
+      vi.mocked(api).mockResolvedValue({ id: 'c1', name: 'Camp', contacts: [] });
+      (document.getElementById('btn-refresh-campaign-status') as HTMLButtonElement).click();
+      await Promise.resolve();
+      expect(api).toHaveBeenCalledWith('/campaigns/c1');
+
+      vi.mocked(api).mockResolvedValue({ status: 'completed', initiated: 0 });
+      (document.getElementById('btn-retrigger-campaign-status') as HTMLButtonElement).click();
+      await Promise.resolve();
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/retrigger', { method: 'POST' });
+    });
+
+    it('renders an empty state when there are no contacts', async () => {
+      vi.mocked(api).mockResolvedValue({ id: 'c1', name: 'Camp', contacts: [] });
+      await viewCampaignStatus('c1');
+      expect(document.getElementById('campaign-status-container')?.innerHTML).toContain('No contacts');
+    });
+
+    it('returns early when the container is missing', async () => {
+      document.getElementById('campaign-status-container')?.remove();
+      await viewCampaignStatus('c1');
+      expect(api).not.toHaveBeenCalled();
+    });
+
+    it('shows an error when the status request fails', async () => {
+      vi.mocked(api).mockRejectedValue(new Error('status fail'));
+      await viewCampaignStatus('c1');
+      expect(showToast).toHaveBeenCalledWith('status fail', 'error');
+    });
+
+    it('is triggered from the card view button', async () => {
+      vi.mocked(api).mockResolvedValue([
+        { id: 'c1', name: 'Camp', status: 'running', agent: { name: 'A' }, _count: { contacts: 1 } },
+      ]);
+      await loadCampaigns();
+      vi.mocked(api).mockResolvedValue({ id: 'c1', name: 'Camp', contacts: [] });
+      (document.querySelector('.btn-view-campaign') as HTMLButtonElement).click();
+      await Promise.resolve();
+      expect(api).toHaveBeenCalledWith('/campaigns/c1');
+    });
+
+    it('hideStatusView tolerates missing containers', () => {
+      document.body.innerHTML = '';
+      hideStatusView();
+      expect(document.getElementById('campaign-status-container')).toBeNull();
+    });
+  });
+
+  describe('additional branch coverage', () => {
+    it('shows an Error message when pause fails', async () => {
+      vi.mocked(api).mockRejectedValue(new Error('pause err'));
+      await pauseCampaign('c1');
+      expect(showToast).toHaveBeenCalledWith('pause err', 'error');
+    });
+
+    it('shows a string error when resume fails', async () => {
+      vi.mocked(api).mockRejectedValue('resume raw');
+      await resumeCampaign('c1');
+      expect(showToast).toHaveBeenCalledWith('resume raw', 'error');
+    });
+
+    it('shows a string error when status view fails', async () => {
+      vi.mocked(api).mockRejectedValue('status raw');
+      await viewCampaignStatus('c1');
+      expect(showToast).toHaveBeenCalledWith('status raw', 'error');
+    });
+
+    it('renders contacts with missing fields and unknown status', async () => {
+      vi.mocked(api).mockResolvedValue({ contacts: [{ status: 'weird' }] });
+      await viewCampaignStatus('c1');
+      const html = document.getElementById('campaign-status-container')?.innerHTML || '';
+      expect(html).toContain('weird');
+    });
+
+    it('treats non-array contacts as empty', async () => {
+      vi.mocked(api).mockResolvedValue({ id: 'c1', name: 'X', contacts: null });
+      await viewCampaignStatus('c1');
+      expect(document.getElementById('campaign-status-container')?.innerHTML).toContain('No contacts');
+    });
+
+    it('opens the schedule form for a campaign without a schedule', async () => {
+      vi.mocked(api).mockResolvedValue([{ id: 'c2', name: 'C2', status: 'draft', _count: { contacts: 0 } }]);
+      await loadCampaigns();
+      showScheduleForm('c2');
+      expect((document.getElementById('campaign-scheduled-at') as HTMLInputElement).value).toBe('');
+    });
+
+    it('ignores an invalid stored schedule date', async () => {
+      vi.mocked(api).mockResolvedValue([
+        { id: 'c3', name: 'C3', status: 'draft', scheduledAt: 'not-a-date', _count: { contacts: 0 } },
+      ]);
+      await loadCampaigns();
+      showScheduleForm('c3');
+      expect((document.getElementById('campaign-scheduled-at') as HTMLInputElement).value).toBe('');
+    });
+
+    it('renders schedule metadata with only a start time', async () => {
+      vi.mocked(api).mockResolvedValue([
+        { id: 'c1', name: 'C', status: 'scheduled', agent: { name: 'A' }, _count: { contacts: 1 },
+          scheduledAt: '2026-07-07T10:00:00.000Z' },
+      ]);
+      await loadCampaigns();
+      expect(document.getElementById('campaign-list')?.innerHTML).toContain('campaign-schedule-meta');
+    });
+
+    it('omits schedule metadata when none is set', async () => {
+      vi.mocked(api).mockResolvedValue([
+        { id: 'c1', name: 'C', status: 'draft', agent: { name: 'A' }, _count: { contacts: 1 } },
+      ]);
+      await loadCampaigns();
+      expect(document.getElementById('campaign-list')?.innerHTML).not.toContain('campaign-schedule-meta');
     });
   });
 });

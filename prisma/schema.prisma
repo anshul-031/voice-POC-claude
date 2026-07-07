@@ -95,6 +95,9 @@ model Campaign {
   providerId      String?
   provider        TelephonyProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
   variableColumns Json               @default("[]")
+  scheduledAt     DateTime?
+  windowStart     String?
+  windowEnd       String?
   userId          String
   user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   contacts        CampaignContact[]

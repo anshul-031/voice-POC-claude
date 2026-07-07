@@ -41,6 +41,17 @@ export const CAMPAIGN_FORM_SCHEMA = z.object({
   fileBase64: z.string().min(1),
 });
 
+const CAMPAIGN_TIME_OF_DAY = z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
+export const CAMPAIGN_SCHEDULE_SCHEMA = z.object({
+  scheduledAt: z.string().datetime().nullable().optional(),
+  windowStart: CAMPAIGN_TIME_OF_DAY.nullable().optional(),
+  windowEnd: CAMPAIGN_TIME_OF_DAY.nullable().optional(),
+}).refine(
+  (data) => Boolean(data.windowStart) === Boolean(data.windowEnd),
+  { message: 'windowStart and windowEnd must be provided together', path: ['windowEnd'] },
+);
+
 export const WS_INBOUND_MESSAGE_SCHEMA = z.union([
   z.object({
     type: z.literal(MESSAGE_TYPE.CALL_STARTED),

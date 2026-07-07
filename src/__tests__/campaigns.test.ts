@@ -15,7 +15,7 @@ vi.mock('../lib/prisma.js', () => ({
     },
     voiceAgent: { findFirst: vi.fn() },
     telephonyProvider: { findFirst: vi.fn() },
-    campaignContact: { update: vi.fn() },
+    campaignContact: { update: vi.fn(), updateMany: vi.fn() },
   },
 }));
 
@@ -453,6 +453,206 @@ describe('Campaign Routes', () => {
     });
   });
 
+  describe('POST /:id/schedule', () => {
+    const validBody = { scheduledAt: '2026-07-07T10:00:00.000Z', windowStart: '09:00', windowEnd: '18:00' };
+
+    it('schedules a campaign with a start time and call window', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: validBody }), res,
+      );
+      expect(prisma.campaign.update).toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ id: 'c1', status: 'scheduled' });
+    });
+
+    it('clears scheduling fields when values are omitted', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: {} }), res,
+      );
+      const data = (prisma.campaign.update as any).mock.calls[0][0].data;
+      expect(data).toMatchObject({ scheduledAt: null, windowStart: null, windowEnd: null, status: 'scheduled' });
+    });
+
+    it('returns 400 for invalid params', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(baseReq({ params: { id: '' }, body: validBody }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('returns 400 for an invalid body (mismatched window)', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: { windowStart: '09:00' } }), res,
+      );
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('returns 404 when the campaign is missing', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue(null);
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(baseReq({ params: { id: 'c1' }, body: validBody }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('returns 500 on db error', async () => {
+      (prisma.campaign.findFirst as any).mockRejectedValue(new Error('DB'));
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(baseReq({ params: { id: 'c1' }, body: validBody }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('POST /:id/pause', () => {
+    it('pauses a running campaign', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1', status: 'running' });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'paused' });
+      const res = mockRes();
+      await getRouteHandler('/:id/pause', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.json).toHaveBeenCalledWith({ id: 'c1', status: 'paused' });
+    });
+
+    it('returns 400 for invalid params', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/pause', 'post')(baseReq({ params: { id: '' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('returns 404 when the campaign is missing', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue(null);
+      const res = mockRes();
+      await getRouteHandler('/:id/pause', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('returns 400 when the campaign is not pausable', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1', status: 'draft' });
+      const res = mockRes();
+      await getRouteHandler('/:id/pause', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.campaignNotPausable });
+    });
+
+    it('returns 500 on db error', async () => {
+      (prisma.campaign.findFirst as any).mockRejectedValue(new Error('DB'));
+      const res = mockRes();
+      await getRouteHandler('/:id/pause', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('POST /:id/resume', () => {
+    it('resumes a paused campaign into running when no future start time', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1', status: 'paused', scheduledAt: null });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'running' });
+      const res = mockRes();
+      await getRouteHandler('/:id/resume', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      const data = (prisma.campaign.update as any).mock.calls[0][0].data;
+      expect(data.status).toBe('running');
+      expect(res.json).toHaveBeenCalled();
+    });
+
+    it('resumes into scheduled when a future start time remains', async () => {
+      const future = new Date(Date.now() + 3_600_000);
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1', status: 'paused', scheduledAt: future });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      const res = mockRes();
+      await getRouteHandler('/:id/resume', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      const data = (prisma.campaign.update as any).mock.calls[0][0].data;
+      expect(data.status).toBe('scheduled');
+    });
+
+    it('returns 400 for invalid params', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/resume', 'post')(baseReq({ params: { id: '' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('returns 404 when the campaign is missing', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue(null);
+      const res = mockRes();
+      await getRouteHandler('/:id/resume', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('returns 400 when the campaign is not resumable', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1', status: 'running' });
+      const res = mockRes();
+      await getRouteHandler('/:id/resume', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.campaignNotResumable });
+    });
+
+    it('returns 500 on db error', async () => {
+      (prisma.campaign.findFirst as any).mockRejectedValue(new Error('DB'));
+      const res = mockRes();
+      await getRouteHandler('/:id/resume', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('POST /:id/retrigger', () => {
+    const pendingCampaign = {
+      id: 'c1',
+      agentId: 'a1',
+      providerId: 'p1',
+      contacts: [{ id: 'ct1', phoneNumber: '+1' }],
+    };
+
+    it('resets contacts and dials again', async () => {
+      (prisma.campaign.findFirst as any)
+        .mockResolvedValueOnce({ id: 'c1' }) // ownership lookup
+        .mockResolvedValueOnce(pendingCampaign); // loadRunnableCampaign
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 1 });
+      (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'p1' });
+      (extractVobizCredentials as any).mockReturnValue({ authId: 'u', authToken: 't', fromNumber: '+1' });
+      (prisma.campaign.update as any).mockResolvedValue({});
+      (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0 });
+
+      const res = mockRes();
+      await getRouteHandler('/:id/retrigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(prisma.campaignContact.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { campaignId: 'c1' } }),
+      );
+      expect(res.json).toHaveBeenCalledWith({ status: 'completed', total: 1, initiated: 1, failed: 0 });
+    });
+
+    it('returns 400 for invalid params', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/retrigger', 'post')(baseReq({ params: { id: '' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('returns 404 when the campaign is missing', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue(null);
+      const res = mockRes();
+      await getRouteHandler('/:id/retrigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('propagates a not-runnable result after reset', async () => {
+      (prisma.campaign.findFirst as any)
+        .mockResolvedValueOnce({ id: 'c1' })
+        .mockResolvedValueOnce({ ...pendingCampaign, contacts: [] });
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 0 });
+      const res = mockRes();
+      await getRouteHandler('/:id/retrigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.campaignNotRunnable });
+    });
+
+    it('returns 500 on db error', async () => {
+      (prisma.campaign.findFirst as any).mockRejectedValue(new Error('DB'));
+      const res = mockRes();
+      await getRouteHandler('/:id/retrigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
   describe('non-Error rejections cover String(error) branches', () => {
     it('handles raw string rejections across handlers', async () => {
       (prisma.campaign.findMany as any).mockRejectedValue('raw');
@@ -463,6 +663,12 @@ describe('Campaign Routes', () => {
       await getRouteHandler('/:id', 'put')(baseReq({ params: { id: 'c1' }, body: { name: 'X' } }), mockRes());
       await getRouteHandler('/:id', 'delete')(baseReq({ params: { id: 'c1' } }), mockRes());
       await getRouteHandler('/:id/trigger', 'post')(baseReq({ params: { id: 'c1' } }), mockRes());
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: { scheduledAt: '2026-07-07T10:00:00.000Z' } }), mockRes(),
+      );
+      await getRouteHandler('/:id/pause', 'post')(baseReq({ params: { id: 'c1' } }), mockRes());
+      await getRouteHandler('/:id/resume', 'post')(baseReq({ params: { id: 'c1' } }), mockRes());
+      await getRouteHandler('/:id/retrigger', 'post')(baseReq({ params: { id: 'c1' } }), mockRes());
 
       (prisma.voiceAgent.findFirst as any).mockRejectedValue('raw');
       await getRouteHandler('/template/:agentId', 'get')(

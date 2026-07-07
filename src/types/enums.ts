@@ -96,7 +96,9 @@ export const TELEPHONY_DIRECTION = {
 
 export const CAMPAIGN_STATUS = {
   DRAFT: 'draft',
+  SCHEDULED: 'scheduled',
   RUNNING: 'running',
+  PAUSED: 'paused',
   COMPLETED: 'completed',
   FAILED: 'failed',
 } as const;
@@ -130,6 +132,15 @@ export const CAMPAIGN_LIMITS = {
   MAX_CONTACTS: 1000,
   MAX_FILE_BASE64_LENGTH: 15_000_000,
   PHONE_COLUMN_PATTERN: /^(phone|phonenumber|mobile|mobilenumber|number|msisdn|contact|contactnumber)$/i,
+} as const;
+
+export const CAMPAIGN_SCHEDULER = {
+  /** How often the background scheduler wakes up to process due campaigns. */
+  TICK_INTERVAL_MS: 60_000,
+  /** Maximum number of calls dispatched per campaign per tick. */
+  BATCH_SIZE: 25,
+  /** Validates an "HH:MM" 24-hour time-of-day string. */
+  TIME_OF_DAY_PATTERN: /^([01]\d|2[0-3]):[0-5]\d$/,
 } as const;
 
 export type RoutePath = typeof ROUTES[keyof typeof ROUTES];

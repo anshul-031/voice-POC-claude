@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 /**
  * Campaign panel logic for the dashboard.
  *
@@ -9,12 +10,14 @@ import { UI_STRINGS } from './constants/uiStrings.js';
 import { CONFIG } from './constants/config.js';
 import { api } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
-import { CAMPAIGN_FORM_SCHEMA } from './constants/inputSchemas.js';
+import { CAMPAIGN_FORM_SCHEMA, CAMPAIGN_SCHEDULE_SCHEMA } from './constants/inputSchemas.js';
 
 /** @type {any[]} */
 let campaigns = [];
 /** @type {string | null} */
 let editingCampaignId = null;
+/** @type {string | null} */
+let schedulingCampaignId = null;
 let selectedFileBase64 = '';
 let selectedFileName = '';
 
@@ -73,39 +76,100 @@ function renderCampaignList() {
         <div class="telephony-card-meta">
           <span class="telephony-badge provider">${escapeHtml(agentName)}</span>
           <span class="campaign-contact-count">${UI_STRINGS.campaigns.card.contacts(contactCount)}</span>
+          ${renderScheduleMeta(c)}
         </div>
         <div class="telephony-card-actions">
-          <button class="btn btn-primary btn-sm btn-trigger-campaign" data-id="${c.id}">
-            ${UI_STRINGS.campaigns.card.trigger}
-          </button>
-          <button class="btn btn-outline btn-sm btn-edit-campaign" data-id="${c.id}">
-            ${UI_STRINGS.campaigns.card.edit}
-          </button>
-          <button class="btn btn-danger btn-sm btn-delete-campaign" data-id="${c.id}">
-            ${UI_STRINGS.campaigns.card.delete}
-          </button>
+          ${renderCampaignActions(c)}
         </div>
       </div>`;
   }).join('');
 
-  list.querySelectorAll('.btn-trigger-campaign').forEach((btn) => {
+  wireCardButtons(list, '.btn-trigger-campaign', triggerCampaign);
+  wireCardButtons(list, '.btn-retrigger-campaign', retriggerCampaign);
+  wireCardButtons(list, '.btn-schedule-campaign', showScheduleForm);
+  wireCardButtons(list, '.btn-pause-campaign', pauseCampaign);
+  wireCardButtons(list, '.btn-resume-campaign', resumeCampaign);
+  wireCardButtons(list, '.btn-view-campaign', viewCampaignStatus);
+  wireCardButtons(list, '.btn-edit-campaign', showAddCampaignForm);
+  wireCardButtons(list, '.btn-delete-campaign', deleteCampaign);
+}
+
+/**
+ * Attach a click handler to every matching card button.
+ * @param {HTMLElement} list
+ * @param {string} selector
+ * @param {(id: string) => void} handler
+ * @returns {void}
+ */
+function wireCardButtons(list, selector, handler) {
+  list.querySelectorAll(selector).forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = /** @type {HTMLElement} */ (btn).dataset.id;
-      if (id) triggerCampaign(id);
+      if (id) handler(id);
     });
   });
-  list.querySelectorAll('.btn-edit-campaign').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = /** @type {HTMLElement} */ (btn).dataset.id;
-      if (id) showAddCampaignForm(id);
-    });
-  });
-  list.querySelectorAll('.btn-delete-campaign').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = /** @type {HTMLElement} */ (btn).dataset.id;
-      if (id) deleteCampaign(id);
-    });
-  });
+}
+
+/**
+ * Build a single action button.
+ * @param {string} cls
+ * @param {string} id
+ * @param {string} label
+ * @param {string} variant
+ * @returns {string}
+ */
+function actionButton(cls, id, label, variant) {
+  return `<button class="btn ${variant} btn-sm ${cls}" data-id="${id}">${label}</button>`;
+}
+
+/**
+ * Render status-appropriate action buttons for a campaign card.
+ * @param {any} c
+ * @returns {string}
+ */
+function renderCampaignActions(c) {
+  const S = UI_STRINGS.campaigns.card;
+  const status = c.status;
+  const buttons = [];
+
+  if (status === 'draft') {
+    buttons.push(actionButton('btn-trigger-campaign', c.id, S.trigger, 'btn-primary'));
+    buttons.push(actionButton('btn-schedule-campaign', c.id, S.schedule, 'btn-outline'));
+  }
+  if (status === 'completed' || status === 'failed') {
+    buttons.push(actionButton('btn-retrigger-campaign', c.id, S.retrigger, 'btn-primary'));
+    buttons.push(actionButton('btn-schedule-campaign', c.id, S.schedule, 'btn-outline'));
+  }
+  if (status === 'scheduled' || status === 'running') {
+    buttons.push(actionButton('btn-pause-campaign', c.id, S.pause, 'btn-outline'));
+  }
+  if (status === 'paused') {
+    buttons.push(actionButton('btn-resume-campaign', c.id, S.resume, 'btn-primary'));
+  }
+
+  buttons.push(actionButton('btn-view-campaign', c.id, S.viewStatus, 'btn-outline'));
+  if (status === 'draft') {
+    buttons.push(actionButton('btn-edit-campaign', c.id, S.edit, 'btn-outline'));
+  }
+  buttons.push(actionButton('btn-delete-campaign', c.id, S.delete, 'btn-danger'));
+  return buttons.join('\n');
+}
+
+/**
+ * Render a compact summary of a campaign's schedule + call window.
+ * @param {any} c
+ * @returns {string}
+ */
+function renderScheduleMeta(c) {
+  const parts = [];
+  if (c.scheduledAt) {
+    parts.push(new Date(c.scheduledAt).toLocaleString());
+  }
+  if (c.windowStart && c.windowEnd) {
+    parts.push(`${c.windowStart}–${c.windowEnd}`);
+  }
+  if (parts.length === 0) return '';
+  return `<span class="campaign-schedule-meta">${escapeHtml(parts.join(' · '))}</span>`;
 }
 
 /**
@@ -314,6 +378,281 @@ export async function triggerCampaign(id) {
 }
 
 /**
+ * Reset every contact to pending and dial the campaign again.
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function retriggerCampaign(id) {
+  if (!confirm(UI_STRINGS.campaigns.confirmRetrigger)) return;
+  try {
+    const result = await api(`/campaigns/${id}/retrigger`, { method: 'POST' });
+    showToast(UI_STRINGS.toasts.campaignTriggered(result.initiated ?? 0), 'success');
+    await loadCampaigns();
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : String(err), 'error');
+  }
+}
+
+/**
+ * Convert an ISO timestamp to a value usable by a datetime-local input.
+ * @param {string | null | undefined} iso
+ * @returns {string}
+ */
+function toLocalDateTimeInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    + `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Open the scheduling form for a campaign, pre-filled with its current values.
+ * @param {string} id
+ * @returns {void}
+ */
+export function showScheduleForm(id) {
+  const container = document.getElementById('campaign-schedule-container');
+  const listSection = document.getElementById('campaign-list-section');
+  if (!container || !listSection) return;
+
+  schedulingCampaignId = id;
+  const campaign = campaigns.find((c) => c.id === id);
+  setVal('campaign-scheduled-at', toLocalDateTimeInput(campaign?.scheduledAt));
+  setVal('campaign-window-start', campaign?.windowStart || '');
+  setVal('campaign-window-end', campaign?.windowEnd || '');
+
+  listSection.classList.add('hidden');
+  container.classList.remove('hidden');
+}
+
+/**
+ * Hide the scheduling form and return to the list.
+ * @returns {void}
+ */
+export function hideScheduleForm() {
+  const container = document.getElementById('campaign-schedule-container');
+  const listSection = document.getElementById('campaign-list-section');
+  if (container) container.classList.add('hidden');
+  if (listSection) listSection.classList.remove('hidden');
+  schedulingCampaignId = null;
+}
+
+/**
+ * Submit the scheduling form (start time + call window).
+ * @param {Event} event
+ * @returns {Promise<void>}
+ */
+export async function handleScheduleSubmit(event) {
+  event.preventDefault();
+  if (!schedulingCampaignId) return;
+
+  const scheduledAtRaw = getVal('campaign-scheduled-at');
+  const windowStart = getVal('campaign-window-start');
+  const windowEnd = getVal('campaign-window-end');
+
+  const payload = {
+    scheduledAt: scheduledAtRaw ? new Date(scheduledAtRaw).toISOString() : null,
+    windowStart: windowStart || null,
+    windowEnd: windowEnd || null,
+  };
+  const parseResult = CAMPAIGN_SCHEDULE_SCHEMA.safeParse(payload);
+  if (!parseResult.success) {
+    showToast(UI_STRINGS.toasts.campaignScheduleInvalid, 'error');
+    return;
+  }
+
+  try {
+    await api(`/campaigns/${schedulingCampaignId}/schedule`, {
+      method: 'POST',
+      body: JSON.stringify(parseResult.data),
+    });
+    showToast(UI_STRINGS.toasts.campaignScheduled, 'success');
+    hideScheduleForm();
+    await loadCampaigns();
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : String(err), 'error');
+  }
+}
+
+/**
+ * Pause a scheduled/running campaign.
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function pauseCampaign(id) {
+  if (!confirm(UI_STRINGS.campaigns.confirmPause)) return;
+  try {
+    await api(`/campaigns/${id}/pause`, { method: 'POST' });
+    showToast(UI_STRINGS.toasts.campaignPaused, 'success');
+    await loadCampaigns();
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : String(err), 'error');
+  }
+}
+
+/**
+ * Resume a paused campaign.
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function resumeCampaign(id) {
+  try {
+    await api(`/campaigns/${id}/resume`, { method: 'POST' });
+    showToast(UI_STRINGS.toasts.campaignResumed, 'success');
+    await loadCampaigns();
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : String(err), 'error');
+  }
+}
+
+/**
+ * @param {string} status
+ * @returns {string}
+ */
+function contactStatusLabel(status) {
+  const map = /** @type {any} */ (UI_STRINGS.campaigns.contactStatus);
+  return map[status] || status;
+}
+
+/**
+ * Tally contacts by status.
+ * @param {any[]} contacts
+ * @returns {{ total: number, pending: number, calling: number, completed: number, failed: number }}
+ */
+function tallyContactStatus(contacts) {
+  const counts = { total: contacts.length, pending: 0, calling: 0, completed: 0, failed: 0 };
+  for (const ct of contacts) {
+    if (ct.status === 'pending') counts.pending += 1;
+    else if (ct.status === 'calling') counts.calling += 1;
+    else if (ct.status === 'completed') counts.completed += 1;
+    else if (ct.status === 'failed') counts.failed += 1;
+  }
+  return counts;
+}
+
+/**
+ * Build the summary chips + progress bar for the status view.
+ * @param {ReturnType<typeof tallyContactStatus>} counts
+ * @returns {string}
+ */
+function renderStatusSummary(counts) {
+  const CS = UI_STRINGS.campaigns.contactStatus;
+  const done = counts.completed + counts.failed;
+  const pct = counts.total > 0 ? Math.round((done / counts.total) * 100) : 0;
+  const chip = (/** @type {string} */ key, /** @type {number} */ n, /** @type {string} */ label) =>
+    `<div class="campaign-stat campaign-stat-${key}"><span class="campaign-stat-num">${n}</span>`
+    + `<span class="campaign-stat-label">${label}</span></div>`;
+
+  return `
+    <div class="campaign-status-summary">
+      ${chip('total', counts.total, CS.total)}
+      ${chip('pending', counts.pending, CS.pending)}
+      ${chip('calling', counts.calling, CS.calling)}
+      ${chip('completed', counts.completed, CS.completed)}
+      ${chip('failed', counts.failed, CS.failed)}
+    </div>
+    <div class="campaign-progress">
+      <div class="campaign-progress-track">
+        <div class="campaign-progress-bar" style="width:${pct}%"></div>
+      </div>
+      <span class="campaign-progress-label">${CS.progress(done, counts.total)} · ${pct}%</span>
+    </div>`;
+}
+
+/**
+ * Build a single contact row.
+ * @param {any} ct
+ * @returns {string}
+ */
+function renderContactRow(ct) {
+  return `
+        <tr>
+          <td class="campaign-status-phone">${escapeHtml(ct.phoneNumber || '')}</td>
+          <td><span class="telephony-badge ${ct.status}">${contactStatusLabel(ct.status)}</span></td>
+          <td class="campaign-status-detail">${escapeHtml(ct.errorMessage || '—')}</td>
+        </tr>`;
+}
+
+/**
+ * Render the per-number status view for a campaign.
+ * @param {HTMLElement} container
+ * @param {any} campaign
+ * @returns {void}
+ */
+function renderContactStatus(container, campaign) {
+  const CS = UI_STRINGS.campaigns.contactStatus;
+  const contacts = Array.isArray(campaign.contacts) ? campaign.contacts : [];
+  const counts = tallyContactStatus(contacts);
+
+  const rows = contacts.length === 0
+    ? `<tr><td colspan="3" class="campaign-status-empty">${CS.empty}</td></tr>`
+    : contacts.map(renderContactRow).join('');
+
+  container.innerHTML = `
+    <div class="panel-header">
+      <h2>${escapeHtml(campaign.name || '')} — ${CS.title}</h2>
+      <div class="campaign-status-actions">
+        <button type="button" class="btn btn-outline btn-sm" id="btn-refresh-campaign-status">${CS.refresh}</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-retrigger-campaign-status">${CS.retrigger}</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-close-campaign-status">${CS.close}</button>
+      </div>
+    </div>
+    ${renderStatusSummary(counts)}
+    <div class="campaign-status-table-wrap">
+      <table class="campaign-status-table">
+        <thead>
+          <tr>
+            <th>${CS.phoneHeader}</th>
+            <th>${CS.statusHeader}</th>
+            <th>${CS.detailHeader}</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  container.querySelector('#btn-close-campaign-status')
+    ?.addEventListener('click', hideStatusView);
+  container.querySelector('#btn-refresh-campaign-status')
+    ?.addEventListener('click', () => { void viewCampaignStatus(campaign.id); });
+  container.querySelector('#btn-retrigger-campaign-status')
+    ?.addEventListener('click', () => { void retriggerCampaign(campaign.id); });
+}
+
+/**
+ * Fetch a campaign's contacts and display their per-number status.
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function viewCampaignStatus(id) {
+  const container = document.getElementById('campaign-status-container');
+  const listSection = document.getElementById('campaign-list-section');
+  if (!container || !listSection) return;
+
+  try {
+    const campaign = await api(`/campaigns/${id}`);
+    renderContactStatus(container, campaign);
+    listSection.classList.add('hidden');
+    container.classList.remove('hidden');
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : String(err), 'error');
+  }
+}
+
+/**
+ * Hide the per-number status view and return to the list.
+ * @returns {void}
+ */
+export function hideStatusView() {
+  const container = document.getElementById('campaign-status-container');
+  const listSection = document.getElementById('campaign-list-section');
+  if (container) container.classList.add('hidden');
+  if (listSection) listSection.classList.remove('hidden');
+}
+
+/**
  * @param {string} id
  * @returns {Promise<void>}
  */
@@ -386,6 +725,10 @@ export function initCampaignPanel() {
     ?.addEventListener('change', handleFileChange);
   document.getElementById('btn-download-template')
     ?.addEventListener('click', handleDownloadTemplate);
+  document.getElementById('campaign-schedule-form')
+    ?.addEventListener('submit', handleScheduleSubmit);
+  document.getElementById('btn-cancel-schedule')
+    ?.addEventListener('click', hideScheduleForm);
 }
 
 /**
@@ -396,6 +739,7 @@ export function initCampaignPanel() {
 export function resetCampaignState() {
   campaigns = [];
   editingCampaignId = null;
+  schedulingCampaignId = null;
   selectedFileBase64 = '';
   selectedFileName = '';
 }

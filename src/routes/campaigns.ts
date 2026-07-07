@@ -6,6 +6,7 @@ import { UI_STRINGS } from '../constants/uiStrings.js';
 import {
   CREATE_CAMPAIGN_BODY_SCHEMA,
   UPDATE_CAMPAIGN_BODY_SCHEMA,
+  SCHEDULE_CAMPAIGN_BODY_SCHEMA,
   CAMPAIGN_ID_PARAMS_SCHEMA,
   REQUEST_HEADERS_SCHEMA,
   type CreateCampaignBody,
@@ -401,9 +402,76 @@ async function loadRunnableCampaign(
   };
 }
 
+/** Loads a runnable campaign, dials its pending contacts, and records the outcome. */
+async function triggerCampaignRun(
+  req: AuthenticatedRequest,
+  id: string,
+  userId: string,
+): Promise<HandlerResult> {
+  const loaded = await loadRunnableCampaign(id, userId);
+  if ('error' in loaded) {
+    return { status: loaded.status, body: { error: loaded.error } };
+  }
+
+  const provider = await findActiveProvider(userId, loaded.campaign.providerId);
+  if (!provider) {
+    return { status: 404, body: { error: UI_STRINGS.api.errors.noActiveProvider } };
+  }
+
+  const creds = extractVobizCredentials(provider);
+  if (!creds) {
+    return { status: 400, body: { error: UI_STRINGS.api.errors.missingProviderCreds } };
+  }
+
+  await prisma.campaign.update({
+    where: { id: loaded.campaign.id },
+    data: { status: CAMPAIGN_STATUS.RUNNING },
+  });
+
+  const summary = await runCampaign({
+    campaignId: loaded.campaign.id,
+    agentId: loaded.campaign.agentId,
+    contacts: loaded.contacts,
+    creds,
+    answerUrlBuilder: (agentId, contactId) => buildCampaignAnswerUrl(req, agentId, contactId),
+  });
+
+  const finalStatus = summary.initiated > 0 ? CAMPAIGN_STATUS.COMPLETED : CAMPAIGN_STATUS.FAILED;
+  await prisma.campaign.update({
+    where: { id: loaded.campaign.id },
+    data: { status: finalStatus },
+  });
+
+  logger.info('Campaign triggered', { id: loaded.campaign.id, ...summary });
+  return { status: 200, body: { status: finalStatus, ...summary } };
+}
+
 // POST /api/campaigns/:id/trigger — place calls to all pending contacts
 router.post(
   '/:id/trigger',
+  requireAuth,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async (_req: Request, res: Response): Promise<any> => {
+    const req = _req as AuthenticatedRequest;
+    try {
+      const paramsParse = CAMPAIGN_ID_PARAMS_SCHEMA.safeParse(req.params);
+      if (!paramsParse.success) {
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+      }
+
+      const result = await triggerCampaignRun(req, paramsParse.data.id, req.user?.id as string);
+      return res.status(result.status).json(result.body);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('Error triggering campaign', { id: req.params.id, error: errMsg });
+      return res.status(500).json({ error: UI_STRINGS.api.errors.triggerCampaign });
+    }
+  },
+);
+
+// POST /api/campaigns/:id/retrigger — reset all contacts to pending and dial again
+router.post(
+  '/:id/retrigger',
   requireAuth,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async (_req: Request, res: Response): Promise<any> => {
@@ -415,48 +483,166 @@ router.post(
         return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
       }
 
-      const loaded = await loadRunnableCampaign(paramsParse.data.id, userId);
-      if ('error' in loaded) {
-        return res.status(loaded.status).json({ error: loaded.error });
+      const existing = await prisma.campaign.findFirst({
+        where: { id: paramsParse.data.id, userId },
+      });
+      if (!existing) {
+        return res.status(404).json({ error: UI_STRINGS.api.errors.campaignNotFound });
       }
 
-      const provider = await findActiveProvider(userId, loaded.campaign.providerId);
-      if (!provider) {
-        return res.status(404).json({ error: UI_STRINGS.api.errors.noActiveProvider });
-      }
-
-      const creds = extractVobizCredentials(provider);
-      if (!creds) {
-        return res.status(400).json({ error: UI_STRINGS.api.errors.missingProviderCreds });
-      }
-
-      await prisma.campaign.update({
-        where: { id: loaded.campaign.id },
-        data: { status: CAMPAIGN_STATUS.RUNNING },
+      await prisma.campaignContact.updateMany({
+        where: { campaignId: paramsParse.data.id },
+        data: { status: CAMPAIGN_CONTACT_STATUS.PENDING, callId: null, errorMessage: null },
       });
 
-      const summary = await runCampaign({
-        campaignId: loaded.campaign.id,
-        agentId: loaded.campaign.agentId,
-        contacts: loaded.contacts,
-        creds,
-        answerUrlBuilder: (agentId, contactId) => buildCampaignAnswerUrl(req, agentId, contactId),
-      });
-
-      const finalStatus = summary.initiated > 0
-        ? CAMPAIGN_STATUS.COMPLETED
-        : CAMPAIGN_STATUS.FAILED;
-      await prisma.campaign.update({
-        where: { id: loaded.campaign.id },
-        data: { status: finalStatus },
-      });
-
-      logger.info('Campaign triggered', { id: loaded.campaign.id, ...summary });
-      res.json({ status: finalStatus, ...summary });
+      logger.info('Campaign contacts reset for re-trigger', { id: paramsParse.data.id });
+      const result = await triggerCampaignRun(req, paramsParse.data.id, userId);
+      return res.status(result.status).json(result.body);
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      logger.error('Error triggering campaign', { id: req.params.id, error: errMsg });
-      res.status(500).json({ error: UI_STRINGS.api.errors.triggerCampaign });
+      logger.error('Error re-triggering campaign', { id: req.params.id, error: errMsg });
+      return res.status(500).json({ error: UI_STRINGS.api.errors.triggerCampaign });
+    }
+  },
+);
+
+/** Validates the schedule body and persists the start time + call window. */
+async function scheduleCampaignDb(
+  id: string,
+  userId: string,
+  body: unknown,
+): Promise<HandlerResult> {
+  const bodyParse = SCHEDULE_CAMPAIGN_BODY_SCHEMA.safeParse(body);
+  if (!bodyParse.success) {
+    return { status: 400, body: { error: UI_STRINGS.api.errors.invalidInput } };
+  }
+
+  const existing = await prisma.campaign.findFirst({ where: { id, userId } });
+  if (!existing) {
+    return { status: 404, body: { error: UI_STRINGS.api.errors.campaignNotFound } };
+  }
+
+  const { scheduledAt, windowStart, windowEnd } = bodyParse.data;
+  const campaign = await prisma.campaign.update({
+    where: { id },
+    data: {
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      windowStart: windowStart ?? null,
+      windowEnd: windowEnd ?? null,
+      status: CAMPAIGN_STATUS.SCHEDULED,
+    },
+  });
+
+  logger.info('Campaign scheduled', { id: campaign.id, scheduledAt: scheduledAt ?? null });
+  return { status: 200, body: campaign };
+}
+
+// POST /api/campaigns/:id/schedule — set start time + call window and queue it
+router.post(
+  '/:id/schedule',
+  requireAuth,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async (_req: Request, res: Response): Promise<any> => {
+    const req = _req as AuthenticatedRequest;
+    try {
+      const paramsParse = CAMPAIGN_ID_PARAMS_SCHEMA.safeParse(req.params);
+      if (!paramsParse.success || !hasValidJsonHeaders(req)) {
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+      }
+
+      const result = await scheduleCampaignDb(paramsParse.data.id, req.user?.id as string, req.body);
+      return res.status(result.status).json(result.body);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('Error scheduling campaign', { id: req.params.id, error: errMsg });
+      return res.status(500).json({ error: UI_STRINGS.api.errors.scheduleCampaign });
+    }
+  },
+);
+
+// POST /api/campaigns/:id/pause — halt a scheduled/running campaign
+router.post(
+  '/:id/pause',
+  requireAuth,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async (_req: Request, res: Response): Promise<any> => {
+    const req = _req as AuthenticatedRequest;
+    const userId = req.user?.id as string;
+    try {
+      const paramsParse = CAMPAIGN_ID_PARAMS_SCHEMA.safeParse(req.params);
+      if (!paramsParse.success) {
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+      }
+
+      const existing = await prisma.campaign.findFirst({
+        where: { id: paramsParse.data.id, userId },
+      });
+      if (!existing) {
+        return res.status(404).json({ error: UI_STRINGS.api.errors.campaignNotFound });
+      }
+
+      const pausable: string[] = [CAMPAIGN_STATUS.SCHEDULED, CAMPAIGN_STATUS.RUNNING];
+      if (!pausable.includes(existing.status)) {
+        return res.status(400).json({ error: UI_STRINGS.api.errors.campaignNotPausable });
+      }
+
+      const campaign = await prisma.campaign.update({
+        where: { id: paramsParse.data.id },
+        data: { status: CAMPAIGN_STATUS.PAUSED },
+      });
+
+      logger.info('Campaign paused', { id: campaign.id });
+      return res.json(campaign);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('Error pausing campaign', { id: req.params.id, error: errMsg });
+      return res.status(500).json({ error: UI_STRINGS.api.errors.pauseCampaign });
+    }
+  },
+);
+
+/** Resumes into SCHEDULED when a future start time remains, otherwise RUNNING. */
+function resumeStatusFor(scheduledAt: Date | null, now: Date): string {
+  if (scheduledAt && scheduledAt > now) return CAMPAIGN_STATUS.SCHEDULED;
+  return CAMPAIGN_STATUS.RUNNING;
+}
+
+// POST /api/campaigns/:id/resume — continue a paused campaign
+router.post(
+  '/:id/resume',
+  requireAuth,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async (_req: Request, res: Response): Promise<any> => {
+    const req = _req as AuthenticatedRequest;
+    const userId = req.user?.id as string;
+    try {
+      const paramsParse = CAMPAIGN_ID_PARAMS_SCHEMA.safeParse(req.params);
+      if (!paramsParse.success) {
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+      }
+
+      const existing = await prisma.campaign.findFirst({
+        where: { id: paramsParse.data.id, userId },
+      });
+      if (!existing) {
+        return res.status(404).json({ error: UI_STRINGS.api.errors.campaignNotFound });
+      }
+
+      if (existing.status !== CAMPAIGN_STATUS.PAUSED) {
+        return res.status(400).json({ error: UI_STRINGS.api.errors.campaignNotResumable });
+      }
+
+      const campaign = await prisma.campaign.update({
+        where: { id: paramsParse.data.id },
+        data: { status: resumeStatusFor(existing.scheduledAt, new Date()) },
+      });
+
+      logger.info('Campaign resumed', { id: campaign.id, status: campaign.status });
+      return res.json(campaign);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('Error resuming campaign', { id: req.params.id, error: errMsg });
+      return res.status(500).json({ error: UI_STRINGS.api.errors.resumeCampaign });
     }
   },
 );

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AVAILABLE_MODELS, AVAILABLE_VOICES } from './agents.js';
 import { SUPPORTED_THEMES } from './index.js';
-import { MESSAGE_TYPE } from '../types/index.js';
+import { MESSAGE_TYPE, CAMPAIGN_SCHEDULER } from '../types/index.js';
 
 const VOICE_IDS = AVAILABLE_VOICES.map((voice) => voice.id);
 const MODEL_IDS = AVAILABLE_MODELS.map((model) => model.id);
@@ -139,6 +139,23 @@ export const UPDATE_CAMPAIGN_BODY_SCHEMA = z.object({
   providerId: z.string().trim().min(1).nullable().optional(),
 }).strict();
 
+const CAMPAIGN_TIME_OF_DAY_SCHEMA = z
+  .string()
+  .trim()
+  .regex(CAMPAIGN_SCHEDULER.TIME_OF_DAY_PATTERN);
+
+export const SCHEDULE_CAMPAIGN_BODY_SCHEMA = z
+  .object({
+    scheduledAt: z.string().datetime().nullable().optional(),
+    windowStart: CAMPAIGN_TIME_OF_DAY_SCHEMA.nullable().optional(),
+    windowEnd: CAMPAIGN_TIME_OF_DAY_SCHEMA.nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (data) => Boolean(data.windowStart) === Boolean(data.windowEnd),
+    { message: 'windowStart and windowEnd must be provided together', path: ['windowEnd'] },
+  );
+
 export const CAMPAIGN_ID_PARAMS_SCHEMA = z.object({
   id: z.string().trim().min(1),
 });
@@ -171,6 +188,7 @@ export type TelephonyIdParams = z.infer<typeof TELEPHONY_ID_PARAMS_SCHEMA>;
 export type OutboundCallBody = z.infer<typeof OUTBOUND_CALL_BODY_SCHEMA>;
 export type CreateCampaignBody = z.infer<typeof CREATE_CAMPAIGN_BODY_SCHEMA>;
 export type UpdateCampaignBody = z.infer<typeof UPDATE_CAMPAIGN_BODY_SCHEMA>;
+export type ScheduleCampaignBody = z.infer<typeof SCHEDULE_CAMPAIGN_BODY_SCHEMA>;
 export type CampaignIdParams = z.infer<typeof CAMPAIGN_ID_PARAMS_SCHEMA>;
 export type CallHistoryIdParams = z.infer<typeof CALL_HISTORY_ID_PARAMS_SCHEMA>;
 export type CallHistorySessionParams = z.infer<typeof CALL_HISTORY_SESSION_PARAMS_SCHEMA>;

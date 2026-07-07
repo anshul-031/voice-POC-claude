@@ -14,6 +14,7 @@ import callHistoryRoutes from './routes/callHistory.js';
 import vobizWebhookRoutes from './routes/vobizWebhooks.js';
 import integrationRoutes from './routes/integration.js';
 import signalingServer from './services/signalingServer.js';
+import { startCampaignScheduler } from './services/campaignScheduler.js';
 import logger from './utils/logger.js';
 import { renderSsrPage } from './utils/ssr.js';
 import { RUNTIME_UI_CONFIG } from './constants/config.js';
@@ -159,6 +160,9 @@ app.get('*', (req: Request, res: Response) => {
 
 // Attach WebSocket signaling server
 signalingServer.attach(server);
+
+// Start the background campaign scheduler (scheduled + windowed campaigns)
+startCampaignScheduler();
 
 // Start server
 server.listen(PORT, () => {
