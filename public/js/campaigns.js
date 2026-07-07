@@ -422,9 +422,84 @@ export function showScheduleForm(id) {
   setVal('campaign-scheduled-at', toLocalDateTimeInput(campaign?.scheduledAt));
   setVal('campaign-window-start', campaign?.windowStart || '');
   setVal('campaign-window-end', campaign?.windowEnd || '');
+  updateScheduleSummary();
 
   listSection.classList.add('hidden');
   container.classList.remove('hidden');
+}
+
+/**
+ * Compute the datetime-local value for a quick-start preset.
+ * @param {string} key
+ * @param {Date} [now]
+ * @returns {string}
+ */
+export function computeStartPreset(key, now = new Date()) {
+  const d = new Date(now.getTime());
+  if (key === 'in-1h' || key === '1h') {
+    d.setHours(d.getHours() + 1);
+  } else if (key === 'evening') {
+    d.setHours(18, 0, 0, 0);
+  } else if (key === 'tomorrow') {
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+  } else {
+    // "now" / unknown → start as soon as queued (blank).
+    return '';
+  }
+  return toLocalDateTimeInput(d.toISOString());
+}
+
+/**
+ * Compute the from/to values for a quick call-window preset.
+ * @param {string} key
+ * @returns {{ start: string, end: string }}
+ */
+export function computeWindowPreset(key) {
+  if (key === 'business') return { start: '09:00', end: '18:00' };
+  if (key === 'morning') return { start: '09:00', end: '12:00' };
+  if (key === 'afternoon') return { start: '12:00', end: '17:00' };
+  return { start: '', end: '' };
+}
+
+/**
+ * Apply a quick-start preset to the start input.
+ * @param {string} key
+ * @returns {void}
+ */
+function applyStartPreset(key) {
+  setVal('campaign-scheduled-at', computeStartPreset(key));
+  updateScheduleSummary();
+}
+
+/**
+ * Apply a quick call-window preset to the from/to inputs.
+ * @param {string} key
+ * @returns {void}
+ */
+function applyWindowPreset(key) {
+  const { start, end } = computeWindowPreset(key);
+  setVal('campaign-window-start', start);
+  setVal('campaign-window-end', end);
+  updateScheduleSummary();
+}
+
+/**
+ * Refresh the human-readable summary of the current schedule selection.
+ * @returns {void}
+ */
+export function updateScheduleSummary() {
+  const el = document.getElementById('campaign-schedule-summary');
+  if (!el) return;
+
+  const SS = UI_STRINGS.campaigns.scheduleSummary;
+  const startRaw = getVal('campaign-scheduled-at');
+  const from = getVal('campaign-window-start');
+  const to = getVal('campaign-window-end');
+
+  const startText = startRaw ? SS.startsAt(new Date(startRaw).toLocaleString()) : SS.startsNow;
+  const windowText = from && to ? SS.window(from, to) : SS.anytime;
+  el.textContent = `${startText} · ${windowText}`;
 }
 
 /**
@@ -729,6 +804,22 @@ export function initCampaignPanel() {
     ?.addEventListener('submit', handleScheduleSubmit);
   document.getElementById('btn-cancel-schedule')
     ?.addEventListener('click', hideScheduleForm);
+
+  document.querySelectorAll('[data-start-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = /** @type {HTMLElement} */ (btn).dataset.startPreset;
+      if (key) applyStartPreset(key);
+    });
+  });
+  document.querySelectorAll('[data-window-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = /** @type {HTMLElement} */ (btn).dataset.windowPreset;
+      if (key) applyWindowPreset(key);
+    });
+  });
+  ['campaign-scheduled-at', 'campaign-window-start', 'campaign-window-end'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', updateScheduleSummary);
+  });
 }
 
 /**

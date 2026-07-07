@@ -31,6 +31,9 @@ import {
   retriggerCampaign,
   viewCampaignStatus,
   hideStatusView,
+  computeStartPreset,
+  computeWindowPreset,
+  updateScheduleSummary,
 } from '../campaigns.js';
 import { api } from '../api.js';
 import { showToast } from '../utils.js';
@@ -57,6 +60,13 @@ function setupDOM() {
     <input id="campaign-window-start" value="">
     <input id="campaign-window-end" value="">
     <button id="btn-cancel-schedule"></button>
+    <div id="campaign-schedule-summary"></div>
+    <button data-start-preset="1h"></button>
+    <button data-start-preset="now"></button>
+    <button data-start-preset=""></button>
+    <button data-window-preset="business"></button>
+    <button data-window-preset="anytime"></button>
+    <button data-window-preset=""></button>
     <div id="campaign-status-container" class="hidden"></div>
   `;
 }
@@ -816,6 +826,74 @@ describe('campaigns.js', () => {
       ]);
       await loadCampaigns();
       expect(document.getElementById('campaign-list')?.innerHTML).not.toContain('campaign-schedule-meta');
+    });
+  });
+
+  describe('schedule presets and summary', () => {
+    const now = new Date('2026-07-07T10:00:00');
+
+    it('computes quick-start presets', () => {
+      expect(computeStartPreset('1h', now)).toBe('2026-07-07T11:00');
+      expect(computeStartPreset('evening', now)).toBe('2026-07-07T18:00');
+      expect(computeStartPreset('tomorrow', now)).toBe('2026-07-08T09:00');
+      expect(computeStartPreset('now', now)).toBe('');
+      expect(computeStartPreset('bogus', now)).toBe('');
+    });
+
+    it('computes quick call-window presets', () => {
+      expect(computeWindowPreset('business')).toEqual({ start: '09:00', end: '18:00' });
+      expect(computeWindowPreset('morning')).toEqual({ start: '09:00', end: '12:00' });
+      expect(computeWindowPreset('afternoon')).toEqual({ start: '12:00', end: '17:00' });
+      expect(computeWindowPreset('bogus')).toEqual({ start: '', end: '' });
+    });
+
+    it('summarises the current selection', () => {
+      (document.getElementById('campaign-scheduled-at') as HTMLInputElement).value = '2026-07-07T11:00';
+      (document.getElementById('campaign-window-start') as HTMLInputElement).value = '09:00';
+      (document.getElementById('campaign-window-end') as HTMLInputElement).value = '18:00';
+      updateScheduleSummary();
+      const text = document.getElementById('campaign-schedule-summary')?.textContent || '';
+      expect(text).toContain('Starts');
+      expect(text).toContain('calls between 09:00 and 18:00');
+    });
+
+    it('summarises defaults when nothing is chosen', () => {
+      updateScheduleSummary();
+      expect(document.getElementById('campaign-schedule-summary')?.textContent)
+        .toBe('Starts as soon as queued · calls anytime');
+    });
+
+    it('returns early when the summary element is missing', () => {
+      document.getElementById('campaign-schedule-summary')?.remove();
+      updateScheduleSummary();
+      expect(true).toBe(true);
+    });
+
+    it('applies presets via the wired buttons', () => {
+      initCampaignPanel();
+
+      (document.querySelector('[data-start-preset="1h"]') as HTMLButtonElement).click();
+      expect((document.getElementById('campaign-scheduled-at') as HTMLInputElement).value).not.toBe('');
+
+      (document.querySelector('[data-start-preset="now"]') as HTMLButtonElement).click();
+      expect((document.getElementById('campaign-scheduled-at') as HTMLInputElement).value).toBe('');
+
+      (document.querySelector('[data-window-preset="business"]') as HTMLButtonElement).click();
+      expect((document.getElementById('campaign-window-start') as HTMLInputElement).value).toBe('09:00');
+      expect((document.getElementById('campaign-window-end') as HTMLInputElement).value).toBe('18:00');
+
+      (document.querySelector('[data-window-preset="anytime"]') as HTMLButtonElement).click();
+      expect((document.getElementById('campaign-window-start') as HTMLInputElement).value).toBe('');
+
+      // Empty-key preset buttons are ignored.
+      (document.querySelector('[data-start-preset=""]') as HTMLButtonElement).click();
+      (document.querySelector('[data-window-preset=""]') as HTMLButtonElement).click();
+
+      // Typing in a field refreshes the summary.
+      const startInput = document.getElementById('campaign-scheduled-at') as HTMLInputElement;
+      startInput.value = '2026-07-07T11:00';
+      startInput.dispatchEvent(new Event('input'));
+      expect(document.getElementById('campaign-schedule-summary')?.textContent).toContain('Starts');
     });
   });
 });

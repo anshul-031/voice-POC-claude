@@ -469,23 +469,56 @@
               </svg>
             </button>
           </div>
-          <form id="campaign-schedule-form" class="telephony-form-inner">
-            <div class="form-group">
-              <label for="campaign-scheduled-at" data-i18n="campaigns.form.scheduledAtLabel">Start date &amp; time</label>
-              <input type="datetime-local" id="campaign-scheduled-at" class="form-input-sm">
+          <form id="campaign-schedule-form" class="telephony-form-inner schedule-form">
+            <!-- Start date & time -->
+            <div class="schedule-section">
+              <div class="schedule-section-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <span data-i18n="campaigns.form.scheduledAtLabel">Start date &amp; time</span>
+              </div>
+              <input type="datetime-local" id="campaign-scheduled-at" class="form-input-sm schedule-input">
+              <div class="schedule-presets" role="group" aria-label="Quick start options">
+                <button type="button" class="schedule-preset-chip" data-start-preset="now" data-i18n="campaigns.schedulePresets.now">As soon as queued</button>
+                <button type="button" class="schedule-preset-chip" data-start-preset="1h" data-i18n="campaigns.schedulePresets.inOneHour">In 1 hour</button>
+                <button type="button" class="schedule-preset-chip" data-start-preset="evening" data-i18n="campaigns.schedulePresets.thisEvening">This evening</button>
+                <button type="button" class="schedule-preset-chip" data-start-preset="tomorrow" data-i18n="campaigns.schedulePresets.tomorrowMorning">Tomorrow 9 AM</button>
+              </div>
               <small class="form-hint" data-i18n="campaigns.form.scheduledAtHint">Leave blank to start as soon as it is queued.</small>
             </div>
-            <div class="form-row-grid telephony-row-2">
-              <div class="form-group">
-                <label for="campaign-window-start" data-i18n="campaigns.form.windowStartLabel">Call window from</label>
-                <input type="time" id="campaign-window-start" class="form-input-sm">
+
+            <!-- Call window -->
+            <div class="schedule-section">
+              <div class="schedule-section-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>
+                </svg>
+                <span data-i18n="campaigns.form.windowLabel">Call window</span>
               </div>
-              <div class="form-group">
-                <label for="campaign-window-end" data-i18n="campaigns.form.windowEndLabel">Call window to</label>
-                <input type="time" id="campaign-window-end" class="form-input-sm">
+              <div class="schedule-window-row">
+                <div class="schedule-window-field">
+                  <label for="campaign-window-start" data-i18n="campaigns.form.windowStartLabel">From</label>
+                  <input type="time" id="campaign-window-start" class="form-input-sm schedule-input">
+                </div>
+                <span class="schedule-window-sep" aria-hidden="true">→</span>
+                <div class="schedule-window-field">
+                  <label for="campaign-window-end" data-i18n="campaigns.form.windowEndLabel">To</label>
+                  <input type="time" id="campaign-window-end" class="form-input-sm schedule-input">
+                </div>
               </div>
+              <div class="schedule-presets" role="group" aria-label="Quick call window options">
+                <button type="button" class="schedule-preset-chip" data-window-preset="business" data-i18n="campaigns.schedulePresets.businessHours">Business hours</button>
+                <button type="button" class="schedule-preset-chip" data-window-preset="morning" data-i18n="campaigns.schedulePresets.morning">Morning</button>
+                <button type="button" class="schedule-preset-chip" data-window-preset="afternoon" data-i18n="campaigns.schedulePresets.afternoon">Afternoon</button>
+                <button type="button" class="schedule-preset-chip" data-window-preset="anytime" data-i18n="campaigns.schedulePresets.anytime">Anytime</button>
+              </div>
+              <small class="form-hint" data-i18n="campaigns.form.windowHint">Calls are only placed between these times. Leave both blank for no restriction.</small>
             </div>
-            <small class="form-hint" data-i18n="campaigns.form.windowHint">Calls are only placed between these times. Leave both blank for no restriction.</small>
+
+            <div class="campaign-schedule-summary" id="campaign-schedule-summary"></div>
+
             <div class="form-actions">
               <button type="button" class="btn btn-ghost" onclick="document.getElementById('btn-cancel-schedule').click()" data-i18n="common.cancel">Cancel</button>
               <button type="submit" class="btn btn-primary btn-glow" data-i18n="campaigns.form.scheduleBtn">Schedule Campaign</button>
