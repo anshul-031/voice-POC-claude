@@ -18,6 +18,22 @@ function getFromBody(body: any, key1: string, key2: string, def = 'unknown'): st
 }
 
 /**
+ * Escape XML special characters so a value can be safely embedded in an XML
+ * document. Critically, stream URLs with multiple query params contain a raw
+ * `&` (e.g. ?agentId=...&contactId=...). Left unescaped, that `&` makes the
+ * XML malformed and Vobiz silently fails to open the media stream, so the
+ * answered call is immediately dropped.
+ */
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
  * Build the WebSocket URL for the Vobiz media stream.
  * Includes agentId (which AI agent to start) and, for campaign calls, contactId
  * (so the signaling server can load that contact's per-row prompt variables).
@@ -69,12 +85,15 @@ router.post(
       agentId,
     });
 
-    // Return XML instructions with bidirectional audio stream
+    // Return XML instructions with bidirectional audio stream.
+    // The URL must be XML-escaped: campaign calls carry two query params
+    // (agentId & contactId), and the raw `&` between them would otherwise
+    // produce malformed XML that Vobiz cannot parse.
     const xml = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<Response>',
       '  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">',
-      `    ${streamUrl}`,
+      `    ${escapeXml(streamUrl)}`,
       '  </Stream>',
       '</Response>',
     ].join('\n');

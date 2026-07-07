@@ -142,6 +142,10 @@ describe('Vobiz Webhook Routes', () => {
       const xml = (res.send as MockFn).mock.calls[0][0] as string;
       expect(xml).toContain('agentId=agent-abc');
       expect(xml).toContain('contactId=ct-1');
+      // The `&` joining the two query params must be XML-escaped, otherwise
+      // Vobiz cannot parse the Stream element and drops the answered call.
+      expect(xml).toContain('agentId=agent-abc&amp;contactId=ct-1');
+      expect(xml).not.toContain('agentId=agent-abc&contactId=ct-1');
     });
   });
 
