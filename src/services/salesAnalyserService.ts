@@ -23,7 +23,7 @@ import { getSignedRecordingUrl } from './r2Storage.js';
 
 /** Cloudflare R2 / AWS SigV4 presigned URLs cap out at exactly 7 days. */
 const ANALYSIS_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
-const REQUEST_TIMEOUT_MS = 20000;
+const REQUEST_TIMEOUT_MS = 120000;
 
 /** Minimal shape of the finalized call record needed to trigger analysis. */
 export interface CallAnalysisContext {
