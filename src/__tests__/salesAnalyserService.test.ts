@@ -45,9 +45,11 @@ function fetchResponse(
   return {
     ok,
     status,
-    json: opts.jsonThrows
-      ? () => Promise.reject(new Error('not json'))
-      : () => Promise.resolve(body),
+    // `fetchJson` reads the body via `text()` then JSON.parses it. `jsonThrows`
+    // simulates a non-JSON body (e.g. an HTML error page) that cannot be parsed.
+    text: opts.jsonThrows
+      ? () => Promise.resolve('<!DOCTYPE html>not json')
+      : () => Promise.resolve(JSON.stringify(body)),
   };
 }
 

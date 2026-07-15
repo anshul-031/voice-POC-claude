@@ -36,22 +36,37 @@ export interface CallAnalysisContext {
   recordingMimeType: string | null;
 }
 
-/** Perform a JSON fetch with a hard timeout. Returns the parsed body + status. */
+/** Max characters of a non-JSON error body to surface in logs (avoids dumping full HTML pages). */
+const RAW_BODY_LOG_LIMIT = 500;
+
+/** Strip trailing slashes so `${baseUrl}/api/...` never becomes `//api/...`. */
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/+$/, '');
+}
+
+/**
+ * Perform a JSON fetch with a hard timeout. Returns the parsed body + status,
+ * plus the raw response text so callers can surface non-JSON error responses
+ * (e.g. an HTML 404 page) that would otherwise be lost.
+ */
 async function fetchJson(
   url: string,
   init: RequestInit,
-): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
+): Promise<{ ok: boolean; status: number; body: Record<string, unknown>; raw: string }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(controller.abort.bind(controller), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
+    const raw = await response.text();
     let body: Record<string, unknown> = {};
-    try {
-      body = (await response.json()) as Record<string, unknown>;
-    } catch {
-      // Non-JSON / empty body — leave as {}.
+    if (raw) {
+      try {
+        body = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        // Non-JSON / empty body — leave as {} but keep `raw` for diagnostics.
+      }
     }
-    return { ok: response.ok, status: response.status, body };
+    return { ok: response.ok, status: response.status, body, raw };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -59,7 +74,7 @@ async function fetchJson(
 
 /** Authenticate against the Sales Analyser app and return a Bearer JWT. */
 async function login(baseUrl: string, email: string, password: string): Promise<string | null> {
-  const { ok, status, body } = await fetchJson(`${baseUrl}/api/auth/login`, {
+  const { ok, status, body, raw } = await fetchJson(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -68,7 +83,10 @@ async function login(baseUrl: string, email: string, password: string): Promise<
   if (!ok || !token) {
     logger.error('Sales Analyser login failed', {
       status,
-      error: typeof body.message === 'string' ? body.message : undefined,
+      error:
+        typeof body.message === 'string'
+          ? body.message
+          : raw.slice(0, RAW_BODY_LOG_LIMIT) || undefined,
     });
     return null;
   }
@@ -123,7 +141,8 @@ async function submitAnalysis(
   templateName: string,
   call: CallAnalysisContext,
 ): Promise<void> {
-  const { ok, status, body } = await fetchJson(`${baseUrl}/api/external/analyze`, {
+  const analyzeUrl = `${baseUrl}/api/external/analyze`;
+  const { ok, status, body, raw } = await fetchJson(analyzeUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
@@ -139,7 +158,12 @@ async function submitAnalysis(
     logger.error('Sales Analyser analysis request failed', {
       sessionId: call.sessionId,
       status,
-      error: typeof body.error === 'string' ? body.error : undefined,
+      url: analyzeUrl,
+      templateName,
+      // Surface the JSON `error` when present, otherwise the raw body (e.g. an
+      // HTML 404 page) so a missing route vs. an unknown template is obvious.
+      error:
+        typeof body.error === 'string' ? body.error : raw.slice(0, RAW_BODY_LOG_LIMIT) || undefined,
     });
     return;
   }
@@ -162,6 +186,8 @@ export async function triggerCallAnalysis(call: CallAnalysisContext): Promise<vo
       return;
     }
 
+    const baseUrl = normalizeBaseUrl(SALES_ANALYSER_URL);
+
     const request = await resolveAnalysisRequest(call);
     if (!request) {
       return;
@@ -179,12 +205,12 @@ export async function triggerCallAnalysis(call: CallAnalysisContext): Promise<vo
       return;
     }
 
-    const token = await login(SALES_ANALYSER_URL, request.email, request.password);
+    const token = await login(baseUrl, request.email, request.password);
     if (!token) {
       return;
     }
 
-    await submitAnalysis(SALES_ANALYSER_URL, token, recordingUrl, request.templateName, call);
+    await submitAnalysis(baseUrl, token, recordingUrl, request.templateName, call);
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     logger.error('Failed to trigger call analysis', { sessionId: call.sessionId, error: errMsg });
