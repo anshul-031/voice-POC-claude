@@ -459,6 +459,7 @@ describe('Campaign Routes', () => {
     it('schedules a campaign with a start time and call window', async () => {
       (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
       (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 2 });
       const res = mockRes();
       await getRouteHandler('/:id/schedule', 'post')(
         baseReq({ params: { id: 'c1' }, body: validBody }), res,
@@ -467,9 +468,26 @@ describe('Campaign Routes', () => {
       expect(res.json).toHaveBeenCalledWith({ id: 'c1', status: 'scheduled' });
     });
 
+    it('resets all contacts to pending so the scheduled run has contacts to dial', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 3 });
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: validBody }), res,
+      );
+      expect(prisma.campaignContact.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { campaignId: 'c1' },
+          data: expect.objectContaining({ status: 'pending', callId: null, errorMessage: null }),
+        }),
+      );
+    });
+
     it('clears scheduling fields when values are omitted', async () => {
       (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
       (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 0 });
       const res = mockRes();
       await getRouteHandler('/:id/schedule', 'post')(
         baseReq({ params: { id: 'c1' }, body: {} }), res,

@@ -523,6 +523,17 @@ async function scheduleCampaignDb(
   }
 
   const { scheduledAt, windowStart, windowEnd } = bodyParse.data;
+
+  // Reset every contact back to PENDING so the scheduled run has contacts to
+  // dial. Scheduling is offered for completed/failed campaigns (whose contacts
+  // are no longer pending); without this reset the scheduler would find zero
+  // pending contacts and immediately mark the campaign COMPLETED without
+  // placing a single call.
+  await prisma.campaignContact.updateMany({
+    where: { campaignId: id },
+    data: { status: CAMPAIGN_CONTACT_STATUS.PENDING, callId: null, errorMessage: null },
+  });
+
   const campaign = await prisma.campaign.update({
     where: { id },
     data: {
