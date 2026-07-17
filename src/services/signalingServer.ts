@@ -10,6 +10,7 @@ import { UI_STRINGS } from '../constants/uiStrings.js';
 import {
   LIVE_CALL,
   LOGGING,
+  AUDIO_CONFIG,
   ROUTES,
   TIME,
   MESSAGE_TYPE,
@@ -275,7 +276,10 @@ class SignalingServer {
 
     if (client) {
       client.modelAudioChunksRelayed++;
-      client.lastModelResponseAt = now;
+      const audioDurationMs = Buffer.from(audioData, 'base64').length
+        / (AUDIO_CONFIG.SAMPLE_RATE_OUTPUT * AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE)
+        * TIME.MS_TO_SEC;
+      client.lastModelResponseAt = Math.max(now, client.lastModelResponseAt) + audioDurationMs;
       this._trackFirstModelAudio(client, sessionId, now);
 
       if (client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
@@ -432,7 +436,7 @@ class SignalingServer {
     }
 
     if (transcript.role === 'model') {
-      client.lastModelResponseAt = now;
+      client.lastModelResponseAt = Math.max(client.lastModelResponseAt, now);
     }
   }
 
@@ -464,6 +468,10 @@ class SignalingServer {
       onInterrupted: (): void => {
         logger.info('Model interrupted, relaying to client', { sessionId, correlationId });
         const client = this.clients.get(socket);
+        if (client) {
+          client.lastModelResponseAt = Date.now();
+          client.nudgeCount = 0;
+        }
         if (client?.transcriptOpenRole === 'model') {
           client.transcriptOpenRole = undefined;
         }
@@ -998,6 +1006,7 @@ class SignalingServer {
       }
 
       currentClient.nudgeCount++;
+      currentClient.lastModelResponseAt = now;
 
       if (currentClient.nudgeCount > currentClient.maxInactivityNudges) {
         logger.warn('Max inactivity nudges exhausted, auto-ending call', {

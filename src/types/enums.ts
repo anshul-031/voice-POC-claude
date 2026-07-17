@@ -33,6 +33,7 @@ export const AUDIO_CONFIG = {
   MIME_TYPE: 'audio/pcm;rate=16000',
   SAMPLE_RATE_INPUT: 16000,
   SAMPLE_RATE_OUTPUT: 24000,
+  PCM_BYTES_PER_SAMPLE: 2,
   DEFAULT_VOICE: 'Puck',
   DEFAULT_MODEL: 'gemini-3.1-flash-live-preview',
 } as const;
