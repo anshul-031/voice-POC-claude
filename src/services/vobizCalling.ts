@@ -7,6 +7,7 @@
  * Credentials come from the TelephonyProvider record in the database.
  */
 import logger from '../utils/logger.js';
+import { VOBIZ_MACHINE_DETECTION } from '../types/enums.js';
 
 const VOBIZ_API_BASE = 'https://api.vobiz.ai/api/v1';
 const VOBIZ_CALL_TIMEOUT_MS = 15000;
@@ -103,6 +104,7 @@ export async function initiateVobizCall(
         from: creds.fromNumber,
         to: toNumber,
         answer_url: answerUrl,
+        machine_detection: VOBIZ_MACHINE_DETECTION.HANGUP,
       }),
       signal: controller.signal,
     });

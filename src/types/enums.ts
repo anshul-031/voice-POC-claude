@@ -101,6 +101,10 @@ export const TELEPHONY_DIRECTION = {
   INBOUND: 'inbound',
 } as const;
 
+export const VOBIZ_MACHINE_DETECTION = {
+  HANGUP: 'hangup',
+} as const;
+
 export const CAMPAIGN_STATUS = {
   DRAFT: 'draft',
   SCHEDULED: 'scheduled',
