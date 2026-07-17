@@ -202,8 +202,18 @@ describe('SignalingServer', () => {
     // Trigger each callback when OPEN
     capturedCallbacks.onAudio('chunk');
     capturedCallbacks.onTranscript({ role: 'user', text: 'hi' });
+    capturedCallbacks.onTurnComplete();
     capturedCallbacks.onTranscript({ role: 'model', text: 'hello' });
+    capturedCallbacks.onTranscript({ role: 'model', text: 'world' });
+    capturedCallbacks.onTurnComplete();
+    capturedCallbacks.onTranscript({ role: 'model', text: 'new turn' });
     capturedCallbacks.onInterrupted();
+    expect(client?.transcriptEntries).toEqual([
+      { role: 'user', text: 'hi' },
+      { role: 'model', text: 'hello world' },
+      { role: 'model', text: 'new turn' },
+    ]);
+    expect(client?.transcriptOpenRole).toBeUndefined();
     capturedCallbacks.onError(new Error('FAIL'));
     capturedCallbacks.onClose();
     

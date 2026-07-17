@@ -32,6 +32,7 @@ export interface CreateSessionCallbacks {
   correlationId?: string;
   onAudio?: (audioBase64: string) => void;
   onTranscript?: (transcript: Transcript) => void;
+  onTurnComplete?: () => void;
   onInterrupted?: () => void;
   onError?: (error: Error) => void;
   onClose?: (event: { reason?: string; code?: number }) => void;

@@ -400,7 +400,12 @@ class SignalingServer {
     }
 
     if (client.transcriptEntries) {
-      appendTranscriptEntry(client.transcriptEntries, transcript);
+      appendTranscriptEntry(
+        client.transcriptEntries,
+        transcript,
+        client.transcriptOpenRole === transcript.role,
+      );
+      client.transcriptOpenRole = transcript.role;
     }
 
     if (transcript.role === 'user' && !client.firstUserTranscriptRelayedAt) {
@@ -438,6 +443,7 @@ class SignalingServer {
   ): {
     onAudio: (audioData: string) => void;
     onTranscript: (transcript: { role: 'user' | 'model'; text: string }) => void;
+    onTurnComplete: () => void;
     onInterrupted: () => void;
     onError: (error: Error) => void;
     onClose: () => void;
@@ -449,10 +455,19 @@ class SignalingServer {
       onTranscript: (transcript: { role: 'user' | 'model'; text: string }): void => {
         this._relayTranscriptToClient(socket, sessionId, transcript, correlationId);
       },
+      onTurnComplete: (): void => {
+        const client = this.clients.get(socket);
+        if (client?.transcriptOpenRole === 'model') {
+          client.transcriptOpenRole = undefined;
+        }
+      },
       onInterrupted: (): void => {
         logger.info('Model interrupted, relaying to client', { sessionId, correlationId });
+        const client = this.clients.get(socket);
+        if (client?.transcriptOpenRole === 'model') {
+          client.transcriptOpenRole = undefined;
+        }
         if (socket.readyState === WebSocket.OPEN) {
-          const client = this.clients.get(socket);
           if (client?.streamId) {
             socket.send(JSON.stringify({ event: 'clearAudio', streamId: client.streamId }));
           } else {

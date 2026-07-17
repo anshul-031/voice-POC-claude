@@ -84,6 +84,7 @@ class GeminiLiveService {
       correlationId,
       onAudio,
       onTranscript,
+      onTurnComplete,
       onInterrupted,
       onError,
       onClose,
@@ -125,7 +126,9 @@ class GeminiLiveService {
             });
           },
           onmessage: (message: unknown) => {
-            this._handleMessage(sessionId, message, onAudio, onTranscript, onInterrupted);
+            this._handleMessage(
+              sessionId, message, onAudio, onTranscript, onTurnComplete, onInterrupted,
+            );
           },
           onerror: (error: unknown) => {
             const errorMsg = error instanceof Error
@@ -181,6 +184,7 @@ class GeminiLiveService {
     message: unknown,
     onAudio?: (audio: string) => void,
     onTranscript?: (transcript: Transcript) => void,
+    onTurnComplete?: () => void,
     onInterrupted?: () => void,
   ): void {
     const payload = this._toGeminiMessage(message);
@@ -188,7 +192,9 @@ class GeminiLiveService {
     if (!this.sessions.has(sessionId)) return;
 
     if (payload.serverContent) {
-      this._processServerContent(sessionId, payload.serverContent, onAudio, onTranscript, onInterrupted);
+      this._processServerContent(
+        sessionId, payload.serverContent, onAudio, onTranscript, onTurnComplete, onInterrupted,
+      );
     }
     if (payload.data && !payload.serverContent) this._processDirectAudio(sessionId, payload.data, onAudio);
     if (payload.setupComplete) logger.info('Gemini setup complete', { sessionId });
@@ -199,22 +205,31 @@ class GeminiLiveService {
     content: GeminiServerContent,
     onAudio?: (audio: string) => void,
     onTranscript?: (transcript: Transcript) => void,
+    onTurnComplete?: () => void,
     onInterrupted?: () => void,
   ): void {
     const entry = this.sessions.get(sessionId);
 
     if (content.modelTurn?.parts) {
-      this._processModelTurnParts(sessionId, content.modelTurn.parts, onAudio, onTranscript);
+      this._processModelTurnParts(
+        sessionId, content.modelTurn.parts, onAudio, onTranscript,
+        content.outputTranscription == null,
+      );
     }
-    if (content.turnComplete) logTurnComplete(sessionId, entry);
+
+    // Transcription chunks in this envelope belong to the turn that is about to close.
+    this._processServerTranscriptions(sessionId, content, onTranscript);
+
     if (content.generationComplete) logGenerationComplete(sessionId, entry);
+    if (content.turnComplete) {
+      logTurnComplete(sessionId, entry);
+      if (onTurnComplete) onTurnComplete();
+    }
 
     if (content.interrupted) {
       logger.info('Model interrupted', { sessionId });
       if (onInterrupted) onInterrupted();
     }
-
-    this._processServerTranscriptions(sessionId, content, onTranscript);
   }
 
   private _processServerTranscriptions(
@@ -235,12 +250,15 @@ class GeminiLiveService {
     parts: GeminiTurnPart[],
     onAudio?: (audio: string) => void,
     onTranscript?: (transcript: Transcript) => void,
+    emitTextTranscript = true,
   ): void {
     for (const part of parts) {
       if (part.inlineData?.mimeType?.startsWith('audio/') && part.inlineData.data) {
         this._processDirectAudio(sessionId, part.inlineData.data, onAudio);
       }
-      if (part.text && onTranscript) onTranscript({ role: 'model', text: part.text });
+      if (emitTextTranscript && part.text && onTranscript) {
+        onTranscript({ role: 'model', text: part.text });
+      }
     }
   }
 

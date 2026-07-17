@@ -87,7 +87,11 @@ export function logTranscriptMilestone(
 }
 
 export function logTranscriptPayload(sessionId: string, role: 'user' | 'model', text: string): void {
-  logger.info(`${role === 'user' ? 'User' : 'Output'} transcript received`, { sessionId, text });
+  logger.debug(`${role === 'user' ? 'User' : 'Output'} transcript chunk received`, {
+    sessionId,
+    role,
+    chars: text.length,
+  });
 }
 
 export function markFirstModelAudio(

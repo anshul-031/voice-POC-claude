@@ -204,5 +204,26 @@ describe('callHistoryService', () => {
       appendTranscriptEntry(entries, { role: 'model', text: 'hello' });
       expect(entries).toEqual([{ role: 'model', text: 'hello' }]);
     });
+
+    it('merges incremental chunks with natural spacing and ignores empty chunks', () => {
+      const entries: any[] = [];
+      appendTranscriptEntry(entries, { role: 'model', text: 'नमस्ते,' });
+      appendTranscriptEntry(entries, { role: 'model', text: 'मैं' }, true);
+      appendTranscriptEntry(entries, { role: 'model', text: ' ठीक' }, true);
+      appendTranscriptEntry(entries, { role: 'model', text: '।' }, true);
+      appendTranscriptEntry(entries, { role: 'user', text: '(' });
+      appendTranscriptEntry(entries, { role: 'user', text: 'hello' }, true);
+      appendTranscriptEntry(entries, { role: 'model', text: 'trailing ' });
+      appendTranscriptEntry(entries, { role: 'model', text: 'space' }, true);
+      appendTranscriptEntry(entries, { role: 'user', text: 'different role' }, true);
+      appendTranscriptEntry(entries, { role: 'user', text: '   ' }, true);
+
+      expect(entries).toEqual([
+        { role: 'model', text: 'नमस्ते, मैं ठीक।' },
+        { role: 'user', text: '(hello' },
+        { role: 'model', text: 'trailing space' },
+        { role: 'user', text: 'different role' },
+      ]);
+    });
   });
 });

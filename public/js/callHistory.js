@@ -44,10 +44,46 @@ function formatCurrency(value) {
   return Number.isFinite(amount) ? `₹${amount.toFixed(2)}` : UI_STRINGS.callHistory.card.notBilled;
 }
 
+/** @param {string} existingText @param {string} incomingText @returns {string} */
+function mergeTranscriptText(existingText, incomingText) {
+  const endsWithWhitespace = /\s$/u.test(existingText);
+  const startsWithWhitespace = /^\s/u.test(incomingText);
+  const startsWithClosingPunctuation = /^[,.;:!?…)}\]।॥]/u.test(incomingText);
+  const endsWithOpeningPunctuation = /[([{“‘]$/u.test(existingText);
+  const shouldInsertSpace = !endsWithWhitespace
+    && !startsWithWhitespace
+    && !startsWithClosingPunctuation
+    && !endsWithOpeningPunctuation;
+  return shouldInsertSpace ? `${existingText} ${incomingText}` : `${existingText}${incomingText}`;
+}
+
+/** Merge adjacent same-speaker chunks from legacy call records. @param {any[]} transcript @returns {any[]} */
+function normalizeTranscript(transcript) {
+  if (!Array.isArray(transcript)) return [];
+
+  return transcript.reduce((entries, entry) => {
+    const text = typeof entry?.text === 'string' ? entry.text : '';
+    if (!text.trim()) return entries;
+
+    const role = entry?.role === 'model' ? 'model' : 'user';
+    const previous = entries[entries.length - 1];
+    if (previous?.role === role) {
+      previous.text = mergeTranscriptText(previous.text, text);
+    } else {
+      entries.push({ role, text });
+    }
+    return entries;
+  }, []);
+}
+
 /** @param {any[]} transcript @returns {string} */
 function renderTranscriptPreview(transcript) {
-  if (!Array.isArray(transcript) || transcript.length === 0) return '';
-  const preview = transcript.slice(0, 2).map((entry) => escapeHtml(entry?.text || '')).join(' · ');
+  const normalizedTranscript = normalizeTranscript(transcript);
+  if (normalizedTranscript.length === 0) return '';
+  const preview = normalizedTranscript
+    .slice(0, 2)
+    .map((entry) => escapeHtml(entry.text))
+    .join(' · ');
   return `
     <div class="call-history-preview">
       <span>${UI_STRINGS.callHistory.card.transcriptPreview}</span>
@@ -138,14 +174,15 @@ export function renderCallHistoryList() {
 
 /** @param {any[]} transcript @returns {string} */
 function renderTranscript(transcript) {
-  if (!Array.isArray(transcript) || transcript.length === 0) {
+  const normalizedTranscript = normalizeTranscript(transcript);
+  if (normalizedTranscript.length === 0) {
     return `<p class="form-hint">${UI_STRINGS.callHistory.transcriptEmpty}</p>`;
   }
-  return transcript.map((entry) => {
-    const role = entry?.role === 'model'
+  return normalizedTranscript.map((entry) => {
+    const role = entry.role === 'model'
       ? UI_STRINGS.callPanel.roles.agent
       : UI_STRINGS.callPanel.roles.user;
-    return `<div class="transcript-line"><strong>${role}:</strong> ${escapeHtml(entry?.text || '')}</div>`;
+    return `<div class="transcript-line"><strong>${role}:</strong> ${escapeHtml(entry.text)}</div>`;
   }).join('');
 }
 

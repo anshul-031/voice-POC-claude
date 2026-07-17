@@ -16,7 +16,7 @@
     "build": "npx prisma generate && tsc -p tsconfig.build.json",
     "db:deploy": "npm run db:generate && npx prisma migrate deploy",
     "db:generate": "npx prisma generate",
-    "db:view": "npm run db:studio",
+    "db:view": "npx prisma studio",
     "pr": "npm run build && npm run test:coverage && npm run lint && npm run typecheck"
   },
   "dependencies": {

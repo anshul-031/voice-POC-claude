@@ -201,7 +201,35 @@ export async function finalizeCallRecord(input: FinalizeCallRecordInput): Promis
   }
 }
 
-/** Append a transcript entry to an in-memory list (used by the signaling server). */
-export function appendTranscriptEntry(entries: Transcript[], entry: Transcript): void {
+/** Join incremental transcript chunks while preserving natural word boundaries. */
+function mergeTranscriptText(existingText: string, incomingText: string): string {
+  const endsWithWhitespace = /\s$/u.test(existingText);
+  const startsWithWhitespace = /^\s/u.test(incomingText);
+  const startsWithClosingPunctuation = /^[,.;:!?…)}\]।॥]/u.test(incomingText);
+  const endsWithOpeningPunctuation = /[([{“‘]$/u.test(existingText);
+  const shouldInsertSpace = !endsWithWhitespace
+    && !startsWithWhitespace
+    && !startsWithClosingPunctuation
+    && !endsWithOpeningPunctuation;
+
+  return shouldInsertSpace ? `${existingText} ${incomingText}` : `${existingText}${incomingText}`;
+}
+
+/** Append or merge an incremental transcript chunk in an in-memory utterance list. */
+export function appendTranscriptEntry(
+  entries: Transcript[],
+  entry: Transcript,
+  mergeWithPrevious = false,
+): void {
+  if (!entry.text.trim()) {
+    return;
+  }
+
+  const previous = entries[entries.length - 1];
+  if (mergeWithPrevious && previous?.role === entry.role) {
+    previous.text = mergeTranscriptText(previous.text, entry.text);
+    return;
+  }
+
   entries.push({ role: entry.role, text: entry.text });
 }

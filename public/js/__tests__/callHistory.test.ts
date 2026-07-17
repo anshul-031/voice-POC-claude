@@ -80,6 +80,24 @@ describe('callHistory.js', () => {
       expect(html).toContain('btn-delete-call');
     });
 
+    it('merges legacy same-speaker chunks in transcript previews', async () => {
+      vi.mocked(api).mockResolvedValue([{
+        ...sampleCall,
+        transcript: [
+          { role: 'model', text: 'नमस्ते, ' },
+          { role: 'model', text: 'मैं' },
+          { role: 'model', text: '।' },
+          { role: 'user', text: '(' },
+          { role: 'user', text: 'hello' },
+        ],
+      }]);
+
+      await loadCallHistory();
+
+      const html = document.getElementById('call-history-list')?.innerHTML || '';
+      expect(html).toContain('नमस्ते, मैं। · (hello');
+    });
+
     it('renders cards with missing fields and unknown labels', async () => {
       vi.mocked(api).mockResolvedValue([
         {

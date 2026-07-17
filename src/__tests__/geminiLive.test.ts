@@ -45,7 +45,8 @@ describe('GeminiLiveService', () => {
       voiceName: 'vn', 
       modelName: 'mn',
       onAudio: vi.fn(), 
-      onTranscript: vi.fn(), 
+      onTranscript: vi.fn(),
+      onTurnComplete: vi.fn(),
       onInterrupted: vi.fn(), 
       onError: vi.fn(), 
       onClose: vi.fn(),
@@ -70,6 +71,16 @@ describe('GeminiLiveService', () => {
           outputTranscription: { text: 'out' },
         },
       });
+      expect(callbacks.onTurnComplete).toHaveBeenCalledOnce();
+      expect(callbacks.onTranscript).toHaveBeenCalledWith({ role: 'model', text: 'out' });
+      expect(callbacks.onTranscript).not.toHaveBeenCalledWith({ role: 'model', text: 't' });
+
+      // Model-turn text is a fallback only when output transcription is absent.
+      state.callbacks.onmessage({
+        serverContent: { modelTurn: { parts: [{ text: 'fallback' }] } },
+      });
+      expect(callbacks.onTranscript).toHaveBeenCalledWith({ role: 'model', text: 'fallback' });
+
       // String transcripts
       state.callbacks.onmessage({
         serverContent: {

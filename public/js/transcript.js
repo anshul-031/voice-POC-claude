@@ -16,9 +16,12 @@ function mergeTranscriptText(existingText, incomingText) {
 
   const endsWithWhitespace = /\s$/u.test(existingText);
   const startsWithWhitespace = /^\s/u.test(incomingText);
-  const endsWithWordChar = /[\p{L}\p{N}\p{M}]$/u.test(existingText);
-  const startsWithWordChar = /^[\p{L}\p{N}\p{M}]/u.test(incomingText);
-  const shouldInsertSpace = !endsWithWhitespace && !startsWithWhitespace && endsWithWordChar && startsWithWordChar;
+  const startsWithClosingPunctuation = /^[,.;:!?…)}\]।॥]/u.test(incomingText);
+  const endsWithOpeningPunctuation = /[([{“‘]$/u.test(existingText);
+  const shouldInsertSpace = !endsWithWhitespace
+    && !startsWithWhitespace
+    && !startsWithClosingPunctuation
+    && !endsWithOpeningPunctuation;
 
   return shouldInsertSpace ? `${existingText} ${incomingText}` : `${existingText}${incomingText}`;
 }

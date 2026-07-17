@@ -60,6 +60,7 @@ export interface SignalingClient {
   callDurationTimer?: ReturnType<typeof setTimeout>;
   callType?: string;
   transcriptEntries?: Transcript[];
+  transcriptOpenRole?: Transcript['role'];
   recordingChunks?: Buffer[];
   callHistoryFinalized?: boolean;
 }
