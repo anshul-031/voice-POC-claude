@@ -35,6 +35,7 @@ import {
 } from '../constants/inputSchemas.js';
 import { downsample24To8, upsample8To16 } from '../utils/audioResampler.js';
 import { substituteTemplateVariables } from '../utils/templateVariables.js';
+import { getWalletAccount } from './walletService.js';
 
 type StartCallAgent = {
   id: string;
@@ -47,6 +48,10 @@ type StartCallAgent = {
   inactivityTimeoutMs: number;
   maxInactivityNudges: number;
   maxCallDurationSecs: number;
+};
+
+type AuthorizedCallAgent = StartCallAgent & {
+  billingRate: number;
 };
 
 /**
@@ -199,7 +204,7 @@ class SignalingServer {
     agentId: string,
     requesterUserId: string | null,
     correlationId: string,
-  ): Promise<StartCallAgent | null> {
+  ): Promise<AuthorizedCallAgent | null> {
     logger.debug('Fetching agent config', { agentId, correlationId });
     const agentLookupStart = Date.now();
     const agent = await prisma.voiceAgent.findUnique({ where: { id: agentId } }) as StartCallAgent | null;
@@ -227,6 +232,18 @@ class SignalingServer {
       return null;
     }
 
+    const wallet = await getWalletAccount(agent.userId as string);
+    if (!wallet.canStartCall) {
+      logger.warn('Call blocked by insufficient wallet balance', {
+        agentId,
+        userId: agent.userId,
+        balance: wallet.balance,
+        correlationId,
+      });
+      this._sendSocketError(socket, UI_STRINGS.signaling.errors.insufficientBalance);
+      return null;
+    }
+
     logger.info('Agent found for call', {
       agentId,
       name: agent.name,
@@ -235,7 +252,7 @@ class SignalingServer {
       correlationId,
     });
 
-    return agent;
+    return { ...agent, billingRate: wallet.costPerMinute };
   }
 
   private async _closeExistingClientSession(socket: WSWebSocket): Promise<void> {
@@ -546,6 +563,7 @@ class SignalingServer {
     socket: WSWebSocket,
     sessionId: string,
     agent: StartCallAgent,
+    billingRate: number,
     streamId?: string,
     requesterUserId?: string | null,
   ): Promise<void> {
@@ -556,6 +574,7 @@ class SignalingServer {
       agentId: agent.id,
       agentName: agent.name,
       userId: agent.userId,
+      billingRate,
       ...(streamId && { direction: TELEPHONY_DIRECTION.OUTBOUND }),
     });
   }
@@ -616,12 +635,12 @@ class SignalingServer {
       return;
     }
 
-    const resolvedSystemPrompt = substituteTemplateVariables(agent.systemPrompt, variables);
-
-    const sessionId = uuidv4();
-    await this._closeExistingClientSession(socket);
-
     try {
+      const resolvedSystemPrompt = substituteTemplateVariables(agent.systemPrompt, variables);
+
+      const sessionId = uuidv4();
+      await this._closeExistingClientSession(socket);
+
       const geminiConnectStart = Date.now();
       logger.info('Creating Gemini Live session', { sessionId, correlationId });
 
@@ -637,7 +656,14 @@ class SignalingServer {
       this._registerClientSession(
         socket, sessionId, agentId, correlationId, callStartedAt, agent, streamId, requesterUserId,
       );
-      await this._createCallHistoryRecord(socket, sessionId, agent, streamId, requesterUserId);
+      await this._createCallHistoryRecord(
+        socket,
+        sessionId,
+        agent,
+        agent.billingRate,
+        streamId,
+        requesterUserId,
+      );
 
       logger.info('Gemini session created', {
         sessionId,

@@ -27,6 +27,8 @@ import { initCampaignPanel } from './campaigns.js';
 import { initCallHistoryPanel } from './callHistory.js';
 import { initIntegrationsPanel } from './integrations.js';
 import { initSidebarNavigation, switchSection } from './sidebar.js';
+import { initWalletSummary } from './wallet.js';
+import { authenticateDashboard, logoutDashboard } from './dashboardAuth.js';
 
 /** @type {any[]} */ let agents = [];
 /** @type {any[]} */ let voices = [];
@@ -36,26 +38,11 @@ import { initSidebarNavigation, switchSection } from './sidebar.js';
 
 // ── Auth Check ──
 export async function checkAuthAndInit() {
-  try {
-    const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
-    if (!res.ok) { window.location.href = CONFIG.PAGE_PATHS.LOGIN; return; }
-    const data = await res.json();
-    const menu = document.getElementById('user-menu');
-    if (menu) menu.style.display = 'flex';
-    const nameEl = document.getElementById('user-name');
-    if (nameEl && data.user) nameEl.textContent = data.user.name;
-  } catch (_e) {
-    window.location.href = CONFIG.PAGE_PATHS.LOGIN;
-    return;
-  }
-  initApp();
+  await authenticateDashboard(initApp);
 }
 
 export async function handleLogout() {
-  try {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
-  } catch (_e) { /* ignore */ }
-  window.location.href = CONFIG.PAGE_PATHS.LOGIN;
+  await logoutDashboard();
 }
 
 // ── Init ──
@@ -79,6 +66,7 @@ export function initApp() {
   initCampaignPanel();
   initCallHistoryPanel();
   initIntegrationsPanel();
+  initWalletSummary();
   initEventListeners();
 }
 

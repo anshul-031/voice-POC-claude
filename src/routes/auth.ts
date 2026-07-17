@@ -13,6 +13,7 @@ import {
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { z } from 'zod';
 import { ROUTES } from '../types/index.js';
+import { getWalletAccount } from '../services/walletService.js';
 
 const router = Router();
 
@@ -188,8 +189,24 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<any>
 });
 
 // GET /api/auth/me
-router.get('/me', requireAuth, (req: AuthenticatedRequest, res: Response): void => {
-  res.json({ user: req.user });
-});
+router.get(
+  '/me',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const wallet = await getWalletAccount(req.user?.id as string);
+      res.json({
+        user: {
+          ...req.user,
+          walletBalance: wallet.balance,
+          costPerMinute: wallet.costPerMinute,
+        },
+      });
+    } catch (error: unknown) {
+      logger.error('Failed to load account wallet', { error: String(error) });
+      res.status(500).json({ error: 'Failed to load account' });
+    }
+  },
+);
 
 export default router;

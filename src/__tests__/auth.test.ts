@@ -8,6 +8,7 @@ vi.mock('../lib/prisma.js', () => ({
   default: {
     user: {
       findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -225,11 +226,13 @@ describe('Auth Routes', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  it('GET /me Error', async () => {
+  it('GET /me returns wallet details', async () => {
     const { req, res } = mockReqRes();
-    // This is just to hit the 'void' return in routes if needed, 
-    // but the actual handler is simple.
-    getRouteHandler('/me', 'get')(req as any, res as any);
+    (req as any).user = { id: '1', name: 'User', email: 'u@example.com' };
+    await getRouteHandler('/me', 'get')(req as any, res as any);
+    expect(res.json).toHaveBeenCalledWith({
+      user: expect.objectContaining({ walletBalance: 100, costPerMinute: 7 }),
+    });
   });
 
   it('Error paths (catch blocks)', async () => {

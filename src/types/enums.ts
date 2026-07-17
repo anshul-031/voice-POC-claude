@@ -61,6 +61,13 @@ export const LIVE_CALL = {
   NUDGE_PROMPT: 'The user seems to be waiting for a response. Please continue the conversation naturally.',
 } as const;
 
+export const WALLET = {
+  MINIMUM_CALL_BALANCE_INR: 10,
+  DEFAULT_COST_PER_MINUTE_INR: 7,
+  CURRENCY_DECIMAL_PLACES: 2,
+  PAYMENT_REQUIRED_STATUS: 402,
+} as const;
+
 export const MESSAGE_TYPE = {
   START_CALL: 'start-call',
   AUDIO_DATA: 'audio-data',

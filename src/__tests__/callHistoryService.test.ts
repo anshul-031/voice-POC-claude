@@ -5,8 +5,12 @@ vi.mock('../lib/prisma.js', () => ({
   default: {
     callHistory: {
       create: vi.fn(),
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ userId: null, billingRate: 7, billedAt: null }),
       update: vi.fn(),
     },
+    user: { update: vi.fn() },
+    $transaction: vi.fn(async (operations) => Promise.all(operations)),
   },
 }));
 
@@ -71,6 +75,7 @@ describe('callHistoryService', () => {
         agentId: 'a1',
         agentName: 'Agent',
         userId: 'u1',
+        billingRate: 7,
         direction: 'outbound',
       });
       expect(prisma.callHistory.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -85,7 +90,8 @@ describe('callHistoryService', () => {
     it('defaults nullable fields when omitted', async () => {
       (prisma.callHistory.create as any).mockResolvedValue({});
       await createCallRecord({
-        sessionId: 's2', callType: CALL_TYPE.PREVIEW, agentId: 'a1', agentName: 'A', userId: null,
+        sessionId: 's2', callType: CALL_TYPE.PREVIEW, agentId: 'a1', agentName: 'A',
+        userId: null, billingRate: 7,
       });
       const arg = (prisma.callHistory.create as any).mock.calls[0][0];
       expect(arg.data.phoneNumber).toBeNull();
@@ -95,20 +101,25 @@ describe('callHistoryService', () => {
     it('swallows db errors', async () => {
       (prisma.callHistory.create as any).mockRejectedValue(new Error('DB'));
       await expect(createCallRecord({
-        sessionId: 's3', callType: CALL_TYPE.TEST, agentId: 'a1', agentName: 'A', userId: 'u1',
+        sessionId: 's3', callType: CALL_TYPE.TEST, agentId: 'a1', agentName: 'A',
+        userId: 'u1', billingRate: 7,
       })).resolves.toBeUndefined();
     });
 
     it('swallows non-Error rejections', async () => {
       (prisma.callHistory.create as any).mockRejectedValue('boom');
       await expect(createCallRecord({
-        sessionId: 's4', callType: CALL_TYPE.TEST, agentId: 'a1', agentName: 'A', userId: 'u1',
+        sessionId: 's4', callType: CALL_TYPE.TEST, agentId: 'a1', agentName: 'A',
+        userId: 'u1', billingRate: 7,
       })).resolves.toBeUndefined();
     });
   });
 
   describe('finalizeCallRecord', () => {
     it('finalizes without a recording', async () => {
+      (prisma.callHistory.findUniqueOrThrow as any).mockResolvedValueOnce({
+        userId: 'u1', billingRate: 7, billedAt: null,
+      });
       (prisma.callHistory.update as any).mockResolvedValue({});
       await finalizeCallRecord({
         sessionId: 's1',
@@ -117,7 +128,7 @@ describe('callHistoryService', () => {
         transcript: [{ role: 'user', text: 'hi' }],
       });
       const arg = (prisma.callHistory.update as any).mock.calls[0][0];
-      expect(arg.where).toEqual({ sessionId: 's1' });
+      expect(arg.where).toEqual({ sessionId: 's1', billedAt: null });
       expect(arg.data.recordingKey).toBeUndefined();
       expect(arg.data.durationSecs).toBe(12);
     });
@@ -161,6 +172,9 @@ describe('callHistoryService', () => {
     });
 
     it('skips upload for empty recording chunks', async () => {
+      (prisma.callHistory.findUniqueOrThrow as any).mockResolvedValueOnce({
+        userId: 'u1', billingRate: 7, billedAt: new Date(),
+      });
       (prisma.callHistory.update as any).mockResolvedValue({});
       await finalizeCallRecord({
         sessionId: 's1', status: CALL_STATUS.COMPLETED, durationSecs: 5, transcript: [],

@@ -2,6 +2,12 @@
  * TypeScript interfaces for the application.
  */
 
+export interface WalletAccount {
+  balance: number;
+  costPerMinute: number;
+  canStartCall: boolean;
+}
+
 export interface VoiceAgent {
   id: string;
   name: string;
@@ -139,8 +145,14 @@ export interface CreateCallRecordInput {
   agentId: string;
   agentName: string;
   userId: string | null;
+  billingRate: number;
   phoneNumber?: string | null;
   direction?: string | null;
+}
+
+export interface StoredCallRecording {
+  key: string;
+  mimeType: string;
 }
 
 export interface FinalizeCallRecordInput {

@@ -20,6 +20,8 @@ model User {
   // (post-call) analysis when no interactive session is available.
   salesAnalyserEmail    String?
   salesAnalyserPassword String?
+  walletBalance         Decimal              @default(0) @db.Decimal(12, 2)
+  costPerMinute         Decimal              @default(7) @db.Decimal(10, 2)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   agents              VoiceAgent[]
@@ -134,6 +136,9 @@ model CallHistory {
   recordingKey      String?
   recordingMimeType String?
   transcript        Json        @default("[]")
+  billingRate      Decimal     @default(7) @db.Decimal(10, 2)
+  billedAmount     Decimal?    @db.Decimal(12, 2)
+  billedAt         DateTime?
   startedAt         DateTime    @default(now())
   endedAt           DateTime?
   agentId           String?

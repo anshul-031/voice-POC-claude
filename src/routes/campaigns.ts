@@ -12,7 +12,7 @@ import {
   type CreateCampaignBody,
 } from '../constants/inputSchemas.js';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
-import { CAMPAIGN_STATUS, CAMPAIGN_CONTACT_STATUS, TELEPHONY_DIRECTION, TELEPHONY_PROVIDER } from '../types/index.js';
+import { CAMPAIGN_STATUS, CAMPAIGN_CONTACT_STATUS, TELEPHONY_DIRECTION, TELEPHONY_PROVIDER, WALLET } from '../types/index.js';
 import {
   parseCampaignSpreadsheet,
   CampaignParseError,
@@ -23,6 +23,7 @@ import {
 import { extractTemplateVariables } from '../utils/templateVariables.js';
 import { extractVobizCredentials } from '../services/vobizCalling.js';
 import { runCampaign, type RunCampaignContact } from '../services/campaignRunner.js';
+import { canStartWalletCall } from '../services/walletService.js';
 
 const router = Router();
 
@@ -411,6 +412,13 @@ async function triggerCampaignRun(
   const loaded = await loadRunnableCampaign(id, userId);
   if ('error' in loaded) {
     return { status: loaded.status, body: { error: loaded.error } };
+  }
+
+  if (!await canStartWalletCall(userId)) {
+    return {
+      status: WALLET.PAYMENT_REQUIRED_STATUS,
+      body: { error: UI_STRINGS.api.errors.insufficientBalance },
+    };
   }
 
   const provider = await findActiveProvider(userId, loaded.campaign.providerId);

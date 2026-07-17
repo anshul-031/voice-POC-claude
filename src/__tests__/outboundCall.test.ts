@@ -6,6 +6,9 @@ import { UI_STRINGS } from '../constants/uiStrings.js';
 vi.mock('../lib/prisma.js', () => ({
   default: {
     voiceAgent: { findFirst: vi.fn() },
+    user: {
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
+    },
     telephonyProvider: { findFirst: vi.fn() },
   },
 }));

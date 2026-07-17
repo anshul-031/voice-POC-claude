@@ -32,7 +32,23 @@
         </div>
         <h1 data-i18n="header.title">AnshulTheGreat.com</h1>
       </div>
-      <div style="display: flex; align-items: center; gap: 16px;">
+      <div class="header-actions">
+        <button
+          type="button"
+          class="wallet-summary hidden"
+          id="wallet-summary"
+          data-i18n-attr="title:header.wallet.refresh"
+          title="Refresh wallet balance"
+        >
+          <span class="wallet-summary-label" data-i18n="header.wallet.label">Wallet</span>
+          <strong id="wallet-balance">₹0.00</strong>
+          <span class="wallet-summary-rate" id="wallet-rate">₹7.00/min</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
         <div class="header-status">
           <div class="status-dot" id="api-status"></div>
           <span id="api-status-text" data-i18n="header.apiStatus.checking">Checking API...</span>
@@ -359,34 +375,25 @@
       </section>
     </main>
 
-    <!-- Section: Call History (placeholder, coming soon) -->
+    <!-- Section: Call History -->
     <main id="section-call-history" class="section-content hidden">
-      <section class="panel telephony-panel">
-        <!-- Call History List View -->
+      <section class="panel telephony-panel call-history-panel">
         <div id="call-history-list-section">
-          <div class="panel-header">
-            <h2 data-i18n="callHistory.title">Call History</h2>
+          <div class="panel-header call-history-header">
+            <div>
+              <h2 data-i18n="callHistory.title">Call History</h2>
+              <p class="form-hint" data-i18n="callHistory.subtitle">Call, billing, transcript, and recording details in one place.</p>
+            </div>
             <button class="btn btn-outline btn-sm" id="btn-refresh-call-history" data-i18n="callHistory.refresh">
               Refresh
             </button>
           </div>
-          <div class="telephony-provider-list" id="call-history-list">
+          <div class="call-history-list" id="call-history-list">
             <div class="loading-skeleton">
               <div class="skeleton-card"></div>
               <div class="skeleton-card"></div>
             </div>
           </div>
-        </div>
-
-        <!-- Call History Detail View -->
-        <div id="call-history-detail-section" class="hidden">
-          <div class="panel-header">
-            <h2 id="call-history-detail-title" data-i18n="callHistory.detailTitle">Call Details</h2>
-            <button type="button" class="btn btn-ghost" id="btn-back-call-history" data-i18n="callHistory.backToList">
-              Back to calls
-            </button>
-          </div>
-          <div id="call-history-detail"></div>
         </div>
       </section>
     </main>

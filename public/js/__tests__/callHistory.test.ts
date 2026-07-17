@@ -42,6 +42,11 @@ const sampleCall = {
   status: 'completed',
   durationSecs: 75,
   startedAt: '2026-06-25T10:00:00.000Z',
+  phoneNumber: '+1999',
+  billingRate: 7,
+  billedAmount: 8.75,
+  billedAt: '2026-06-25T10:02:00.000Z',
+  transcript: [{ role: 'user', text: 'Hello from the list' }],
   recordingKey: 'recordings/x.wav',
 };
 
@@ -68,13 +73,20 @@ describe('callHistory.js', () => {
       expect(html).toContain('Telephony');
       expect(html).toContain('01:15');
       expect(html).toContain('Recording');
+      expect(html).toContain('₹8.75');
+      expect(html).toContain('+1999');
+      expect(html).toContain('Hello from the list');
       expect(html).toContain('btn-view-call');
       expect(html).toContain('btn-delete-call');
     });
 
     it('renders cards with missing fields and unknown labels', async () => {
       vi.mocked(api).mockResolvedValue([
-        { id: 'c2', callType: 'weird', status: 'weird', recordingKey: null },
+        {
+          id: 'c2', callType: 'weird', status: 'weird', recordingKey: null,
+          billedAt: '2026-06-25T10:00:00.000Z', billedAmount: 'invalid', billingRate: 'invalid',
+          transcript: [{}],
+        },
       ]);
       await loadCallHistory();
       const html = document.getElementById('call-history-list')?.innerHTML || '';
@@ -125,7 +137,7 @@ describe('callHistory.js', () => {
       expect(html).toContain('Hello');
       expect(html).toContain('Hi there');
       expect(html).toContain('+1999');
-      const audioEl = document.getElementById('call-recording-audio') as HTMLAudioElement;
+      const audioEl = document.querySelector('.call-recording-audio') as HTMLAudioElement;
       // The signed URL must be assigned verbatim (no double-encoding of %2F).
       expect(audioEl.getAttribute('src')).toBe(signedUrl);
       expect(document.getElementById('call-history-detail-section')?.classList.contains('hidden')).toBe(false);
@@ -134,6 +146,9 @@ describe('callHistory.js', () => {
     it('shows fallbacks when there is no recording or transcript', async () => {
       vi.mocked(api).mockResolvedValue({
         ...sampleCall,
+        phoneNumber: null,
+        billedAt: null,
+        billingRate: null,
         recordingUrl: null,
         transcript: [],
       });
@@ -157,9 +172,12 @@ describe('callHistory.js', () => {
     });
 
     it('shows a toast when the detail fetch fails', async () => {
-      vi.mocked(api).mockRejectedValue(new Error('fail'));
+      vi.mocked(api).mockResolvedValueOnce([sampleCall]);
+      await loadCallHistory();
+      vi.mocked(api).mockRejectedValueOnce(new Error('fail'));
       await viewCallDetail('c1');
       expect(showToast).toHaveBeenCalled();
+      expect(document.querySelector('.call-history-inline-detail')?.classList.contains('hidden')).toBe(true);
     });
 
     it('is wired to view buttons in the rendered list', async () => {
@@ -169,6 +187,12 @@ describe('callHistory.js', () => {
       (document.querySelector('.btn-view-call') as HTMLButtonElement).click();
       await Promise.resolve();
       expect(api).toHaveBeenCalledWith('/call-history/c1');
+      expect(document.querySelector('.call-history-inline-detail')?.classList.contains('hidden')).toBe(false);
+
+      vi.clearAllMocks();
+      (document.querySelector('.btn-view-call') as HTMLButtonElement).click();
+      expect(api).not.toHaveBeenCalled();
+      expect(document.querySelector('.call-history-inline-detail')?.classList.contains('hidden')).toBe(true);
     });
   });
 

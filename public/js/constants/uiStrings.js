@@ -19,6 +19,13 @@ export const UI_STRINGS = {
   },
   header: {
     title: 'AnshulTheGreat.com',
+    wallet: {
+      label: 'Wallet',
+      balance: (/** @type {number} */ amount) => `₹${amount.toFixed(2)}`,
+      rate: (/** @type {number} */ amount) => `₹${amount.toFixed(2)}/min`,
+      refresh: 'Refresh wallet balance',
+      unavailable: 'Wallet unavailable',
+    },
     apiStatus: {
       checking: 'Checking API...',
       connected: 'Connected',
@@ -136,6 +143,7 @@ export const UI_STRINGS = {
     callHistoryDeleted: 'Call record deleted',
     callHistoryDeleteFailed: 'Failed to delete call record',
     callHistoryDetailFailed: 'Failed to load call details',
+    walletLoadFailed: 'Failed to refresh wallet balance',
     integrationSaved: 'Sales Analyser connected',
     integrationSaveFailed: 'Failed to save Sales Analyser credentials',
     integrationCleared: 'Sales Analyser disconnected',
@@ -290,6 +298,7 @@ export const UI_STRINGS = {
   },
   callHistory: {
     title: 'Call History',
+    subtitle: 'Call, billing, transcript, and recording details in one place.',
     emptyTitle: 'No calls yet',
     emptyDescription: 'Calls placed from the preview page, test calls, and telephony calls will appear here with their recordings and transcripts.',
     refresh: 'Refresh',
@@ -306,6 +315,8 @@ export const UI_STRINGS = {
       duration: 'Duration',
       started: 'Started',
       phone: 'Phone',
+      cost: 'Cost',
+      rate: 'Rate',
     },
     types: {
       preview: 'Preview',
@@ -318,10 +329,15 @@ export const UI_STRINGS = {
       failed: 'Failed',
     },
     card: {
-      view: 'View',
+      view: 'Recording & transcript',
+      hide: 'Hide details',
       delete: 'Delete',
       hasRecording: 'Recording',
       noRecording: 'No recording',
+      notBilled: 'Not billed',
+      noPhone: 'Web call',
+      transcriptPreview: 'Conversation preview',
+      loading: 'Loading details...',
     },
     duration: (/** @type {number} */ secs) => {
       const mins = Math.floor(secs / 60).toString().padStart(2, '0');

@@ -36,6 +36,9 @@ vi.mock('../lib/prisma.js', () => ({
     voiceAgent: {
       findUnique: vi.fn(),
     },
+    user: {
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
+    },
   },
 }));
 
@@ -68,6 +71,7 @@ describe('SignalingServer', () => {
       name: 'A',
       systemPrompt: 'S',
       publicPreviewEnabled: true,
+      userId: 'user-1',
       inactivityTimeoutMs: 10000,
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,
@@ -131,6 +135,7 @@ describe('SignalingServer', () => {
       name: 'A',
       systemPrompt: 'S',
       publicPreviewEnabled: true,
+      userId: 'user-1',
       inactivityTimeoutMs: 10000,
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,
@@ -138,8 +143,13 @@ describe('SignalingServer', () => {
     (geminiLiveService.createSession as any).mockRejectedValue(new Error('CREATE_FAIL'));
     await signalingServer._handleStartCall(mockWs, { agentId: '1' });
     expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('error'));
-    
-    // 5. Existing session on WS
+
+    // 5. Insufficient wallet balance
+    (prisma.user.findUniqueOrThrow as any).mockResolvedValueOnce({ walletBalance: 9, costPerMinute: 7 });
+    await signalingServer._handleStartCall(mockWs, { agentId: '1' });
+    expect(mockWs.send).toHaveBeenCalledWith(expect.stringContaining('Insufficient wallet balance'));
+
+    // 6. Existing session on WS
     signalingServer.clients.set(mockWs as WebSocket, {
       sessionId: 'old',
       agentId: '1',
@@ -170,6 +180,7 @@ describe('SignalingServer', () => {
       name: 'A',
       systemPrompt: 'S',
       publicPreviewEnabled: true,
+      userId: 'user-1',
       inactivityTimeoutMs: 10000,
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,
@@ -231,7 +242,7 @@ describe('SignalingServer', () => {
       voiceName: 'Puck',
       modelName: 'gemini-2.0-flash-exp',
       publicPreviewEnabled: true,
-      userId: null,
+      userId: 'user-1',
       inactivityTimeoutMs: 10000,
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,
@@ -251,7 +262,7 @@ describe('SignalingServer', () => {
       voiceName: 'Puck',
       modelName: 'gemini-2.0-flash-exp',
       publicPreviewEnabled: true,
-      userId: null,
+      userId: 'user-1',
       inactivityTimeoutMs: 10000,
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,

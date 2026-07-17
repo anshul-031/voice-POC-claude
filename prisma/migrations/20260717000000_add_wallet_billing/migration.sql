@@ -1,0 +1,10 @@
+-- AlterTable
+ALTER TABLE "users"
+ADD COLUMN "walletBalance" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN "costPerMinute" DECIMAL(10,2) NOT NULL DEFAULT 7;
+
+-- AlterTable
+ALTER TABLE "call_history"
+ADD COLUMN "billingRate" DECIMAL(10,2) NOT NULL DEFAULT 7,
+ADD COLUMN "billedAmount" DECIMAL(12,2),
+ADD COLUMN "billedAt" TIMESTAMP(3);

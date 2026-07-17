@@ -11,6 +11,8 @@ import {
   extractVobizCredentials,
   initiateVobizCall,
 } from '../services/vobizCalling.js';
+import { canStartWalletCall } from '../services/walletService.js';
+import { WALLET } from '../types/enums.js';
 
 const router = Router();
 
@@ -87,6 +89,12 @@ router.post(
       if (!agent) {
         return res.status(404).json({
           error: UI_STRINGS.api.errors.agentNotFound,
+        });
+      }
+
+      if (!await canStartWalletCall(userId)) {
+        return res.status(WALLET.PAYMENT_REQUIRED_STATUS).json({
+          error: UI_STRINGS.api.errors.insufficientBalance,
         });
       }
 

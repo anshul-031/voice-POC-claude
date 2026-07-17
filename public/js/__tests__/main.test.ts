@@ -10,6 +10,11 @@ import {
   editAgent, hideForm, toggleMute,
   copyPreviewUrl, togglePublicPreview,
 } from '../main.js';
+import {
+  initWalletSummary,
+  refreshWalletSummary,
+  renderWalletSummary,
+} from '../wallet.js';
 import * as apiModule from '../api.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
 
@@ -36,6 +41,7 @@ describe('Dashboard Logic (main.js) — 90%+ Exclusive Coverage', () => {
     document.body.innerHTML = `
       <div id="user-menu" style="display:none"></div>
       <div id="user-name"></div>
+      <button id="wallet-summary" class="hidden"><span id="wallet-balance"></span><span id="wallet-rate"></span></button>
       <div id="agent-list"></div>
       <div id="voice-grid"></div>
       <form id="agent-form">
@@ -75,11 +81,28 @@ describe('Dashboard Logic (main.js) — 90%+ Exclusive Coverage', () => {
     it('should handle checkAuthAndInit variants', async () => {
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
-        json: async () => ({ user: { name: 'Admin' } }),
+        json: async () => ({ user: { name: 'Admin', walletBalance: 25, costPerMinute: 7 } }),
       } as unknown as Response);
 
       await checkAuthAndInit();
       expect(document.getElementById('user-name')?.textContent).toBe('Admin');
+      expect(document.getElementById('wallet-balance')?.textContent).toBe('₹25.00');
+      expect(document.getElementById('wallet-rate')?.textContent).toBe('₹7.00/min');
+
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: async () => ({ user: { walletBalance: 19.5, costPerMinute: 8 } }),
+      } as unknown as Response);
+      await refreshWalletSummary();
+      expect(document.getElementById('wallet-balance')?.textContent).toBe('₹19.50');
+
+      vi.mocked(fetch).mockResolvedValue({ ok: false } as unknown as Response);
+      await refreshWalletSummary();
+
+      renderWalletSummary(undefined);
+      document.getElementById('wallet-summary')?.remove();
+      renderWalletSummary({ walletBalance: 1, costPerMinute: 1 });
+      initWalletSummary();
       
       vi.mocked(fetch).mockResolvedValue({ ok: false } as unknown as Response);
       await checkAuthAndInit();

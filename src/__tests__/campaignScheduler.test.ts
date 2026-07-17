@@ -18,7 +18,10 @@ import { CAMPAIGN_STATUS } from '../types/index.js';
 vi.mock('../lib/prisma.js', () => ({
   default: {
     campaign: { findMany: vi.fn(), update: vi.fn() },
-    campaignContact: { findMany: vi.fn() },
+    campaignContact: { findMany: vi.fn(), updateMany: vi.fn() },
+    user: {
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
+    },
     telephonyProvider: { findFirst: vi.fn() },
   },
 }));

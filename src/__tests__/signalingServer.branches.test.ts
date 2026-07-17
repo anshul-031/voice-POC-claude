@@ -34,6 +34,9 @@ vi.mock('../lib/prisma.js', () => ({
     voiceAgent: {
       findUnique: vi.fn(),
     },
+    user: {
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
+    },
     campaignContact: {
       findUnique: vi.fn(),
       update: vi.fn(),
@@ -277,7 +280,7 @@ describe('SignalingServer branch helpers', () => {
       voiceName: 'Puck',
       modelName: 'gemini-2.0-flash-exp',
       publicPreviewEnabled: true,
-      userId: null,
+      userId: 'user-1',
       inactivityTimeoutMs: 10000,
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,
@@ -338,7 +341,7 @@ describe('SignalingServer branch helpers', () => {
       voiceName: 'Puck',
       modelName: 'gemini-2.0-flash-exp',
       publicPreviewEnabled: true,
-      userId: null,
+      userId: 'user-1',
       inactivityTimeoutMs: 10000,
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,
@@ -416,7 +419,7 @@ describe('SignalingServer branch helpers', () => {
       voiceName: 'Puck',
       modelName: 'gemini-2.0-flash-exp',
       publicPreviewEnabled: true,
-      userId: null,
+      userId: 'user-1',
       inactivityTimeoutMs: 10000,
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,

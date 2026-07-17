@@ -22,6 +22,8 @@ import {
 import { extractVobizCredentials } from './vobizCalling.js';
 import { runCampaign } from './campaignRunner.js';
 import { DEFAULT_PORT } from '../constants/index.js';
+import { UI_STRINGS } from '../constants/uiStrings.js';
+import { canStartWalletCall } from './walletService.js';
 
 /** A campaign row as needed by the scheduler. */
 export interface SchedulableCampaign {
@@ -113,6 +115,22 @@ export async function processScheduledCampaign(
 
   // Outside the allowed call window — wait for a later tick.
   if (!isWithinCallWindow(now, campaign.windowStart, campaign.windowEnd)) return;
+
+  if (!await canStartWalletCall(campaign.userId)) {
+    await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.FAILED);
+    await prisma.campaignContact.updateMany({
+      where: { campaignId: campaign.id, status: CAMPAIGN_CONTACT_STATUS.PENDING },
+      data: {
+        status: CAMPAIGN_CONTACT_STATUS.FAILED,
+        errorMessage: UI_STRINGS.api.errors.insufficientBalance,
+      },
+    });
+    logger.warn('Scheduled campaign blocked by insufficient wallet balance', {
+      campaignId: campaign.id,
+      userId: campaign.userId,
+    });
+    return;
+  }
 
   // Promote a scheduled campaign to running once it is due and in-window.
   if (campaign.status === CAMPAIGN_STATUS.SCHEDULED) {

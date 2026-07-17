@@ -38,35 +38,69 @@ function statusLabel(value) {
   return map[value] || value;
 }
 
+/** @param {unknown} value @returns {string} */
+function formatCurrency(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `₹${amount.toFixed(2)}` : UI_STRINGS.callHistory.card.notBilled;
+}
+
+/** @param {any[]} transcript @returns {string} */
+function renderTranscriptPreview(transcript) {
+  if (!Array.isArray(transcript) || transcript.length === 0) return '';
+  const preview = transcript.slice(0, 2).map((entry) => escapeHtml(entry?.text || '')).join(' · ');
+  return `
+    <div class="call-history-preview">
+      <span>${UI_STRINGS.callHistory.card.transcriptPreview}</span>
+      <p>${preview}</p>
+    </div>`;
+}
+
 /** @param {any} call @returns {string} */
 function renderCallCard(call) {
   const agentName = call.agent?.name || call.agentName || '';
   const recording = call.recordingKey
     ? UI_STRINGS.callHistory.card.hasRecording
     : UI_STRINGS.callHistory.card.noRecording;
+  const billedCost = call.billedAt
+    ? formatCurrency(call.billedAmount)
+    : UI_STRINGS.callHistory.card.notBilled;
+  const rate = call.billingRate == null ? '—' : `${formatCurrency(call.billingRate)}/min`;
+  const phone = call.phoneNumber || UI_STRINGS.callHistory.card.noPhone;
+  const id = escapeHtml(call.id || '');
+
   return `
-    <div class="campaign-card telephony-card" data-id="${call.id}">
-      <div class="telephony-card-header">
-        <div class="telephony-card-title">
-          <span class="telephony-card-name">${escapeHtml(agentName)}</span>
-          <span class="telephony-badge ${call.status}">${statusLabel(call.status)}</span>
+    <article class="call-history-card" data-id="${id}">
+      <div class="call-history-card-header">
+        <div>
+          <div class="call-history-title-row">
+            <span class="call-history-agent">${escapeHtml(agentName)}</span>
+            <span class="telephony-badge ${call.status}">${statusLabel(call.status)}</span>
+            <span class="telephony-badge provider">${typeLabel(call.callType)}</span>
+          </div>
+          <time class="call-history-started">${UI_STRINGS.callHistory.startedAt(call.startedAt)}</time>
+        </div>
+        <div class="call-history-card-actions">
+          <button class="btn btn-outline btn-sm btn-view-call" data-id="${id}" aria-expanded="false">
+            ${UI_STRINGS.callHistory.card.view}
+          </button>
+          <button class="btn btn-danger btn-sm btn-delete-call" data-id="${id}">
+            ${UI_STRINGS.callHistory.card.delete}
+          </button>
         </div>
       </div>
-      <div class="telephony-card-meta">
-        <span class="telephony-badge provider">${typeLabel(call.callType)}</span>
-        <span class="campaign-contact-count">${UI_STRINGS.callHistory.duration(call.durationSecs || 0)}</span>
-        <span class="campaign-contact-count">${recording}</span>
-        <span class="campaign-contact-count">${UI_STRINGS.callHistory.startedAt(call.startedAt)}</span>
+      <div class="call-history-facts">
+        <div>
+          <span>${UI_STRINGS.callHistory.fields.duration}</span>
+          <strong>${UI_STRINGS.callHistory.duration(call.durationSecs || 0)}</strong>
+        </div>
+        <div><span>${UI_STRINGS.callHistory.fields.phone}</span><strong>${escapeHtml(phone)}</strong></div>
+        <div><span>${UI_STRINGS.callHistory.fields.cost}</span><strong>${billedCost}</strong></div>
+        <div><span>${UI_STRINGS.callHistory.fields.rate}</span><strong>${rate}</strong></div>
+        <div><span>${UI_STRINGS.callHistory.recordingTitle}</span><strong>${recording}</strong></div>
       </div>
-      <div class="telephony-card-actions">
-        <button class="btn btn-primary btn-sm btn-view-call" data-id="${call.id}">
-          ${UI_STRINGS.callHistory.card.view}
-        </button>
-        <button class="btn btn-danger btn-sm btn-delete-call" data-id="${call.id}">
-          ${UI_STRINGS.callHistory.card.delete}
-        </button>
-      </div>
-    </div>`;
+      ${renderTranscriptPreview(call.transcript)}
+      <div class="call-history-inline-detail hidden" data-call-detail="${id}"></div>
+    </article>`;
 }
 
 /**
@@ -122,7 +156,7 @@ function renderRecording(call) {
   }
   // The src is assigned via the DOM (see viewCallDetail) rather than interpolated
   // here, so the already-encoded signed URL is never mangled by HTML escaping.
-  return '<audio id="call-recording-audio" controls preload="none"></audio>';
+  return '<audio class="call-recording-audio" controls preload="none"></audio>';
 }
 
 /** @param {any} call @returns {string} */
@@ -136,6 +170,14 @@ function renderDetail(call) {
       <div><strong>${f.status}:</strong> ${statusLabel(call.status)}</div>
       <div><strong>${f.duration}:</strong> ${UI_STRINGS.callHistory.duration(call.durationSecs || 0)}</div>
       <div><strong>${f.started}:</strong> ${UI_STRINGS.callHistory.startedAt(call.startedAt)}</div>
+      <div>
+        <strong>${f.cost}:</strong>
+        ${call.billedAt ? formatCurrency(call.billedAmount) : UI_STRINGS.callHistory.card.notBilled}
+      </div>
+      <div>
+        <strong>${f.rate}:</strong>
+        ${call.billingRate == null ? '—' : `${formatCurrency(call.billingRate)}/min`}
+      </div>
       ${call.phoneNumber ? `<div><strong>${f.phone}:</strong> ${escapeHtml(call.phoneNumber)}</div>` : ''}
     </div>
     <div class="call-detail-section">
@@ -154,27 +196,69 @@ function showListView() {
   document.getElementById('call-history-detail-section')?.classList.add('hidden');
 }
 
+/** @param {string} id @returns {any} */
+function getDetailContext(id) {
+  const card = Array.from(document.querySelectorAll('.call-history-card'))
+    .find((item) => /** @type {HTMLElement} */ (item).dataset.id === id);
+  const inlineDetail = card?.querySelector('.call-history-inline-detail');
+  return {
+    inlineDetail,
+    detail: inlineDetail || document.getElementById('call-history-detail'),
+    detailSection: document.getElementById('call-history-detail-section'),
+    button: card?.querySelector('.btn-view-call'),
+  };
+}
+
+/** @param {Element|null|undefined} element @param {boolean} visible */
+function setElementVisible(element, visible) {
+  if (!element) return;
+  element.classList.toggle('hidden', !visible);
+}
+
+/** @param {Element|null|undefined} button @param {boolean} expanded */
+function setDetailButtonState(button, expanded) {
+  if (!button) return;
+  button.setAttribute('aria-expanded', String(expanded));
+  button.textContent = expanded
+    ? UI_STRINGS.callHistory.card.hide
+    : UI_STRINGS.callHistory.card.view;
+}
+
+/** @param {Element|null|undefined} inlineDetail @param {Element|null|undefined} button */
+function collapseInlineDetail(inlineDetail, button) {
+  if (!inlineDetail || inlineDetail.classList.contains('hidden')) return false;
+  setElementVisible(inlineDetail, false);
+  setDetailButtonState(button, false);
+  return true;
+}
+
+/** @param {Element} detail @param {any} call */
+function renderLoadedDetail(detail, call) {
+  detail.innerHTML = renderDetail(call);
+  const audioEl = /** @type {HTMLAudioElement|null} */ (detail.querySelector('.call-recording-audio'));
+  if (audioEl && call.recordingUrl) audioEl.src = call.recordingUrl;
+}
+
 /**
  * Fetch and display the detail of a single call.
  * @param {string} id
  * @returns {Promise<void>}
  */
 export async function viewCallDetail(id) {
+  const context = getDetailContext(id);
+  if (!context.detail || collapseInlineDetail(context.inlineDetail, context.button)) return;
+
+  context.detail.innerHTML = `<p class="form-hint">${UI_STRINGS.callHistory.card.loading}</p>`;
+  setElementVisible(context.inlineDetail, true);
   try {
     const call = await api(`/call-history/${id}`);
-    const detail = document.getElementById('call-history-detail');
-    const listSection = document.getElementById('call-history-list-section');
-    const detailSection = document.getElementById('call-history-detail-section');
-    if (!detail || !listSection || !detailSection) return;
-
-    detail.innerHTML = renderDetail(call);
-    const audioEl = /** @type {HTMLAudioElement|null} */ (document.getElementById('call-recording-audio'));
-    if (audioEl && call.recordingUrl) {
-      audioEl.src = call.recordingUrl;
-    }
-    listSection.classList.add('hidden');
-    detailSection.classList.remove('hidden');
+    renderLoadedDetail(context.detail, call);
+    setElementVisible(context.inlineDetail, true);
+    setElementVisible(context.detailSection, true);
+    setDetailButtonState(context.button, true);
   } catch (_err) {
+    setElementVisible(context.inlineDetail, false);
+    context.detail.innerHTML = '';
     showToast(UI_STRINGS.toasts.callHistoryDetailFailed, 'error');
   }
 }

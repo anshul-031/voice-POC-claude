@@ -14,6 +14,9 @@ vi.mock('../lib/prisma.js', () => ({
       delete: vi.fn(),
     },
     voiceAgent: { findFirst: vi.fn() },
+    user: {
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
+    },
     telephonyProvider: { findFirst: vi.fn() },
     campaignContact: { update: vi.fn(), updateMany: vi.fn() },
   },

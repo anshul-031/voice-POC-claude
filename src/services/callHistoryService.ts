@@ -13,10 +13,11 @@ import type { Prisma } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../lib/prisma.js';
 import logger from '../utils/logger.js';
-import { CALL_STATUS, CALL_TYPE, RECORDING } from '../types/enums.js';
+import { CALL_STATUS, CALL_TYPE, RECORDING, WALLET } from '../types/enums.js';
 import type {
   CreateCallRecordInput,
   FinalizeCallRecordInput,
+  StoredCallRecording,
   Transcript,
 } from '../types/interfaces.js';
 import { uploadRecording } from './r2Storage.js';
@@ -24,6 +25,13 @@ import { triggerCallAnalysis } from './salesAnalyserService.js';
 const WAV_HEADER_BYTES = 44;
 const BITS_PER_SAMPLE = 16;
 const CHANNELS = 1;
+
+/** Calculate a prorated INR charge and round it to the nearest paise. */
+export function calculateBilledAmount(durationSecs: number, billingRate: number): number {
+  const nonNegativeDuration = Math.max(0, durationSecs);
+  const amount = (nonNegativeDuration / 60) * billingRate;
+  return Number(amount.toFixed(WALLET.CURRENCY_DECIMAL_PLACES));
+}
 
 /** Decide the call type from connection context. */
 export function resolveCallType(streamId?: string, requesterUserId?: string | null): string {
@@ -76,6 +84,7 @@ export async function createCallRecord(input: CreateCallRecordInput): Promise<vo
         agentId: input.agentId,
         agentName: input.agentName,
         userId: input.userId,
+        billingRate: input.billingRate,
         phoneNumber: input.phoneNumber ?? null,
         direction: input.direction ?? null,
       },
@@ -95,7 +104,7 @@ async function uploadTelephonyRecording(
   sessionId: string,
   chunks: Buffer[],
   sampleRate: number,
-): Promise<{ key: string; mimeType: string } | null> {
+): Promise<StoredCallRecording | null> {
   if (chunks.length === 0) {
     return null;
   }
@@ -103,6 +112,57 @@ async function uploadTelephonyRecording(
   const key = buildRecordingKey(sessionId, 'wav');
   const storedKey = await uploadRecording(key, wav, RECORDING.TELEPHONY_MIME_TYPE);
   return storedKey ? { key: storedKey, mimeType: RECORDING.TELEPHONY_MIME_TYPE } : null;
+}
+
+/** Atomically persist final call data and deduct the snapshotted call charge once. */
+async function persistFinalCall(
+  input: FinalizeCallRecordInput,
+  recording: StoredCallRecording | null,
+): Promise<boolean> {
+  const call = await prisma.callHistory.findUniqueOrThrow({
+    where: { sessionId: input.sessionId },
+    select: { userId: true, billingRate: true, billedAt: true },
+  });
+  if (call.billedAt) return false;
+
+  const billingRate = Number(call.billingRate);
+  const billedAmount = calculateBilledAmount(input.durationSecs, billingRate);
+  const billedAt = new Date();
+  const callUpdate = prisma.callHistory.update({
+    where: { sessionId: input.sessionId, billedAt: null },
+    data: {
+      status: input.status,
+      durationSecs: input.durationSecs,
+      endedAt: billedAt,
+      transcript: input.transcript as unknown as Prisma.InputJsonValue,
+      billingRate,
+      billedAmount,
+      billedAt,
+      ...(recording && { recordingKey: recording.key, recordingMimeType: recording.mimeType }),
+    },
+  });
+
+  if (call.userId && billedAmount > 0) {
+    await prisma.$transaction([
+      callUpdate,
+      prisma.user.update({
+        where: { id: call.userId },
+        data: { walletBalance: { decrement: billedAmount } },
+      }),
+    ]);
+  } else {
+    await callUpdate;
+  }
+
+  logger.info('Call history finalized and wallet billed', {
+    sessionId: input.sessionId,
+    status: input.status,
+    durationSecs: input.durationSecs,
+    billingRate,
+    billedAmount,
+    hasRecording: !!recording,
+  });
+  return true;
 }
 
 /**
@@ -118,28 +178,9 @@ export async function finalizeCallRecord(input: FinalizeCallRecordInput): Promis
         input.recordingSampleRate ?? RECORDING.TELEPHONY_SAMPLE_RATE,
       )
       : null;
+    const finalized = await persistFinalCall(input, recording);
 
-    await prisma.callHistory.update({
-      where: { sessionId: input.sessionId },
-      data: {
-        status: input.status,
-        durationSecs: input.durationSecs,
-        endedAt: new Date(),
-        transcript: input.transcript as unknown as Prisma.InputJsonValue,
-        ...(recording && { recordingKey: recording.key, recordingMimeType: recording.mimeType }),
-      },
-    });
-    logger.info('Call history record finalized', {
-      sessionId: input.sessionId,
-      status: input.status,
-      durationSecs: input.durationSecs,
-      hasRecording: !!recording,
-    });
-
-    // Best-effort: forward the recording to the Sales Analyser app when the
-    // agent has call analysis enabled. Fire-and-forget so it never delays the
-    // ending call; the service itself swallows all errors.
-    if (recording) {
+    if (recording && finalized) {
       const updated = await prisma.callHistory.findUnique({
         where: { sessionId: input.sessionId },
         select: {
@@ -152,9 +193,7 @@ export async function finalizeCallRecord(input: FinalizeCallRecordInput): Promis
           recordingMimeType: true,
         },
       });
-      if (updated) {
-        void triggerCallAnalysis(updated);
-      }
+      if (updated) void triggerCallAnalysis(updated);
     }
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
