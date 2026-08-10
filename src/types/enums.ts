@@ -153,6 +153,20 @@ export const CAMPAIGN_SCHEDULER = {
   BATCH_SIZE: 25,
   /** Validates an "HH:MM" 24-hour time-of-day string. */
   TIME_OF_DAY_PATTERN: /^([01]\d|2[0-3]):[0-5]\d$/,
+  /**
+   * Zone used when a campaign has no stored timezone. Call windows and start
+   * times must never fall back to the server process timezone, which varies
+   * between a developer machine and a container.
+   */
+  FALLBACK_TIMEZONE: 'UTC',
+  /** Validates an IANA zone name such as "Asia/Kolkata" or "UTC". */
+  TIMEZONE_PATTERN: /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+){0,2}$/,
+  /** Upper bound on a stored zone name, guarding the DB column. */
+  MAX_TIMEZONE_LENGTH: 64,
+  /** Validates a zoneless wall-clock stamp "YYYY-MM-DDTHH:MM". */
+  LOCAL_DATE_TIME_PATTERN: /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/,
+  /** Minutes in a full day, used for wrap-around window maths. */
+  MINUTES_PER_DAY: 1440,
 } as const;
 
 export type RoutePath = typeof ROUTES[keyof typeof ROUTES];

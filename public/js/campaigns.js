@@ -11,6 +11,16 @@ import { CONFIG } from './constants/config.js';
 import { api } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { CAMPAIGN_FORM_SCHEMA, CAMPAIGN_SCHEDULE_SCHEMA } from './constants/inputSchemas.js';
+import {
+  detectTimeZone,
+  resolveTimeZone,
+  listTimeZones,
+  getZonedParts,
+  toZonedDateTimeInput,
+  formatInTimeZone,
+} from './utils/timezone.js';
+
+const MS_PER_HOUR = 3_600_000;
 
 /** @type {any[]} */
 let campaigns = [];
@@ -162,11 +172,16 @@ function renderCampaignActions(c) {
  */
 function renderScheduleMeta(c) {
   const parts = [];
+  const zone = resolveTimeZone(c.timezone);
   if (c.scheduledAt) {
-    parts.push(new Date(c.scheduledAt).toLocaleString());
+    parts.push(formatInTimeZone(c.scheduledAt, zone));
   }
   if (c.windowStart && c.windowEnd) {
     parts.push(`${c.windowStart}–${c.windowEnd}`);
+  }
+  // Name the zone so a schedule is never ambiguous on the card.
+  if (parts.length > 0 && c.timezone) {
+    parts.push(c.timezone);
   }
   if (parts.length === 0) return '';
   return `<span class="campaign-schedule-meta">${escapeHtml(parts.join(' · '))}</span>`;
@@ -394,17 +409,32 @@ export async function retriggerCampaign(id) {
 }
 
 /**
- * Convert an ISO timestamp to a value usable by a datetime-local input.
- * @param {string | null | undefined} iso
+ * The zone currently selected in the schedule form, falling back to the
+ * browser's own zone. Every wall-clock value in the form is interpreted in it.
  * @returns {string}
  */
-function toLocalDateTimeInput(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    + `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+export function getSelectedTimeZone() {
+  const selected = getVal('campaign-timezone');
+  return resolveTimeZone(selected || detectTimeZone());
+}
+
+/**
+ * Fill the timezone picker and select `preferred` (or the browser's zone).
+ * @param {string | null | undefined} preferred
+ * @returns {void}
+ */
+function populateTimeZoneSelect(preferred) {
+  const select = /** @type {HTMLSelectElement|null} */ (document.getElementById('campaign-timezone'));
+  if (!select) return;
+
+  const chosen = resolveTimeZone(preferred || detectTimeZone());
+  const zones = listTimeZones();
+  if (!zones.includes(chosen)) zones.unshift(chosen);
+
+  select.innerHTML = zones
+    .map((zone) => `<option value="${escapeHtml(zone)}">${escapeHtml(zone)}</option>`)
+    .join('');
+  select.value = chosen;
 }
 
 /**
@@ -419,7 +449,10 @@ export function showScheduleForm(id) {
 
   schedulingCampaignId = id;
   const campaign = campaigns.find((c) => c.id === id);
-  setVal('campaign-scheduled-at', toLocalDateTimeInput(campaign?.scheduledAt));
+  // Re-open the form in the zone the campaign was scheduled in, so the times
+  // shown are the ones the user originally typed.
+  populateTimeZoneSelect(campaign?.timezone);
+  setVal('campaign-scheduled-at', toZonedDateTimeInput(campaign?.scheduledAt, getSelectedTimeZone()));
   setVal('campaign-window-start', campaign?.windowStart || '');
   setVal('campaign-window-end', campaign?.windowEnd || '');
   updateScheduleSummary();
@@ -434,20 +467,34 @@ export function showScheduleForm(id) {
  * @param {Date} [now]
  * @returns {string}
  */
-export function computeStartPreset(key, now = new Date()) {
-  const d = new Date(now.getTime());
+export function computeStartPreset(key, now = new Date(), timeZone = getSelectedTimeZone()) {
+  // Presets are expressed in the selected zone, so "this evening" means 18:00
+  // there rather than 18:00 on whatever clock the browser is set to.
+  const parts = getZonedParts(now, timeZone);
+  let wallClock;
+
   if (key === 'in-1h' || key === '1h') {
-    d.setHours(d.getHours() + 1);
-  } else if (key === 'evening') {
-    d.setHours(18, 0, 0, 0);
+    // +1h has to be applied to the instant, then re-read in the target zone.
+    return toZonedDateTimeInput(new Date(now.getTime() + MS_PER_HOUR), timeZone);
+  }
+  if (key === 'evening') {
+    wallClock = { ...parts, hour: 18, minute: 0 };
   } else if (key === 'tomorrow') {
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
+    wallClock = { ...parts, hour: 9, minute: 0 };
+    // Roll the date forward using UTC maths on the zoned calendar fields, which
+    // handles month/year boundaries without touching the browser's zone.
+    const rolled = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1));
+    wallClock.year = rolled.getUTCFullYear();
+    wallClock.month = rolled.getUTCMonth() + 1;
+    wallClock.day = rolled.getUTCDate();
   } else {
     // "now" / unknown → start as soon as queued (blank).
     return '';
   }
-  return toLocalDateTimeInput(d.toISOString());
+
+  const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  return `${wallClock.year}-${pad(wallClock.month)}-${pad(wallClock.day)}`
+    + `T${pad(wallClock.hour)}:${pad(wallClock.minute)}`;
 }
 
 /**
@@ -496,10 +543,16 @@ export function updateScheduleSummary() {
   const startRaw = getVal('campaign-scheduled-at');
   const from = getVal('campaign-window-start');
   const to = getVal('campaign-window-end');
+  const zone = getSelectedTimeZone();
 
-  const startText = startRaw ? SS.startsAt(new Date(startRaw).toLocaleString()) : SS.startsNow;
+  // The summary echoes the raw wall clock plus the zone rather than re-parsing
+  // it, so the preview matches exactly what gets sent to the server.
+  const startText = startRaw
+    ? SS.startsAt(startRaw.replace('T', ' '))
+    : SS.startsNow;
   const windowText = from && to ? SS.window(from, to) : SS.anytime;
-  el.textContent = `${startText} · ${windowText}`;
+  const zoneText = startRaw || (from && to) ? ` · ${SS.timezone(zone)}` : '';
+  el.textContent = `${startText} · ${windowText}${zoneText}`;
 }
 
 /**
@@ -526,9 +579,14 @@ export async function handleScheduleSubmit(event) {
   const scheduledAtRaw = getVal('campaign-scheduled-at');
   const windowStart = getVal('campaign-window-start');
   const windowEnd = getVal('campaign-window-end');
+  const timezone = getSelectedTimeZone();
 
+  // Send the wall clock the user picked plus the zone it belongs to, and let the
+  // server resolve the instant. Converting here with `new Date(raw)` would bind
+  // the schedule to this browser's timezone instead of the chosen one.
   const payload = {
-    scheduledAt: scheduledAtRaw ? new Date(scheduledAtRaw).toISOString() : null,
+    scheduledAtLocal: scheduledAtRaw || null,
+    timezone: scheduledAtRaw || windowStart ? timezone : null,
     windowStart: windowStart || null,
     windowEnd: windowEnd || null,
   };
@@ -820,6 +878,7 @@ export function initCampaignPanel() {
   ['campaign-scheduled-at', 'campaign-window-start', 'campaign-window-end'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', updateScheduleSummary);
   });
+  document.getElementById('campaign-timezone')?.addEventListener('change', updateScheduleSummary);
 }
 
 /**

@@ -42,14 +42,27 @@ export const CAMPAIGN_FORM_SCHEMA = z.object({
 });
 
 const CAMPAIGN_TIME_OF_DAY = z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const CAMPAIGN_LOCAL_DATE_TIME = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/);
+const CAMPAIGN_TIMEZONE = z.string().trim().min(1).max(64)
+  .regex(/^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+){0,2}$/);
 
+// Mirrors SCHEDULE_CAMPAIGN_BODY_SCHEMA on the server. The start time is sent
+// as a zoneless wall clock plus an explicit IANA zone so the server resolves the
+// instant identically no matter what timezone this browser is set to.
 export const CAMPAIGN_SCHEDULE_SCHEMA = z.object({
-  scheduledAt: z.string().datetime().nullable().optional(),
+  scheduledAtLocal: CAMPAIGN_LOCAL_DATE_TIME.nullable().optional(),
+  timezone: CAMPAIGN_TIMEZONE.nullable().optional(),
   windowStart: CAMPAIGN_TIME_OF_DAY.nullable().optional(),
   windowEnd: CAMPAIGN_TIME_OF_DAY.nullable().optional(),
 }).refine(
   (data) => Boolean(data.windowStart) === Boolean(data.windowEnd),
   { message: 'windowStart and windowEnd must be provided together', path: ['windowEnd'] },
+).refine(
+  (data) => !data.windowStart || Boolean(data.timezone),
+  { message: 'timezone is required when a call window is set', path: ['timezone'] },
+).refine(
+  (data) => !data.scheduledAtLocal || Boolean(data.timezone),
+  { message: 'timezone is required when scheduledAtLocal is set', path: ['timezone'] },
 );
 
 export const WS_INBOUND_MESSAGE_SCHEMA = z.union([

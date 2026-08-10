@@ -134,6 +134,29 @@ export interface CampaignTriggerSummary {
   failed: number;
 }
 
+/** Calendar fields of an instant as observed in a specific IANA timezone. */
+export interface ZonedDateTimeParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+}
+
+/** A campaign row as needed by the background scheduler. */
+export interface SchedulableCampaign {
+  id: string;
+  agentId: string;
+  providerId: string | null;
+  userId: string;
+  status: string;
+  scheduledAt: Date | null;
+  windowStart: string | null;
+  windowEnd: string | null;
+  /** IANA zone the call window is expressed in. Null falls back to UTC. */
+  timezone: string | null;
+}
+
 export interface CallHistoryAgentContext {
   id: string;
   name: string;

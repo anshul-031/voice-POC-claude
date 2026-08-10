@@ -19,23 +19,15 @@ import {
   TELEPHONY_DIRECTION,
   TELEPHONY_PROVIDER,
 } from '../types/index.js';
+import type { SchedulableCampaign } from '../types/index.js';
 import { extractVobizCredentials } from './vobizCalling.js';
 import { runCampaign } from './campaignRunner.js';
 import { DEFAULT_PORT } from '../constants/index.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
 import { canStartWalletCall } from './walletService.js';
+import { getZonedMinutesSinceMidnight, resolveTimeZone } from '../utils/timezone.js';
 
-/** A campaign row as needed by the scheduler. */
-export interface SchedulableCampaign {
-  id: string;
-  agentId: string;
-  providerId: string | null;
-  userId: string;
-  status: string;
-  scheduledAt: Date | null;
-  windowStart: string | null;
-  windowEnd: string | null;
-}
+export type { SchedulableCampaign };
 
 /** Converts an "HH:MM" string into minutes since midnight. */
 export function parseTimeOfDay(hhmm: string): number {
@@ -47,15 +39,22 @@ export function parseTimeOfDay(hhmm: string): number {
  * Whether `now` falls inside the campaign's allowed call window.
  * A missing/incomplete window means "always allowed". Windows that wrap past
  * midnight (start > end) are supported.
+ *
+ * `windowStart`/`windowEnd` are wall-clock times the user typed, so they are
+ * only meaningful in the campaign's own timezone. Resolving them against the
+ * server process timezone instead (the old `now.getHours()` behaviour) held
+ * campaigns back by the user's whole UTC offset — a 18:00 IST window was read
+ * as 18:00 UTC, so the campaign only started at 23:30 IST.
  */
 export function isWithinCallWindow(
   now: Date,
   windowStart?: string | null,
   windowEnd?: string | null,
+  timeZone?: string | null,
 ): boolean {
   if (!windowStart || !windowEnd) return true;
 
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const nowMinutes = getZonedMinutesSinceMidnight(now, timeZone);
   const start = parseTimeOfDay(windowStart);
   const end = parseTimeOfDay(windowEnd);
 
@@ -110,11 +109,20 @@ export async function processScheduledCampaign(
   campaign: SchedulableCampaign,
   now: Date,
 ): Promise<void> {
-  // Not due yet.
+  // Not due yet. Both sides are absolute instants, so this needs no zone.
   if (campaign.scheduledAt && now < campaign.scheduledAt) return;
 
   // Outside the allowed call window — wait for a later tick.
-  if (!isWithinCallWindow(now, campaign.windowStart, campaign.windowEnd)) return;
+  if (!isWithinCallWindow(now, campaign.windowStart, campaign.windowEnd, campaign.timezone)) {
+    logger.debug('Scheduled campaign held outside its call window', {
+      campaignId: campaign.id,
+      timezone: resolveTimeZone(campaign.timezone),
+      windowStart: campaign.windowStart,
+      windowEnd: campaign.windowEnd,
+      localMinutes: getZonedMinutesSinceMidnight(now, campaign.timezone),
+    });
+    return;
+  }
 
   if (!await canStartWalletCall(campaign.userId)) {
     await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.FAILED);
@@ -187,6 +195,7 @@ export async function runSchedulerTick(now: Date = new Date()): Promise<void> {
       scheduledAt: true,
       windowStart: true,
       windowEnd: true,
+      timezone: true,
     },
   })) as SchedulableCampaign[];
 

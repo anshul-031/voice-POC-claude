@@ -100,6 +100,9 @@ model Campaign {
   scheduledAt     DateTime?
   windowStart     String?
   windowEnd       String?
+  /// IANA zone name (e.g. "Asia/Kolkata") that windowStart/windowEnd are expressed in.
+  /// Null means the window is evaluated in UTC.
+  timezone        String?
   userId          String
   user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   contacts        CampaignContact[]

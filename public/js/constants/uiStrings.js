@@ -237,6 +237,8 @@ export const UI_STRINGS = {
       windowStartLabel: 'From',
       windowEndLabel: 'To',
       windowHint: 'Calls are only placed between these times. Leave both blank for no restriction.',
+      timezoneLabel: 'Timezone',
+      timezoneHint: 'The start time and call window above are interpreted in this timezone.',
       scheduleBtn: 'Schedule Campaign',
     },
     schedulePresets: {
@@ -254,6 +256,7 @@ export const UI_STRINGS = {
       startsAt: (/** @type {string} */ when) => `Starts ${when}`,
       window: (/** @type {string} */ from, /** @type {string} */ to) => `calls between ${from} and ${to}`,
       anytime: 'calls anytime',
+      timezone: (/** @type {string} */ zone) => `times in ${zone}`,
     },
     card: {
       contacts: (/** @type {number} */ n) => `${n} contact${n === 1 ? '' : 's'}`,

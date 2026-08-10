@@ -10,6 +10,7 @@ import {
   CAMPAIGN_ID_PARAMS_SCHEMA,
   REQUEST_HEADERS_SCHEMA,
   type CreateCampaignBody,
+  type ScheduleCampaignBody,
 } from '../constants/inputSchemas.js';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
 import { CAMPAIGN_STATUS, CAMPAIGN_CONTACT_STATUS, TELEPHONY_DIRECTION, TELEPHONY_PROVIDER, WALLET } from '../types/index.js';
@@ -24,6 +25,7 @@ import { extractTemplateVariables } from '../utils/templateVariables.js';
 import { extractVobizCredentials } from '../services/vobizCalling.js';
 import { runCampaign, type RunCampaignContact } from '../services/campaignRunner.js';
 import { canStartWalletCall } from '../services/walletService.js';
+import { zonedWallClockToUtc } from '../utils/timezone.js';
 
 const router = Router();
 
@@ -514,6 +516,31 @@ router.post(
   },
 );
 
+/** Sentinel distinguishing "no start time" from "start time could not be parsed". */
+const INVALID_SCHEDULE = Symbol('invalidSchedule');
+
+/**
+ * Turns the request's start time into an absolute instant.
+ *
+ * `scheduledAtLocal` + `timezone` is preferred: the wall clock the user picked
+ * is resolved here against an explicit zone, so the stored instant no longer
+ * depends on the timezone of whichever machine ran the browser. `scheduledAt`
+ * stays supported for clients that already send a UTC instant.
+ */
+function resolveScheduledInstant(
+  scheduledAt?: string | null,
+  scheduledAtLocal?: string | null,
+  timezone?: string | null,
+): Date | null | typeof INVALID_SCHEDULE {
+  if (scheduledAtLocal) {
+    return zonedWallClockToUtc(scheduledAtLocal, timezone) ?? INVALID_SCHEDULE;
+  }
+  if (!scheduledAt) return null;
+
+  const parsed = new Date(scheduledAt);
+  return Number.isNaN(parsed.getTime()) ? INVALID_SCHEDULE : parsed;
+}
+
 /** Validates the schedule body and persists the start time + call window. */
 async function scheduleCampaignDb(
   id: string,
@@ -530,7 +557,25 @@ async function scheduleCampaignDb(
     return { status: 404, body: { error: UI_STRINGS.api.errors.campaignNotFound } };
   }
 
-  const { scheduledAt, windowStart, windowEnd } = bodyParse.data;
+  const { scheduledAt, scheduledAtLocal, timezone } = bodyParse.data;
+
+  // Resolve the start instant before touching the DB so a malformed wall clock
+  // does not leave contacts reset with no schedule attached.
+  const startsAt = resolveScheduledInstant(scheduledAt, scheduledAtLocal, timezone);
+  if (startsAt === INVALID_SCHEDULE) {
+    return { status: 400, body: { error: UI_STRINGS.api.errors.invalidInput } };
+  }
+
+  return persistCampaignSchedule(id, bodyParse.data, startsAt);
+}
+
+/** Applies a validated schedule: resets contacts, then stores the start + window. */
+async function persistCampaignSchedule(
+  id: string,
+  data: ScheduleCampaignBody,
+  startsAt: Date | null,
+): Promise<HandlerResult> {
+  const { timezone, windowStart, windowEnd } = data;
 
   // Reset every contact back to PENDING so the scheduled run has contacts to
   // dial. Scheduling is offered for completed/failed campaigns (whose contacts
@@ -545,14 +590,21 @@ async function scheduleCampaignDb(
   const campaign = await prisma.campaign.update({
     where: { id },
     data: {
-      scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      scheduledAt: startsAt,
       windowStart: windowStart ?? null,
       windowEnd: windowEnd ?? null,
+      timezone: timezone ?? null,
       status: CAMPAIGN_STATUS.SCHEDULED,
     },
   });
 
-  logger.info('Campaign scheduled', { id: campaign.id, scheduledAt: scheduledAt ?? null });
+  logger.info('Campaign scheduled', {
+    id: campaign.id,
+    scheduledAt: startsAt ? startsAt.toISOString() : null,
+    timezone: timezone ?? null,
+    windowStart: windowStart ?? null,
+    windowEnd: windowEnd ?? null,
+  });
   return { status: 200, body: campaign };
 }
 

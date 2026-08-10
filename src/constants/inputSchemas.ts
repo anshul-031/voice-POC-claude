@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AVAILABLE_MODELS, AVAILABLE_VOICES } from './agents.js';
 import { SUPPORTED_THEMES } from './index.js';
 import { MESSAGE_TYPE, CAMPAIGN_SCHEDULER } from '../types/index.js';
+import { isValidTimeZone } from '../utils/timezone.js';
 
 const VOICE_IDS = AVAILABLE_VOICES.map((voice) => voice.id);
 const MODEL_IDS = AVAILABLE_MODELS.map((model) => model.id);
@@ -144,9 +145,31 @@ const CAMPAIGN_TIME_OF_DAY_SCHEMA = z
   .trim()
   .regex(CAMPAIGN_SCHEDULER.TIME_OF_DAY_PATTERN);
 
+/** An IANA zone name the runtime's ICU data actually recognises. */
+export const CAMPAIGN_TIMEZONE_SCHEMA = z
+  .string()
+  .trim()
+  .max(CAMPAIGN_SCHEDULER.MAX_TIMEZONE_LENGTH)
+  .regex(CAMPAIGN_SCHEDULER.TIMEZONE_PATTERN)
+  .refine(isValidTimeZone, { message: 'Unknown IANA timezone' });
+
+/** A zoneless wall clock, "YYYY-MM-DDTHH:MM", as produced by datetime-local. */
+const CAMPAIGN_LOCAL_DATE_TIME_SCHEMA = z
+  .string()
+  .trim()
+  .regex(CAMPAIGN_SCHEDULER.LOCAL_DATE_TIME_PATTERN);
+
 export const SCHEDULE_CAMPAIGN_BODY_SCHEMA = z
   .object({
+    /** Absolute instant. Accepted for clients that already resolved the zone. */
     scheduledAt: z.string().datetime().nullable().optional(),
+    /**
+     * Preferred: the wall clock the user picked, resolved server-side against
+     * `timezone`. Keeps the stored instant independent of the browser's and the
+     * server's own timezone.
+     */
+    scheduledAtLocal: CAMPAIGN_LOCAL_DATE_TIME_SCHEMA.nullable().optional(),
+    timezone: CAMPAIGN_TIMEZONE_SCHEMA.nullable().optional(),
     windowStart: CAMPAIGN_TIME_OF_DAY_SCHEMA.nullable().optional(),
     windowEnd: CAMPAIGN_TIME_OF_DAY_SCHEMA.nullable().optional(),
   })
@@ -154,6 +177,16 @@ export const SCHEDULE_CAMPAIGN_BODY_SCHEMA = z
   .refine(
     (data) => Boolean(data.windowStart) === Boolean(data.windowEnd),
     { message: 'windowStart and windowEnd must be provided together', path: ['windowEnd'] },
+  )
+  // A wall-clock value without a zone is exactly the ambiguity that caused
+  // campaigns to fire at the wrong hour, so reject it instead of guessing.
+  .refine(
+    (data) => !data.windowStart || Boolean(data.timezone),
+    { message: 'timezone is required when a call window is set', path: ['timezone'] },
+  )
+  .refine(
+    (data) => !data.scheduledAtLocal || Boolean(data.timezone),
+    { message: 'timezone is required when scheduledAtLocal is set', path: ['timezone'] },
   );
 
 export const CAMPAIGN_ID_PARAMS_SCHEMA = z.object({

@@ -457,7 +457,12 @@ describe('Campaign Routes', () => {
   });
 
   describe('POST /:id/schedule', () => {
-    const validBody = { scheduledAt: '2026-07-07T10:00:00.000Z', windowStart: '09:00', windowEnd: '18:00' };
+    const validBody = {
+      scheduledAt: '2026-07-07T10:00:00.000Z',
+      windowStart: '09:00',
+      windowEnd: '18:00',
+      timezone: 'Asia/Kolkata',
+    };
 
     it('schedules a campaign with a start time and call window', async () => {
       (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
@@ -496,7 +501,84 @@ describe('Campaign Routes', () => {
         baseReq({ params: { id: 'c1' }, body: {} }), res,
       );
       const data = (prisma.campaign.update as any).mock.calls[0][0].data;
-      expect(data).toMatchObject({ scheduledAt: null, windowStart: null, windowEnd: null, status: 'scheduled' });
+      expect(data).toMatchObject({
+        scheduledAt: null, windowStart: null, windowEnd: null, timezone: null, status: 'scheduled',
+      });
+    });
+
+    it('persists the timezone alongside the call window', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 1 });
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: validBody }), mockRes(),
+      );
+      const data = (prisma.campaign.update as any).mock.calls[0][0].data;
+      expect(data.timezone).toBe('Asia/Kolkata');
+    });
+
+    it('resolves a wall-clock start time against the given timezone', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 1 });
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({
+          params: { id: 'c1' },
+          body: { scheduledAtLocal: '2026-07-07T18:00', timezone: 'Asia/Kolkata' },
+        }),
+        mockRes(),
+      );
+      const data = (prisma.campaign.update as any).mock.calls[0][0].data;
+      // 6 PM IST is 12:30 UTC — not 18:00 UTC.
+      expect((data.scheduledAt as Date).toISOString()).toBe('2026-07-07T12:30:00.000Z');
+    });
+
+    it('prefers the wall clock over a stale absolute instant', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
+      (prisma.campaign.update as any).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 1 });
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({
+          params: { id: 'c1' },
+          body: {
+            scheduledAt: '2026-07-07T18:00:00.000Z',
+            scheduledAtLocal: '2026-07-07T18:00',
+            timezone: 'Asia/Kolkata',
+          },
+        }),
+        mockRes(),
+      );
+      const data = (prisma.campaign.update as any).mock.calls[0][0].data;
+      expect((data.scheduledAt as Date).toISOString()).toBe('2026-07-07T12:30:00.000Z');
+    });
+
+    it('rejects a call window sent without a timezone', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: { windowStart: '09:00', windowEnd: '18:00' } }), res,
+      );
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(prisma.campaign.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown timezone', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({
+          params: { id: 'c1' },
+          body: { ...validBody, timezone: 'Mars/Olympus' },
+        }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects a wall-clock start time sent without a timezone', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: { scheduledAtLocal: '2026-07-07T18:00' } }), res,
+      );
+      expect(res.status).toHaveBeenCalledWith(400);
     });
 
     it('returns 400 for invalid params', async () => {

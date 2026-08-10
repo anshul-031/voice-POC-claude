@@ -8,6 +8,12 @@ export default defineConfig({
       'src/__tests__/**/*.test.ts',
       'public/js/__tests__/**/*.test.ts',
     ],
+    // Pin the process timezone to UTC so tests match a production container and
+    // cannot accidentally pass just because a developer's machine sits in the
+    // same zone as the fixtures. Scheduling code must name its zone explicitly.
+    env: {
+      TZ: 'UTC',
+    },
     // Set a global timeout of 30 seconds for all unit tests
     testTimeout: 30000,
     hookTimeout: 30000,

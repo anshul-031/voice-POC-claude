@@ -59,6 +59,7 @@ function setupDOM() {
     <input id="campaign-scheduled-at" value="">
     <input id="campaign-window-start" value="">
     <input id="campaign-window-end" value="">
+    <select id="campaign-timezone"></select>
     <button id="btn-cancel-schedule"></button>
     <div id="campaign-schedule-summary"></div>
     <button data-start-preset="1h"></button>
@@ -556,6 +557,7 @@ describe('campaigns.js', () => {
         {
           id: 'c1', name: 'Camp', status: 'draft', agent: { name: 'A' }, _count: { contacts: 1 },
           scheduledAt: '2026-07-07T10:00:00.000Z', windowStart: '09:00', windowEnd: '18:00',
+          timezone: 'Asia/Kolkata',
         },
       ]);
       await loadCampaigns();
@@ -568,6 +570,55 @@ describe('campaigns.js', () => {
       expect((document.getElementById('campaign-window-start') as HTMLInputElement).value).toBe('09:00');
       hideScheduleForm();
       expect(document.getElementById('campaign-schedule-container')?.classList.contains('hidden')).toBe(true);
+    });
+
+    it('reopens the form in the campaign timezone and shows the original wall clock', () => {
+      showScheduleForm('c1');
+      // Asia/Kolkata is absent from Intl.supportedValuesOf (which canonicalises
+      // it to Asia/Calcutta), so the stored zone has to be injected into the
+      // option list rather than silently dropped.
+      expect((document.getElementById('campaign-timezone') as HTMLSelectElement).value)
+        .toBe('Asia/Kolkata');
+      // 10:00 UTC is 15:30 IST — the form must show what an IST user typed.
+      expect((document.getElementById('campaign-scheduled-at') as HTMLInputElement).value)
+        .toBe('2026-07-07T15:30');
+    });
+
+    it('sends the picked wall clock plus an explicit timezone, not a browser-local instant', async () => {
+      showScheduleForm('c1');
+      (document.getElementById('campaign-timezone') as HTMLSelectElement).value = 'Asia/Kolkata';
+      (document.getElementById('campaign-scheduled-at') as HTMLInputElement).value = '2026-07-07T18:00';
+      (document.getElementById('campaign-window-start') as HTMLInputElement).value = '18:00';
+      (document.getElementById('campaign-window-end') as HTMLInputElement).value = '21:00';
+      vi.mocked(api).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+
+      await handleScheduleSubmit({ preventDefault: vi.fn() } as unknown as Event);
+
+      const [, options] = vi.mocked(api).mock.calls[0];
+      expect(JSON.parse(String((options as RequestInit).body))).toEqual({
+        scheduledAtLocal: '2026-07-07T18:00',
+        timezone: 'Asia/Kolkata',
+        windowStart: '18:00',
+        windowEnd: '21:00',
+      });
+    });
+
+    it('omits the timezone when nothing time-bound was chosen', async () => {
+      showScheduleForm('c1');
+      (document.getElementById('campaign-scheduled-at') as HTMLInputElement).value = '';
+      (document.getElementById('campaign-window-start') as HTMLInputElement).value = '';
+      (document.getElementById('campaign-window-end') as HTMLInputElement).value = '';
+      vi.mocked(api).mockResolvedValue({ id: 'c1', status: 'scheduled' });
+
+      await handleScheduleSubmit({ preventDefault: vi.fn() } as unknown as Event);
+
+      const [, options] = vi.mocked(api).mock.calls[0];
+      expect(JSON.parse(String((options as RequestInit).body))).toEqual({
+        scheduledAtLocal: null,
+        timezone: null,
+        windowStart: null,
+        windowEnd: null,
+      });
     });
 
     it('returns early when the container is missing', () => {
@@ -840,6 +891,22 @@ describe('campaigns.js', () => {
       expect(computeStartPreset('bogus', now)).toBe('');
     });
 
+    it('computes quick-start presets in the selected timezone', () => {
+      // 10:00 UTC is 15:30 IST, so "this evening" means 18:00 IST that same day
+      // and "tomorrow" rolls the IST calendar date, not the UTC one.
+      expect(computeStartPreset('evening', now, 'Asia/Kolkata')).toBe('2026-07-07T18:00');
+      expect(computeStartPreset('tomorrow', now, 'Asia/Kolkata')).toBe('2026-07-08T09:00');
+      // +1h stays an instant shift, re-read in the target zone.
+      expect(computeStartPreset('1h', now, 'Asia/Kolkata')).toBe('2026-07-07T16:30');
+    });
+
+    it('rolls month boundaries when computing the tomorrow preset', () => {
+      expect(computeStartPreset('tomorrow', new Date('2026-07-31T10:00:00Z'), 'UTC'))
+        .toBe('2026-08-01T09:00');
+      expect(computeStartPreset('tomorrow', new Date('2026-12-31T10:00:00Z'), 'UTC'))
+        .toBe('2027-01-01T09:00');
+    });
+
     it('computes quick call-window presets', () => {
       expect(computeWindowPreset('business')).toEqual({ start: '09:00', end: '18:00' });
       expect(computeWindowPreset('morning')).toEqual({ start: '09:00', end: '12:00' });
@@ -855,6 +922,17 @@ describe('campaigns.js', () => {
       const text = document.getElementById('campaign-schedule-summary')?.textContent || '';
       expect(text).toContain('Starts');
       expect(text).toContain('calls between 09:00 and 18:00');
+    });
+
+    it('names the timezone in the summary so the schedule is unambiguous', () => {
+      const select = document.getElementById('campaign-timezone') as HTMLSelectElement;
+      select.innerHTML = '<option value="Asia/Kolkata">Asia/Kolkata</option>';
+      select.value = 'Asia/Kolkata';
+      (document.getElementById('campaign-scheduled-at') as HTMLInputElement).value = '2026-07-07T18:00';
+      updateScheduleSummary();
+      const text = document.getElementById('campaign-schedule-summary')?.textContent || '';
+      expect(text).toContain('Starts 2026-07-07 18:00');
+      expect(text).toContain('times in Asia/Kolkata');
     });
 
     it('summarises defaults when nothing is chosen', () => {

@@ -524,6 +524,19 @@
               <small class="form-hint" data-i18n="campaigns.form.windowHint">Calls are only placed between these times. Leave both blank for no restriction.</small>
             </div>
 
+            <!-- Timezone the start time and call window are expressed in -->
+            <div class="schedule-section">
+              <div class="schedule-section-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/>
+                  <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/>
+                </svg>
+                <label for="campaign-timezone" data-i18n="campaigns.form.timezoneLabel">Timezone</label>
+              </div>
+              <select id="campaign-timezone" class="form-input-sm schedule-input"></select>
+              <small class="form-hint" data-i18n="campaigns.form.timezoneHint">The start time and call window above are interpreted in this timezone.</small>
+            </div>
+
             <div class="campaign-schedule-summary" id="campaign-schedule-summary"></div>
 
             <div class="form-actions">
