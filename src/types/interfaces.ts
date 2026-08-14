@@ -112,6 +112,8 @@ export interface TelephonyProviderConfig {
   authToken?: string | null;
   webhookUrl?: string | null;
   extraConfig?: string | null;
+  /** Maximum simultaneous outbound calls allowed through this provider. */
+  concurrencyLimit: number;
   userId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -129,9 +131,33 @@ export interface ParsedCampaignSpreadsheet {
 }
 
 export interface CampaignTriggerSummary {
+  /** Contacts dialled in this pass — not the campaign's contact count. */
   total: number;
   initiated: number;
   failed: number;
+  /**
+   * Contacts left pending because the provider's concurrency limit was already
+   * saturated. The scheduler dials them as slots free up.
+   */
+  queued: number;
+}
+
+/** Terminal outcome of a single campaign call, derived from a hangup callback. */
+export interface CampaignCallOutcome {
+  status: string;
+  /** User-facing reason shown in the per-number status table. */
+  detail: string | null;
+}
+
+/** The parts of a Vobiz hangup callback needed to resolve a campaign contact. */
+export interface CampaignHangupReport {
+  /** Present when the hangup URL was built by us (campaign calls). */
+  contactId?: string | null;
+  /** Provider call identifier, used when no contactId is carried. */
+  callId?: string | null;
+  hangupCause?: string | null;
+  callStatus?: string | null;
+  durationSecs: number;
 }
 
 /** Calendar fields of an instant as observed in a specific IANA timezone. */

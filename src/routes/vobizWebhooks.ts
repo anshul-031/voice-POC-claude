@@ -8,11 +8,15 @@
 import { Router, type Request, type Response } from 'express';
 import logger from '../utils/logger.js';
 import { ROUTES } from '../types/index.js';
+import { applyCampaignHangup } from '../services/campaignCallOutcome.js';
 
 const router = Router();
 
+/** Placeholder written to logs when the provider omits a field. */
+const UNKNOWN_VALUE = 'unknown';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getFromBody(body: any, key1: string, key2: string, def = 'unknown'): string {
+function getFromBody(body: any, key1: string, key2: string, def = UNKNOWN_VALUE): string {
   if (!body) return def;
   return String(body[key1] || body[key2] || def);
 }
@@ -106,25 +110,39 @@ router.post(
 /**
  * POST /api/webhooks/vobiz/hangup
  *
- * Optional: Called by Vobiz when the call ends.
- * Logs the hangup details for debugging / call history.
+ * Called by Vobiz when the call ends. For campaign calls the hangup URL carries
+ * the contactId, so this is where a dialled number stops being "calling" and
+ * becomes completed or failed with the reason it never connected.
  */
 router.post(
   '/hangup',
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (req: Request, res: Response): any => {
+  async (req: Request, res: Response): Promise<any> => {
     const callUuid = getFromBody(req.body, 'CallUUID', 'callUuid');
     const cause = getFromBody(req.body, 'HangupCause', 'hangupCause');
     const duration = getFromBody(req.body, 'Duration', 'duration', '0');
+    const callStatus = getFromBody(req.body, 'CallStatus', 'callStatus', '');
+    const contactId = (req.query?.contactId as string) || '';
 
     logger.info('Vobiz hangup webhook received', {
       callUuid,
       hangupCause: cause,
       duration,
+      callStatus,
+      contactId,
     });
 
+    // Answer the provider regardless of what happens to our own bookkeeping.
     res.set('Content-Type', 'application/xml');
     res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+
+    await applyCampaignHangup({
+      contactId: contactId || null,
+      callId: callUuid === UNKNOWN_VALUE ? null : callUuid,
+      hangupCause: cause === UNKNOWN_VALUE ? null : cause,
+      callStatus,
+      durationSecs: Number.parseInt(duration, 10) || 0,
+    });
   },
 );
 

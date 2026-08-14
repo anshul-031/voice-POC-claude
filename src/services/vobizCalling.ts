@@ -11,6 +11,8 @@ import { VOBIZ_MACHINE_DETECTION } from '../types/enums.js';
 
 const VOBIZ_API_BASE = 'https://api.vobiz.ai/api/v1';
 const VOBIZ_CALL_TIMEOUT_MS = 15000;
+/** Verb Vobiz should use when calling our hangup URL back. */
+const HTTP_METHOD_POST = 'POST';
 
 /**
  * Extracts a human-readable error message from a Vobiz API response.
@@ -72,11 +74,16 @@ export function extractVobizCredentials(
 
 /**
  * Initiates an outbound call via the Vobiz REST API.
+ *
+ * `hangupUrl` is optional but strongly recommended for campaign calls: it is
+ * the only signal for a call that was never answered. Without it a busy or
+ * unanswered number is left indistinguishable from one still ringing.
  */
 export async function initiateVobizCall(
   creds: VobizCredentials,
   toNumber: string,
   answerUrl: string,
+  hangupUrl?: string,
 ): Promise<VobizCallResponse> {
   const url = `${VOBIZ_API_BASE}/Account/${creds.authId}/Call/`;
 
@@ -84,6 +91,7 @@ export async function initiateVobizCall(
     from: creds.fromNumber,
     to: toNumber,
     answerUrl,
+    hangupUrl: hangupUrl ?? null,
   });
 
   const controller = new AbortController();
@@ -105,6 +113,7 @@ export async function initiateVobizCall(
         to: toNumber,
         answer_url: answerUrl,
         machine_detection: VOBIZ_MACHINE_DETECTION.HANGUP,
+        ...(hangupUrl && { hangup_url: hangupUrl, hangup_method: HTTP_METHOD_POST }),
       }),
       signal: controller.signal,
     });

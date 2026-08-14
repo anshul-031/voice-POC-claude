@@ -79,6 +79,10 @@ model TelephonyProvider {
   authToken     String?
   webhookUrl    String?
   extraConfig   String?  @db.Text
+  /// Maximum simultaneous outbound calls this provider will accept. Telephony
+  /// vendors cap concurrency and reject or drop calls placed beyond it, so the
+  /// campaign runner never dials more than this many calls at once.
+  concurrencyLimit Int   @default(3)
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaigns     Campaign[]

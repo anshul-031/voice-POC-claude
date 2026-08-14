@@ -3,13 +3,20 @@
  *
  * Each call's answer_url carries the contactId so the signaling server can look
  * up that contact's per-row variables and substitute them into the agent's
- * system prompt when the Gemini Live session starts.
+ * system prompt when the Gemini Live session starts. The hangup_url carries it
+ * too, so a number that is never answered still gets a terminal status.
+ *
+ * Dialling is capped by the provider's concurrency limit. Telephony vendors
+ * only allow a fixed number of simultaneous channels and reject or drop
+ * everything beyond it, so firing an entire contact list at once burned
+ * contacts that were never really attempted.
  */
 import prisma from '../lib/prisma.js';
 import logger from '../utils/logger.js';
 import { initiateVobizCall, type VobizCredentials } from './vobizCalling.js';
 import { CAMPAIGN_CONTACT_STATUS } from '../types/index.js';
 import type { CampaignTriggerSummary } from '../types/index.js';
+import { resolveConcurrency } from '../utils/concurrency.js';
 
 export interface RunCampaignContact {
   id: string;
@@ -21,8 +28,15 @@ export interface RunCampaignParams {
   agentId: string;
   contacts: RunCampaignContact[];
   creds: VobizCredentials;
+  /**
+   * Maximum calls in flight at once. Falls back to the conservative default
+   * when a provider predates the concurrency field.
+   */
+  concurrency?: number | null;
   /** Builds the Vobiz answer_url for a given agent + campaign contact. */
   answerUrlBuilder: (agentId: string, contactId: string) => string;
+  /** Builds the Vobiz hangup_url, used to resolve unanswered calls. */
+  hangupUrlBuilder?: (agentId: string, contactId: string) => string;
 }
 
 /**
@@ -34,9 +48,15 @@ async function callContact(
   contact: RunCampaignContact,
 ): Promise<boolean> {
   const answerUrl = params.answerUrlBuilder(params.agentId, contact.id);
+  const hangupUrl = params.hangupUrlBuilder?.(params.agentId, contact.id);
 
   try {
-    const result = await initiateVobizCall(params.creds, contact.phoneNumber, answerUrl);
+    const result = await initiateVobizCall(
+      params.creds,
+      contact.phoneNumber,
+      answerUrl,
+      hangupUrl,
+    );
 
     if (result.success) {
       await prisma.campaignContact.update({
@@ -74,32 +94,40 @@ async function callContact(
 }
 
 /**
- * Run a campaign: initiate an outbound call for each pending contact.
+ * Run a campaign: dial pending contacts without exceeding `concurrency` calls
+ * in flight. Contacts beyond the limit are left pending for the scheduler to
+ * pick up as channels free, and are reported as `queued`.
  */
 export async function runCampaign(params: RunCampaignParams): Promise<CampaignTriggerSummary> {
+  const concurrency = resolveConcurrency(params.concurrency);
+  const attempts = params.contacts.slice(0, concurrency);
+  const queued = params.contacts.length - attempts.length;
+
   logger.info('Running campaign', {
     campaignId: params.campaignId,
     agentId: params.agentId,
-    total: params.contacts.length,
+    total: attempts.length,
+    queued,
+    concurrency,
   });
 
   let initiated = 0;
   let failed = 0;
 
-  for (const contact of params.contacts) {
-    const ok = await callContact(params, contact);
-    if (ok) {
-      initiated += 1;
-    } else {
-      failed += 1;
-    }
+  const results = await Promise.all(
+    attempts.map((contact) => callContact(params, contact)),
+  );
+  for (const ok of results) {
+    if (ok) initiated += 1;
+    else failed += 1;
   }
 
   logger.info('Campaign run completed', {
     campaignId: params.campaignId,
     initiated,
     failed,
+    queued,
   });
 
-  return { total: params.contacts.length, initiated, failed };
+  return { total: attempts.length, initiated, failed, queued };
 }

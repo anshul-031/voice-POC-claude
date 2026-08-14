@@ -314,9 +314,16 @@
               </div>
             </div>
 
-            <div class="form-group">
-              <label for="tel-phone">Phone Number</label>
-              <input type="text" id="tel-phone" placeholder="e.g. +919876543210" class="form-input-sm">
+            <div class="form-row-grid telephony-row-2">
+              <div class="form-group">
+                <label for="tel-phone">Phone Number</label>
+                <input type="text" id="tel-phone" placeholder="e.g. +919876543210" class="form-input-sm">
+              </div>
+              <div class="form-group">
+                <label for="tel-concurrency" data-i18n="telephony.form.concurrencyLabel">Concurrent Call Limit</label>
+                <input type="number" id="tel-concurrency" min="1" max="100" step="1" value="3" class="form-input-sm">
+                <span class="form-hint" data-i18n="telephony.form.concurrencyHint">Maximum calls placed at the same time through this provider. Match the concurrency your telephony plan allows.</span>
+              </div>
             </div>
 
             <!-- Vobiz Auth Fields -->

@@ -20,8 +20,9 @@ import {
   TELEPHONY_PROVIDER,
 } from '../types/index.js';
 import type { SchedulableCampaign } from '../types/index.js';
-import { extractVobizCredentials } from './vobizCalling.js';
+import { extractVobizCredentials, type VobizCredentials } from './vobizCalling.js';
 import { runCampaign } from './campaignRunner.js';
+import { resolveConcurrency } from '../utils/concurrency.js';
 import { DEFAULT_PORT } from '../constants/index.js';
 import { UI_STRINGS } from '../constants/uiStrings.js';
 import { canStartWalletCall } from './walletService.js';
@@ -78,6 +79,12 @@ export function buildSchedulerAnswerUrl(agentId: string, contactId: string): str
   return `${resolvePublicBaseUrl()}/api/webhooks/vobiz/answer?${query}`;
 }
 
+/** Builds the Vobiz hangup_url, the only completion signal an unanswered call has. */
+export function buildSchedulerHangupUrl(agentId: string, contactId: string): string {
+  const query = `agentId=${encodeURIComponent(agentId)}&contactId=${encodeURIComponent(contactId)}`;
+  return `${resolvePublicBaseUrl()}/api/webhooks/vobiz/hangup?${query}`;
+}
+
 /** Looks up an active outbound Vobiz provider for the campaign owner. */
 async function findOutboundProvider(
   userId: string,
@@ -99,11 +106,137 @@ async function setCampaignStatus(id: string, status: string): Promise<void> {
   await prisma.campaign.update({ where: { id }, data: { status } });
 }
 
+/** Counts a campaign's contacts in one status. */
+async function countContacts(campaignId: string, status: string): Promise<number> {
+  return prisma.campaignContact.count({ where: { campaignId, status } });
+}
+
+/**
+ * Writes off contacts left on "calling" past the timeout.
+ *
+ * A contact leaves "calling" either when its media stream opens or when the
+ * provider reports a hangup. If neither ever happens (callback lost, provider
+ * misconfigured, process restarted mid-dial) the row would otherwise read
+ * "Calling" indefinitely and permanently hold one of the provider's channels.
+ */
+export async function sweepStaleCallingContacts(now: Date): Promise<number> {
+  const cutoff = new Date(now.getTime() - CAMPAIGN_SCHEDULER.CALLING_TIMEOUT_MS);
+  const { count } = await prisma.campaignContact.updateMany({
+    where: {
+      status: CAMPAIGN_CONTACT_STATUS.CALLING,
+      updatedAt: { lt: cutoff },
+    },
+    data: {
+      status: CAMPAIGN_CONTACT_STATUS.FAILED,
+      errorMessage: UI_STRINGS.api.callOutcome.noProviderUpdate,
+    },
+  });
+
+  if (count > 0) {
+    logger.warn('Timed out campaign contacts stuck on calling', {
+      count,
+      timeoutMs: CAMPAIGN_SCHEDULER.CALLING_TIMEOUT_MS,
+    });
+  }
+  return count;
+}
+
+/** Provider credentials plus the concurrency cap to dial within. */
+interface CampaignDialer {
+  creds: VobizCredentials;
+  limit: number;
+}
+
+/**
+ * Resolves the provider used to dial a campaign, failing the campaign when it
+ * has no usable provider.
+ */
+async function resolveCampaignDialer(
+  campaign: SchedulableCampaign,
+): Promise<CampaignDialer | null> {
+  const provider = await findOutboundProvider(campaign.userId, campaign.providerId);
+  if (!provider) {
+    await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.FAILED);
+    logger.warn('Scheduled campaign has no active provider', { campaignId: campaign.id });
+    return null;
+  }
+
+  const creds = extractVobizCredentials(provider);
+  if (!creds) {
+    await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.FAILED);
+    logger.warn('Scheduled campaign provider missing credentials', { campaignId: campaign.id });
+    return null;
+  }
+
+  return {
+    creds,
+    limit: resolveConcurrency(provider.concurrencyLimit as number | null | undefined),
+  };
+}
+
+/**
+ * Dials the next contacts that fit inside the provider's free channels.
+ *
+ * The batch is bounded by both the tick batch size and the concurrency the
+ * provider still has spare, so a long campaign trickles out at the vendor's
+ * rate instead of being rejected wholesale.
+ */
+async function dispatchNextBatch(
+  campaign: SchedulableCampaign,
+  dialer: CampaignDialer,
+  activeCalls: number,
+): Promise<void> {
+  const slots = Math.max(0, dialer.limit - activeCalls);
+  if (slots === 0) {
+    logger.debug('Campaign held at provider concurrency limit', {
+      campaignId: campaign.id,
+      activeCalls,
+      concurrencyLimit: dialer.limit,
+    });
+    return;
+  }
+
+  const contacts = await prisma.campaignContact.findMany({
+    where: { campaignId: campaign.id, status: CAMPAIGN_CONTACT_STATUS.PENDING },
+    select: { id: true, phoneNumber: true },
+    orderBy: { createdAt: 'asc' },
+    take: Math.min(CAMPAIGN_SCHEDULER.BATCH_SIZE, slots),
+  });
+  if (contacts.length === 0) return;
+
+  await runCampaign({
+    campaignId: campaign.id,
+    agentId: campaign.agentId,
+    contacts,
+    creds: dialer.creds,
+    concurrency: slots,
+    answerUrlBuilder: buildSchedulerAnswerUrl,
+    hangupUrlBuilder: buildSchedulerHangupUrl,
+  });
+}
+
+/**
+ * Completes a campaign with nothing left to dial — but only once its live calls
+ * have reported back, so a campaign is never called finished while its numbers
+ * are still ringing.
+ */
+async function completeWhenIdle(campaign: SchedulableCampaign, activeCalls: number): Promise<void> {
+  if (activeCalls > 0) {
+    logger.debug('Campaign waiting on live calls before completing', {
+      campaignId: campaign.id,
+      activeCalls,
+    });
+    return;
+  }
+  await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.COMPLETED);
+  logger.info('Scheduled campaign completed', { campaignId: campaign.id });
+}
+
 /**
  * Process a single scheduled/running campaign for one tick:
  *  - honour the start time and call window,
- *  - dispatch the next batch of pending contacts,
- *  - mark the campaign COMPLETED once nothing remains pending.
+ *  - dispatch the next batch of pending contacts within the provider's limit,
+ *  - mark the campaign COMPLETED once nothing is pending or in flight.
  */
 export async function processScheduledCampaign(
   campaign: SchedulableCampaign,
@@ -145,45 +278,27 @@ export async function processScheduledCampaign(
     await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.RUNNING);
   }
 
-  const contacts = await prisma.campaignContact.findMany({
-    where: { campaignId: campaign.id, status: CAMPAIGN_CONTACT_STATUS.PENDING },
-    select: { id: true, phoneNumber: true },
-    orderBy: { createdAt: 'asc' },
-    take: CAMPAIGN_SCHEDULER.BATCH_SIZE,
-  });
+  const pending = await countContacts(campaign.id, CAMPAIGN_CONTACT_STATUS.PENDING);
+  const activeCalls = await countContacts(campaign.id, CAMPAIGN_CONTACT_STATUS.CALLING);
 
-  // Nothing left to dial — the campaign is done.
-  if (contacts.length === 0) {
-    await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.COMPLETED);
-    logger.info('Scheduled campaign completed', { campaignId: campaign.id });
+  // Nothing left to dial — finish up once the calls already placed report back.
+  if (pending === 0) {
+    await completeWhenIdle(campaign, activeCalls);
     return;
   }
 
-  const provider = await findOutboundProvider(campaign.userId, campaign.providerId);
-  if (!provider) {
-    await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.FAILED);
-    logger.warn('Scheduled campaign has no active provider', { campaignId: campaign.id });
-    return;
-  }
+  const dialer = await resolveCampaignDialer(campaign);
+  if (!dialer) return;
 
-  const creds = extractVobizCredentials(provider);
-  if (!creds) {
-    await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.FAILED);
-    logger.warn('Scheduled campaign provider missing credentials', { campaignId: campaign.id });
-    return;
-  }
-
-  await runCampaign({
-    campaignId: campaign.id,
-    agentId: campaign.agentId,
-    contacts,
-    creds,
-    answerUrlBuilder: buildSchedulerAnswerUrl,
-  });
+  await dispatchNextBatch(campaign, dialer, activeCalls);
 }
 
 /** One scheduler pass: process every scheduled or running campaign. */
 export async function runSchedulerTick(now: Date = new Date()): Promise<void> {
+  // Release channels held by contacts whose hangup callback never arrived
+  // before deciding how many new calls each campaign may place.
+  await sweepStaleCallingContacts(now);
+
   const campaigns = (await prisma.campaign.findMany({
     where: { status: { in: [CAMPAIGN_STATUS.SCHEDULED, CAMPAIGN_STATUS.RUNNING] } },
     select: {

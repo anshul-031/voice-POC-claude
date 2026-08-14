@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AVAILABLE_MODELS, AVAILABLE_VOICES } from './agents.js';
 import { SUPPORTED_THEMES } from './index.js';
-import { MESSAGE_TYPE, CAMPAIGN_SCHEDULER } from '../types/index.js';
+import { MESSAGE_TYPE, CAMPAIGN_SCHEDULER, TELEPHONY_LIMITS } from '../types/index.js';
 import { isValidTimeZone } from '../utils/timezone.js';
 
 const VOICE_IDS = AVAILABLE_VOICES.map((voice) => voice.id);
@@ -97,6 +97,13 @@ export const CREATE_TELEPHONY_PROVIDER_SCHEMA = z.object({
   authToken: z.string().trim().max(512).optional(),
   webhookUrl: z.string().trim().max(500).optional(),
   extraConfig: z.string().trim().max(5000).optional(),
+  concurrencyLimit: z
+    .number()
+    .int()
+    .min(TELEPHONY_LIMITS.MIN_CONCURRENCY)
+    .max(TELEPHONY_LIMITS.MAX_CONCURRENCY)
+    .optional()
+    .default(TELEPHONY_LIMITS.DEFAULT_CONCURRENCY),
 }).strict();
 
 export const UPDATE_TELEPHONY_PROVIDER_SCHEMA = z.object({
@@ -114,6 +121,12 @@ export const UPDATE_TELEPHONY_PROVIDER_SCHEMA = z.object({
   authToken: z.string().trim().max(512).optional().nullable(),
   webhookUrl: z.string().trim().max(500).optional().nullable(),
   extraConfig: z.string().trim().max(5000).optional().nullable(),
+  concurrencyLimit: z
+    .number()
+    .int()
+    .min(TELEPHONY_LIMITS.MIN_CONCURRENCY)
+    .max(TELEPHONY_LIMITS.MAX_CONCURRENCY)
+    .optional(),
 }).strict();
 
 export const TELEPHONY_ID_PARAMS_SCHEMA = z.object({

@@ -65,6 +65,14 @@ export const CONFIG = {
   DEFAULT_INACTIVITY_TIMEOUT_MS: 10000,
   DEFAULT_MAX_INACTIVITY_NUDGES: 3,
   DEFAULT_MAX_CALL_DURATION_SECS: 0,
+  // Mirrors TELEPHONY_LIMITS on the server: how many calls a provider may have
+  // in flight at once. Vendors reject anything past their own cap.
+  DEFAULT_CALL_CONCURRENCY: 3,
+  MIN_CALL_CONCURRENCY: 1,
+  MAX_CALL_CONCURRENCY: 100,
+  // Per-number campaign status is polled while calls are still in flight, so a
+  // number moves off "Calling" on screen without the user hitting Refresh.
+  CAMPAIGN_STATUS_POLL_MS: 5000,
 };
 
 export const MESSAGE_TYPE = {

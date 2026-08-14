@@ -44,6 +44,7 @@ function setupDOM() {
       <option value="outbound">Outbound</option>
     </select>
     <input id="tel-phone" value="">
+    <input id="tel-concurrency" type="number" value="3">
     <input id="tel-sip-server" value="">
     <input id="tel-sip-username" value="">
     <input id="tel-sip-password" value="">
@@ -51,6 +52,13 @@ function setupDOM() {
     <div id="tel-sip-fields"></div>
     <div id="tel-api-fields" class="hidden"></div>
   `;
+}
+
+/** The concurrency value sent in the create/update request. */
+function submittedConcurrency(): number {
+  const apiMock = api as any;
+  const write = apiMock.mock.calls.find((call: any[]) => call[1]?.body);
+  return JSON.parse(write[1].body).concurrencyLimit;
 }
 
 describe('telephony.js', () => {
@@ -216,6 +224,57 @@ describe('telephony.js', () => {
     const event = { preventDefault: vi.fn() } as any;
     await handleTelephonySubmit(event);
     expect(showToast).toHaveBeenCalledWith('fail', 'error');
+  });
+
+  it('submits the concurrency limit entered on the form', async () => {
+    const apiMock = api as any;
+    apiMock.mockResolvedValue({});
+    (document.getElementById('tel-name') as HTMLInputElement).value = 'Limited Line';
+    (document.getElementById('tel-concurrency') as HTMLInputElement).value = '7';
+
+    await handleTelephonySubmit({ preventDefault: vi.fn() } as any);
+
+    expect(submittedConcurrency()).toBe(7);
+  });
+
+  it('falls back to the default when the concurrency field is unusable', async () => {
+    const apiMock = api as any;
+    apiMock.mockResolvedValue({});
+    (document.getElementById('tel-name') as HTMLInputElement).value = 'Bad Limit';
+    // Out of range, so the server would reject the whole request.
+    (document.getElementById('tel-concurrency') as HTMLInputElement).value = '0';
+
+    await handleTelephonySubmit({ preventDefault: vi.fn() } as any);
+
+    expect(submittedConcurrency()).toBe(3);
+  });
+
+  it('shows the concurrency limit on the card, defaulting for legacy providers', async () => {
+    const apiMock = api as any;
+    apiMock.mockResolvedValue([
+      { id: '1', name: 'Capped', provider: 'vobiz', direction: 'outbound', isActive: true, concurrencyLimit: 5 },
+      { id: '2', name: 'Legacy', provider: 'vobiz', direction: 'outbound', isActive: true },
+    ]);
+    await loadTelephonyProviders();
+    const html = document.getElementById('telephony-provider-list')?.innerHTML || '';
+    expect(html).toContain('5 concurrent calls');
+    expect(html).toContain('3 concurrent calls');
+  });
+
+  it('loads a stored limit when editing and resets it for a new provider', async () => {
+    const apiMock = api as any;
+    apiMock.mockResolvedValue([{
+      id: 'p9', name: 'Edit Limit', provider: 'vobiz', direction: 'outbound',
+      isActive: true, concurrencyLimit: 9,
+    }]);
+    await loadTelephonyProviders();
+    const field = document.getElementById('tel-concurrency') as HTMLInputElement;
+
+    showAddProviderForm('p9');
+    expect(field.value).toBe('9');
+
+    showAddProviderForm();
+    expect(field.value).toBe('3');
   });
 
   it('initTelephonyPanel attaches listeners', () => {

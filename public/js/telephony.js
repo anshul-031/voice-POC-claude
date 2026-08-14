@@ -2,6 +2,8 @@
  * Telephony panel logic for the dashboard.
  */
 import { UI_STRINGS } from './constants/uiStrings.js';
+import { CONFIG } from './constants/config.js';
+import { TELEPHONY_CONCURRENCY_SCHEMA } from './constants/inputSchemas.js';
 import { api } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 
@@ -80,6 +82,9 @@ function renderProviderList() {
           <span class="telephony-badge direction">${dirLabel}</span>
           ${p.phoneNumber ? `<span class="telephony-phone">${escapeHtml(p.phoneNumber)}</span>` : ''}
           ${p.sipServer ? `<span class="telephony-sip">${escapeHtml(p.sipServer)}</span>` : ''}
+          <span class="telephony-concurrency">${UI_STRINGS.telephony.card.concurrency(
+            p.concurrencyLimit || CONFIG.DEFAULT_CALL_CONCURRENCY,
+          )}</span>
         </div>
         <div class="telephony-card-actions">
           <button class="btn btn-outline btn-sm btn-edit-provider" data-id="${p.id}">
@@ -158,6 +163,7 @@ function populateTelephonyForm(provider) {
   setVal('tel-provider', provider.provider || 'vobiz');
   setVal('tel-direction', provider.direction || 'outbound');
   setVal('tel-phone', provider.phoneNumber || '');
+  setVal('tel-concurrency', String(provider.concurrencyLimit || CONFIG.DEFAULT_CALL_CONCURRENCY));
   setVal('tel-sip-server', provider.sipServer || '');
   setVal('tel-sip-username', provider.sipUsername || '');
   setVal('tel-sip-password', '');
@@ -174,6 +180,7 @@ function resetTelephonyForm() {
   setVal('tel-provider', 'vobiz');
   setVal('tel-direction', 'outbound');
   setVal('tel-phone', '');
+  setVal('tel-concurrency', String(CONFIG.DEFAULT_CALL_CONCURRENCY));
   setVal('tel-sip-server', '');
   setVal('tel-sip-username', '');
   setVal('tel-sip-password', '');
@@ -245,11 +252,23 @@ function buildProviderBody() {
     provider,
     direction,
     isActive,
+    concurrencyLimit: readConcurrencyLimit(),
     ...(phoneNumber && { phoneNumber }),
     ...(sipServer && { sipServer }),
     ...(sipUsername && { sipUsername }),
     ...(sipPassword && { sipPassword }),
   };
+}
+
+/**
+ * Read the concurrency field as a validated integer. The server rejects the
+ * whole request on an out-of-range value, so an unusable entry falls back to
+ * the default rather than losing the rest of the form.
+ * @returns {number}
+ */
+function readConcurrencyLimit() {
+  const parsed = TELEPHONY_CONCURRENCY_SCHEMA.safeParse(Number(getVal('tel-concurrency')));
+  return parsed.success ? parsed.data : CONFIG.DEFAULT_CALL_CONCURRENCY;
 }
 
 /**

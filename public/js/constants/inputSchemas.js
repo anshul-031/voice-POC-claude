@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MESSAGE_TYPE } from './config.js';
+import { CONFIG, MESSAGE_TYPE } from './config.js';
 
 export const API_REQUEST_SCHEMA = z.object({
   path: z.string().regex(/^\/[a-zA-Z0-9/_-]*$/),
@@ -32,6 +32,16 @@ export const OUTBOUND_CALL_INPUT_SCHEMA = z.object({
   agentId: z.string().trim().min(1),
   phoneNumber: z.string().trim().min(4).max(30),
 });
+
+/**
+ * Mirrors the server's telephony concurrency bounds. The form field is a text
+ * input, so the value is coerced and validated before it leaves the browser.
+ */
+export const TELEPHONY_CONCURRENCY_SCHEMA = z
+  .number()
+  .int()
+  .min(CONFIG.MIN_CALL_CONCURRENCY)
+  .max(CONFIG.MAX_CALL_CONCURRENCY);
 
 export const CAMPAIGN_FORM_SCHEMA = z.object({
   name: z.string().trim().min(1),

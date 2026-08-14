@@ -18,7 +18,12 @@ vi.mock('../lib/prisma.js', () => ({
       findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
     },
     telephonyProvider: { findFirst: vi.fn() },
-    campaignContact: { update: vi.fn(), updateMany: vi.fn() },
+    campaignContact: {
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      count: vi.fn(),
+      groupBy: vi.fn(),
+    },
   },
 }));
 
@@ -61,15 +66,49 @@ const baseReq = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/** No contacts are ringing unless a test says otherwise. */
+const stubActiveCalls = (active = 0): void => {
+  (prisma.campaignContact.count as any).mockResolvedValue(active);
+};
+
 describe('Campaign Routes', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubActiveCalls();
+    (prisma.campaignContact.groupBy as any).mockResolvedValue([]);
+  });
 
   describe('GET /', () => {
-    it('lists campaigns for the user', async () => {
+    it('lists campaigns for the user with per-status contact tallies', async () => {
+      (prisma.campaign.findMany as any).mockResolvedValue([{ id: 'c1' }]);
+      (prisma.campaignContact.groupBy as any).mockResolvedValue([
+        { campaignId: 'c1', status: 'failed', _count: { _all: 2 } },
+        { campaignId: 'c1', status: 'completed', _count: { _all: 3 } },
+      ]);
+      const res = mockRes();
+      await getRouteHandler('/', 'get')(baseReq(), res);
+      expect(res.json).toHaveBeenCalledWith([{
+        id: 'c1',
+        statusCounts: { pending: 0, calling: 0, completed: 3, failed: 2 },
+      }]);
+    });
+
+    it('reports zeroed tallies for a campaign with no contacts', async () => {
       (prisma.campaign.findMany as any).mockResolvedValue([{ id: 'c1' }]);
       const res = mockRes();
       await getRouteHandler('/', 'get')(baseReq(), res);
-      expect(res.json).toHaveBeenCalledWith([{ id: 'c1' }]);
+      expect(res.json).toHaveBeenCalledWith([{
+        id: 'c1',
+        statusCounts: { pending: 0, calling: 0, completed: 0, failed: 0 },
+      }]);
+    });
+
+    it('skips the tally query when the user has no campaigns', async () => {
+      (prisma.campaign.findMany as any).mockResolvedValue([]);
+      const res = mockRes();
+      await getRouteHandler('/', 'get')(baseReq(), res);
+      expect(prisma.campaignContact.groupBy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([]);
     });
 
     it('returns 500 on db error', async () => {
@@ -355,7 +394,7 @@ describe('Campaign Routes', () => {
       contacts: [{ id: 'ct1', phoneNumber: '+1' }],
     };
 
-    it('triggers calls and marks the campaign completed', async () => {
+    it('triggers calls and keeps the campaign running until the calls report back', async () => {
       (prisma.campaign.findFirst as any).mockResolvedValue(pendingCampaign);
       (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'p1', sipUsername: 'u' });
       (extractVobizCredentials as any).mockReturnValue({ authId: 'u', authToken: 't', fromNumber: '+1' });
@@ -365,13 +404,44 @@ describe('Campaign Routes', () => {
         const url = params.answerUrlBuilder('a1', 'ct1');
         expect(url).toContain('agentId=a1');
         expect(url).toContain('contactId=ct1');
-        return Promise.resolve({ total: 1, initiated: 1, failed: 0 });
+        // The hangup url is what resolves a number that is never answered.
+        expect(params.hangupUrlBuilder('a1', 'ct1')).toContain('/api/webhooks/vobiz/hangup');
+        return Promise.resolve({ total: 1, initiated: 1, failed: 0, queued: 0 });
       });
 
       const res = mockRes();
       await getRouteHandler('/:id/trigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
       expect(runCampaign).toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith({ status: 'completed', total: 1, initiated: 1, failed: 0 });
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'running', total: 1, initiated: 1, failed: 0, queued: 0,
+      });
+    });
+
+    it('dials within the free channels left by the provider concurrency limit', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue(pendingCampaign);
+      (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'p1', concurrencyLimit: 5 });
+      (extractVobizCredentials as any).mockReturnValue({ authId: 'u', authToken: 't', fromNumber: '+1' });
+      (prisma.campaign.update as any).mockResolvedValue({});
+      stubActiveCalls(2);
+      (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0, queued: 0 });
+
+      const res = mockRes();
+      await getRouteHandler('/:id/trigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(runCampaign).toHaveBeenCalledWith(expect.objectContaining({ concurrency: 3 }));
+    });
+
+    it('stays running when the concurrency limit leaves contacts queued', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue(pendingCampaign);
+      (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'p1', concurrencyLimit: 1 });
+      (extractVobizCredentials as any).mockReturnValue({ authId: 'u', authToken: 't', fromNumber: '+1' });
+      (prisma.campaign.update as any).mockResolvedValue({});
+      (runCampaign as any).mockResolvedValue({ total: 0, initiated: 0, failed: 0, queued: 4 });
+
+      const res = mockRes();
+      await getRouteHandler('/:id/trigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'running', total: 0, initiated: 0, failed: 0, queued: 4,
+      });
     });
 
     it('builds the answer url from forwarded headers', async () => {
@@ -382,7 +452,7 @@ describe('Campaign Routes', () => {
       let builtUrl = '';
       (runCampaign as any).mockImplementation((params: any) => {
         builtUrl = params.answerUrlBuilder('a1', 'ct1');
-        return Promise.resolve({ total: 1, initiated: 1, failed: 0 });
+        return Promise.resolve({ total: 1, initiated: 1, failed: 0, queued: 0 });
       });
 
       const res = mockRes();
@@ -401,11 +471,13 @@ describe('Campaign Routes', () => {
       (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'p1' });
       (extractVobizCredentials as any).mockReturnValue({ authId: 'u', authToken: 't', fromNumber: '+1' });
       (prisma.campaign.update as any).mockResolvedValue({});
-      (runCampaign as any).mockResolvedValue({ total: 1, initiated: 0, failed: 1 });
+      (runCampaign as any).mockResolvedValue({ total: 1, initiated: 0, failed: 1, queued: 0 });
 
       const res = mockRes();
       await getRouteHandler('/:id/trigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
-      expect(res.json).toHaveBeenCalledWith({ status: 'failed', total: 1, initiated: 0, failed: 1 });
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'failed', total: 1, initiated: 0, failed: 1, queued: 0,
+      });
     });
 
     it('returns 400 for invalid params', async () => {
@@ -714,14 +786,16 @@ describe('Campaign Routes', () => {
       (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'p1' });
       (extractVobizCredentials as any).mockReturnValue({ authId: 'u', authToken: 't', fromNumber: '+1' });
       (prisma.campaign.update as any).mockResolvedValue({});
-      (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0 });
+      (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0, queued: 0 });
 
       const res = mockRes();
       await getRouteHandler('/:id/retrigger', 'post')(baseReq({ params: { id: 'c1' } }), res);
       expect(prisma.campaignContact.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { campaignId: 'c1' } }),
       );
-      expect(res.json).toHaveBeenCalledWith({ status: 'completed', total: 1, initiated: 1, failed: 0 });
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'running', total: 1, initiated: 1, failed: 0, queued: 0,
+      });
     });
 
     it('returns 400 for invalid params', async () => {
@@ -756,6 +830,74 @@ describe('Campaign Routes', () => {
     });
   });
 
+  describe('POST /:id/retry-failed', () => {
+    const failedCampaign = {
+      id: 'c1',
+      agentId: 'a1',
+      providerId: 'p1',
+      contacts: [{ id: 'ct1', phoneNumber: '+1' }],
+    };
+
+    const arrangeDialableProvider = () => {
+      (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'p1', concurrencyLimit: 3 });
+      (extractVobizCredentials as any).mockReturnValue({ authId: 'u', authToken: 't', fromNumber: '+1' });
+      (prisma.campaign.update as any).mockResolvedValue({});
+      (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0, queued: 0 });
+    };
+
+    it('resets only the failed contacts and dials them again', async () => {
+      (prisma.campaign.findFirst as any)
+        .mockResolvedValueOnce({ id: 'c1' }) // ownership lookup
+        .mockResolvedValueOnce(failedCampaign); // loadRunnableCampaign
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 2 });
+      arrangeDialableProvider();
+
+      const res = mockRes();
+      await getRouteHandler('/:id/retry-failed', 'post')(baseReq({ params: { id: 'c1' } }), res);
+
+      expect(prisma.campaignContact.updateMany).toHaveBeenCalledWith({
+        where: { campaignId: 'c1', status: 'failed' },
+        data: { status: 'pending', callId: null, errorMessage: null },
+      });
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'running', total: 1, initiated: 1, failed: 0, queued: 0,
+      });
+    });
+
+    it('returns 400 when nothing failed', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue({ id: 'c1' });
+      (prisma.campaignContact.updateMany as any).mockResolvedValue({ count: 0 });
+
+      const res = mockRes();
+      await getRouteHandler('/:id/retry-failed', 'post')(baseReq({ params: { id: 'c1' } }), res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.campaignNoFailedContacts });
+      expect(runCampaign).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for invalid params', async () => {
+      const res = mockRes();
+      await getRouteHandler('/:id/retry-failed', 'post')(baseReq({ params: { id: '' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('returns 404 when the campaign is missing', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue(null);
+      const res = mockRes();
+      await getRouteHandler('/:id/retry-failed', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ error: UI_STRINGS.api.errors.campaignNotFound });
+    });
+
+    it('returns 500 on db error', async () => {
+      (prisma.campaign.findFirst as any).mockRejectedValue(new Error('DB'));
+      const res = mockRes();
+      await getRouteHandler('/:id/retry-failed', 'post')(baseReq({ params: { id: 'c1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
   describe('non-Error rejections cover String(error) branches', () => {
     it('handles raw string rejections across handlers', async () => {
       (prisma.campaign.findMany as any).mockRejectedValue('raw');
@@ -772,6 +914,7 @@ describe('Campaign Routes', () => {
       await getRouteHandler('/:id/pause', 'post')(baseReq({ params: { id: 'c1' } }), mockRes());
       await getRouteHandler('/:id/resume', 'post')(baseReq({ params: { id: 'c1' } }), mockRes());
       await getRouteHandler('/:id/retrigger', 'post')(baseReq({ params: { id: 'c1' } }), mockRes());
+      await getRouteHandler('/:id/retry-failed', 'post')(baseReq({ params: { id: 'c1' } }), mockRes());
 
       (prisma.voiceAgent.findFirst as any).mockRejectedValue('raw');
       await getRouteHandler('/template/:agentId', 'get')(

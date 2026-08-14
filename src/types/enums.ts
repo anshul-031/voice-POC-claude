@@ -106,6 +106,61 @@ export const VOBIZ_MACHINE_DETECTION = {
   HANGUP: 'hangup',
 } as const;
 
+export const TELEPHONY_LIMITS = {
+  /**
+   * Simultaneous outbound calls assumed when a provider has no explicit limit.
+   * Deliberately conservative: most trial/entry telephony plans cap at a
+   * handful of channels and silently drop anything past the cap.
+   */
+  DEFAULT_CONCURRENCY: 3,
+  MIN_CONCURRENCY: 1,
+  MAX_CONCURRENCY: 100,
+} as const;
+
+/**
+ * Vobiz `HangupCause` values that mean the call was answered by a person and
+ * then ended normally. Anything outside this set is treated as a call that
+ * never connected, so the campaign contact is recorded as failed rather than
+ * being left stuck on "calling".
+ */
+export const VOBIZ_CONNECTED_HANGUP_CAUSES = [
+  'NORMAL_CLEARING',
+  'BLIND_TRANSFER',
+  'ATTENDED_TRANSFER',
+] as const;
+
+/** Vobiz `HangupCause` values mapped to a specific "did not connect" reason. */
+export const VOBIZ_HANGUP_CAUSE = {
+  USER_BUSY: 'USER_BUSY',
+  NO_ANSWER: 'NO_ANSWER',
+  NO_USER_RESPONSE: 'NO_USER_RESPONSE',
+  CALL_REJECTED: 'CALL_REJECTED',
+  UNALLOCATED_NUMBER: 'UNALLOCATED_NUMBER',
+  INVALID_NUMBER_FORMAT: 'INVALID_NUMBER_FORMAT',
+  SUBSCRIBER_ABSENT: 'SUBSCRIBER_ABSENT',
+  NORMAL_UNSPECIFIED: 'NORMAL_UNSPECIFIED',
+  NORMAL_TEMPORARY_FAILURE: 'NORMAL_TEMPORARY_FAILURE',
+  RECOVERY_ON_TIMER_EXPIRE: 'RECOVERY_ON_TIMER_EXPIRE',
+  PROGRESS_TIMEOUT: 'PROGRESS_TIMEOUT',
+  MEDIA_TIMEOUT: 'MEDIA_TIMEOUT',
+  MACHINE_DETECTED: 'MACHINE_DETECTED',
+  /** We hung up while the phone was still ringing, so nobody was reached. */
+  ORIGINATOR_CANCEL: 'ORIGINATOR_CANCEL',
+} as const;
+
+/**
+ * Provider-agnostic call outcomes reported alongside a hangup. Vobiz mirrors
+ * Plivo's `CallStatus`, which is more reliable than `HangupCause` when present.
+ */
+export const VOBIZ_CALL_STATUS = {
+  COMPLETED: 'completed',
+  BUSY: 'busy',
+  NO_ANSWER: 'no-answer',
+  FAILED: 'failed',
+  CANCEL: 'cancel',
+  TIMEOUT: 'timeout',
+} as const;
+
 export const CAMPAIGN_STATUS = {
   DRAFT: 'draft',
   SCHEDULED: 'scheduled',
@@ -167,6 +222,16 @@ export const CAMPAIGN_SCHEDULER = {
   LOCAL_DATE_TIME_PATTERN: /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/,
   /** Minutes in a full day, used for wrap-around window maths. */
   MINUTES_PER_DAY: 1440,
+  /**
+   * How long a contact may sit on "calling" before it is written off as failed.
+   *
+   * A contact only stays on "calling" while the phone is ringing — the moment
+   * the media stream opens it is marked completed. So anything still ringing
+   * this long means the provider never sent its hangup callback, and without
+   * this sweep the row would show "Calling" forever and its concurrency slot
+   * would never be released.
+   */
+  CALLING_TIMEOUT_MS: 600_000,
 } as const;
 
 export type RoutePath = typeof ROUTES[keyof typeof ROUTES];

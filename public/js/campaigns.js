@@ -30,6 +30,8 @@ let editingCampaignId = null;
 let schedulingCampaignId = null;
 let selectedFileBase64 = '';
 let selectedFileName = '';
+/** @type {ReturnType<typeof setTimeout> | null} */
+let statusPollTimer = null;
 
 /**
  * Load all campaigns from the API.
@@ -96,6 +98,7 @@ function renderCampaignList() {
 
   wireCardButtons(list, '.btn-trigger-campaign', triggerCampaign);
   wireCardButtons(list, '.btn-retrigger-campaign', retriggerCampaign);
+  wireCardButtons(list, '.btn-retry-failed-campaign', retryFailedCampaign);
   wireCardButtons(list, '.btn-schedule-campaign', showScheduleForm);
   wireCardButtons(list, '.btn-pause-campaign', pauseCampaign);
   wireCardButtons(list, '.btn-resume-campaign', resumeCampaign);
@@ -133,6 +136,15 @@ function actionButton(cls, id, label, variant) {
 }
 
 /**
+ * Number of contacts that failed, from the tally the list endpoint returns.
+ * @param {any} c
+ * @returns {number}
+ */
+function failedCount(c) {
+  return Number(c?.statusCounts?.failed) || 0;
+}
+
+/**
  * Render status-appropriate action buttons for a campaign card.
  * @param {any} c
  * @returns {string}
@@ -149,6 +161,11 @@ function renderCampaignActions(c) {
   if (status === 'completed' || status === 'failed') {
     buttons.push(actionButton('btn-retrigger-campaign', c.id, S.retrigger, 'btn-primary'));
     buttons.push(actionButton('btn-schedule-campaign', c.id, S.schedule, 'btn-outline'));
+  }
+  // Retrying only the failures is offered whenever there are any, including on a
+  // running campaign whose earlier numbers already failed.
+  if (failedCount(c) > 0) {
+    buttons.push(actionButton('btn-retry-failed-campaign', c.id, S.retryFailed, 'btn-outline'));
   }
   if (status === 'scheduled' || status === 'running') {
     buttons.push(actionButton('btn-pause-campaign', c.id, S.pause, 'btn-outline'));
@@ -383,13 +400,7 @@ async function submitCampaignUpdate(name, agentId, providerId) {
  */
 export async function triggerCampaign(id) {
   if (!confirm(UI_STRINGS.campaigns.confirmTrigger)) return;
-  try {
-    const result = await api(`/campaigns/${id}/trigger`, { method: 'POST' });
-    showToast(UI_STRINGS.toasts.campaignTriggered(result.initiated ?? 0), 'success');
-    await loadCampaigns();
-  } catch (err) {
-    showToast(err instanceof Error ? err.message : String(err), 'error');
-  }
+  await postCampaignRun(`/campaigns/${id}/trigger`);
 }
 
 /**
@@ -399,10 +410,36 @@ export async function triggerCampaign(id) {
  */
 export async function retriggerCampaign(id) {
   if (!confirm(UI_STRINGS.campaigns.confirmRetrigger)) return;
+  await postCampaignRun(`/campaigns/${id}/retrigger`);
+}
+
+/**
+ * Re-dial only the numbers that failed, leaving completed calls alone.
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function retryFailedCampaign(id) {
+  if (!confirm(UI_STRINGS.campaigns.confirmRetryFailed)) return;
+  await postCampaignRun(`/campaigns/${id}/retry-failed`, id);
+}
+
+/**
+ * POST a dial request and report what it did. `queued` is surfaced separately:
+ * the provider's concurrency limit means a large campaign only dials part of
+ * its list immediately, and the rest follows as calls finish.
+ * @param {string} path
+ * @param {string} [statusViewId] Campaign whose status view should be refreshed.
+ * @returns {Promise<void>}
+ */
+async function postCampaignRun(path, statusViewId) {
   try {
-    const result = await api(`/campaigns/${id}/retrigger`, { method: 'POST' });
+    const result = await api(path, { method: 'POST' });
     showToast(UI_STRINGS.toasts.campaignTriggered(result.initiated ?? 0), 'success');
+    if (result.queued > 0) {
+      showToast(UI_STRINGS.toasts.campaignQueued(result.queued), 'info');
+    }
     await loadCampaigns();
+    if (statusViewId && isStatusViewOpen()) await viewCampaignStatus(statusViewId);
   } catch (err) {
     showToast(err instanceof Error ? err.message : String(err), 'error');
   }
@@ -700,12 +737,38 @@ function renderStatusSummary(counts) {
  * @returns {string}
  */
 function renderContactRow(ct) {
+  const detail = ct.errorMessage || UI_STRINGS.campaigns.contactStatus.noDetail;
   return `
         <tr>
           <td class="campaign-status-phone">${escapeHtml(ct.phoneNumber || '')}</td>
           <td><span class="telephony-badge ${ct.status}">${contactStatusLabel(ct.status)}</span></td>
-          <td class="campaign-status-detail">${escapeHtml(ct.errorMessage || '—')}</td>
+          <td class="campaign-status-detail">${escapeHtml(detail)}</td>
         </tr>`;
+}
+
+/**
+ * The campaign's stored contact count, which the rendered row count is checked
+ * against so a truncated list is visible rather than silent.
+ * @param {any} campaign
+ * @param {number} fallback
+ * @returns {number}
+ */
+function totalContacts(campaign, fallback) {
+  const stored = Number(campaign?._count?.contacts);
+  return Number.isFinite(stored) && stored > 0 ? stored : fallback;
+}
+
+/**
+ * Whether a campaign still has work in flight, in which case the status view
+ * keeps polling so rows do not sit on "Calling" until a manual refresh.
+ * @param {any} campaign
+ * @param {ReturnType<typeof tallyContactStatus>} counts
+ * @returns {boolean}
+ */
+function hasWorkInFlight(campaign, counts) {
+  if (counts.calling > 0) return true;
+  return counts.pending > 0
+    && (campaign.status === 'running' || campaign.status === 'scheduled');
 }
 
 /**
@@ -718,21 +781,29 @@ function renderContactStatus(container, campaign) {
   const CS = UI_STRINGS.campaigns.contactStatus;
   const contacts = Array.isArray(campaign.contacts) ? campaign.contacts : [];
   const counts = tallyContactStatus(contacts);
+  const live = hasWorkInFlight(campaign, counts);
 
   const rows = contacts.length === 0
     ? `<tr><td colspan="3" class="campaign-status-empty">${CS.empty}</td></tr>`
     : contacts.map(renderContactRow).join('');
+  const retryDisabled = counts.failed === 0 ? ' disabled' : '';
 
   container.innerHTML = `
     <div class="panel-header">
       <h2>${escapeHtml(campaign.name || '')} — ${CS.title}</h2>
       <div class="campaign-status-actions">
         <button type="button" class="btn btn-outline btn-sm" id="btn-refresh-campaign-status">${CS.refresh}</button>
+        <button type="button" class="btn btn-outline btn-sm"
+          id="btn-retry-failed-campaign-status"${retryDisabled}>${CS.retryFailed}</button>
         <button type="button" class="btn btn-primary btn-sm" id="btn-retrigger-campaign-status">${CS.retrigger}</button>
         <button type="button" class="btn btn-ghost btn-sm" id="btn-close-campaign-status">${CS.close}</button>
       </div>
     </div>
     ${renderStatusSummary(counts)}
+    <div class="campaign-status-table-meta">
+      <span>${CS.showing(contacts.length, totalContacts(campaign, contacts.length))}</span>
+      ${live ? `<span class="campaign-status-live">${CS.autoRefresh}</span>` : ''}
+    </div>
     <div class="campaign-status-table-wrap">
       <table class="campaign-status-table">
         <thead>
@@ -750,8 +821,48 @@ function renderContactStatus(container, campaign) {
     ?.addEventListener('click', hideStatusView);
   container.querySelector('#btn-refresh-campaign-status')
     ?.addEventListener('click', () => { void viewCampaignStatus(campaign.id); });
+  container.querySelector('#btn-retry-failed-campaign-status')
+    ?.addEventListener('click', () => { void retryFailedCampaign(campaign.id); });
   container.querySelector('#btn-retrigger-campaign-status')
     ?.addEventListener('click', () => { void retriggerCampaign(campaign.id); });
+
+  scheduleStatusPoll(campaign.id, live);
+}
+
+/**
+ * Keep the per-number view polling while calls are outstanding.
+ *
+ * Statuses are settled by the provider's hangup callback, which lands well
+ * after the dial request returns, so a one-shot fetch showed most rows as
+ * "Calling" no matter their real outcome.
+ * @param {string} id
+ * @param {boolean} live
+ * @returns {void}
+ */
+function scheduleStatusPoll(id, live) {
+  clearStatusPoll();
+  if (!live) return;
+  statusPollTimer = setTimeout(() => {
+    statusPollTimer = null;
+    if (isStatusViewOpen()) void viewCampaignStatus(id);
+  }, CONFIG.CAMPAIGN_STATUS_POLL_MS);
+}
+
+/** @returns {void} */
+function clearStatusPoll() {
+  if (statusPollTimer !== null) {
+    clearTimeout(statusPollTimer);
+    statusPollTimer = null;
+  }
+}
+
+/**
+ * Whether the per-number status view is currently on screen.
+ * @returns {boolean}
+ */
+function isStatusViewOpen() {
+  const container = document.getElementById('campaign-status-container');
+  return !!container && !container.classList.contains('hidden');
 }
 
 /**
@@ -770,6 +881,7 @@ export async function viewCampaignStatus(id) {
     listSection.classList.add('hidden');
     container.classList.remove('hidden');
   } catch (err) {
+    clearStatusPoll();
     showToast(err instanceof Error ? err.message : String(err), 'error');
   }
 }
@@ -779,6 +891,7 @@ export async function viewCampaignStatus(id) {
  * @returns {void}
  */
 export function hideStatusView() {
+  clearStatusPoll();
   const container = document.getElementById('campaign-status-container');
   const listSection = document.getElementById('campaign-list-section');
   if (container) container.classList.add('hidden');
@@ -892,4 +1005,5 @@ export function resetCampaignState() {
   schedulingCampaignId = null;
   selectedFileBase64 = '';
   selectedFileName = '';
+  clearStatusPoll();
 }

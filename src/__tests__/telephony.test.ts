@@ -184,3 +184,76 @@ describe('Telephony Routes', () => {
     expect(res.status).toHaveBeenCalledWith(500);
   });
 });
+
+describe('Telephony concurrency limit', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('POST / defaults the concurrency limit when the client omits it', async () => {
+    const res = mockRes();
+    (tp().create as MockFn).mockResolvedValue({
+      id: 'n', name: 'V', provider: 'vobiz', concurrencyLimit: 3,
+      sipPassword: null, apiKey: null, apiSecret: null, authToken: null,
+    });
+
+    await getRouteHandler('/', 'post')(
+      { body: { name: 'V', provider: 'vobiz' }, user: { id: 'u1' } } as never, res,
+    );
+
+    expect(tp().create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ concurrencyLimit: 3 }),
+    });
+  });
+
+  it('POST / stores an explicit concurrency limit', async () => {
+    const res = mockRes();
+    (tp().create as MockFn).mockResolvedValue({
+      id: 'n', name: 'V', provider: 'vobiz', concurrencyLimit: 8,
+      sipPassword: null, apiKey: null, apiSecret: null, authToken: null,
+    });
+
+    await getRouteHandler('/', 'post')(
+      { body: { name: 'V', provider: 'vobiz', concurrencyLimit: 8 }, user: { id: 'u1' } } as never, res,
+    );
+
+    expect(tp().create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ concurrencyLimit: 8 }),
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it('POST / rejects a concurrency limit outside the supported range', async () => {
+    const res = mockRes();
+    await getRouteHandler('/', 'post')(
+      { body: { name: 'V', provider: 'vobiz', concurrencyLimit: 0 }, user: { id: 'u1' } } as never, res,
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(tp().create).not.toHaveBeenCalled();
+  });
+
+  it('POST / rejects a fractional concurrency limit', async () => {
+    const res = mockRes();
+    await getRouteHandler('/', 'post')(
+      { body: { name: 'V', provider: 'vobiz', concurrencyLimit: 2.5 }, user: { id: 'u1' } } as never, res,
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('PUT /:id updates only the concurrency limit', async () => {
+    const res = mockRes();
+    (tp().findFirst as MockFn).mockResolvedValue({ id: 'x', userId: 'u1' });
+    (tp().update as MockFn).mockResolvedValue({
+      id: 'x', name: 'V', concurrencyLimit: 12,
+      sipPassword: null, apiKey: null, apiSecret: null, authToken: null,
+    });
+
+    await getRouteHandler('/:id', 'put')(
+      { params: { id: 'x' }, body: { concurrencyLimit: 12 }, user: { id: 'u1' } } as never, res,
+    );
+
+    expect(tp().update).toHaveBeenCalledWith({
+      where: { id: 'x' },
+      data: { concurrencyLimit: 12 },
+    });
+    expect(res.json.mock.calls[0][0].concurrencyLimit).toBe(12);
+  });
+});

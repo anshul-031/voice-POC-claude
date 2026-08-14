@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 /* eslint-disable max-lines */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../api.js', () => ({
   api: vi.fn(),
@@ -29,6 +29,7 @@ import {
   pauseCampaign,
   resumeCampaign,
   retriggerCampaign,
+  retryFailedCampaign,
   viewCampaignStatus,
   hideStatusView,
   computeStartPreset,
@@ -811,6 +812,167 @@ describe('campaigns.js', () => {
       document.body.innerHTML = '';
       hideStatusView();
       expect(document.getElementById('campaign-status-container')).toBeNull();
+    });
+
+    it('reports how many of the campaign numbers are on screen', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1',
+        name: 'Camp',
+        _count: { contacts: 2 },
+        contacts: [
+          { phoneNumber: '+111', status: 'completed' },
+          { phoneNumber: '+222', status: 'failed', errorMessage: 'Number was busy' },
+        ],
+      });
+      await viewCampaignStatus('c1');
+      const html = document.getElementById('campaign-status-container')?.innerHTML || '';
+      expect(html).toContain('Showing all 2 of 2 numbers');
+      expect(html).toContain('Number was busy');
+    });
+
+    it('disables the retry action when nothing has failed', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp', contacts: [{ phoneNumber: '+111', status: 'completed' }],
+      });
+      await viewCampaignStatus('c1');
+      const btn = document.getElementById('btn-retry-failed-campaign-status') as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+    });
+
+    it('retries the failed numbers from the status view', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1',
+        name: 'Camp',
+        contacts: [{ phoneNumber: '+222', status: 'failed', errorMessage: 'No answer' }],
+      });
+      await viewCampaignStatus('c1');
+      const btn = document.getElementById('btn-retry-failed-campaign-status') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+
+      vi.clearAllMocks();
+      vi.mocked(api).mockResolvedValue({ status: 'running', initiated: 1, queued: 0 });
+      btn.click();
+      await Promise.resolve();
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/retry-failed', { method: 'POST' });
+    });
+  });
+
+  describe('live status refresh', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+
+    afterEach(() => {
+      hideStatusView();
+      vi.useRealTimers();
+    });
+
+    it('re-fetches while numbers are still being called', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp', contacts: [{ phoneNumber: '+111', status: 'calling' }],
+      });
+      await viewCampaignStatus('c1');
+      expect(document.getElementById('campaign-status-container')?.innerHTML)
+        .toContain('campaign-status-live');
+
+      vi.clearAllMocks();
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp', contacts: [{ phoneNumber: '+111', status: 'completed' }],
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(api).toHaveBeenCalledWith('/campaigns/c1');
+    });
+
+    it('keeps polling a running campaign whose contacts are still queued', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp', status: 'running', contacts: [{ phoneNumber: '+111', status: 'pending' }],
+      });
+      await viewCampaignStatus('c1');
+      expect(document.getElementById('campaign-status-container')?.innerHTML)
+        .toContain('campaign-status-live');
+    });
+
+    it('stops polling once every number has a final status', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp', status: 'completed',
+        contacts: [{ phoneNumber: '+111', status: 'completed' }],
+      });
+      await viewCampaignStatus('c1');
+      expect(document.getElementById('campaign-status-container')?.innerHTML)
+        .not.toContain('campaign-status-live');
+
+      vi.clearAllMocks();
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(api).not.toHaveBeenCalled();
+    });
+
+    it('stops polling after the view is closed', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp', contacts: [{ phoneNumber: '+111', status: 'calling' }],
+      });
+      await viewCampaignStatus('c1');
+      hideStatusView();
+
+      vi.clearAllMocks();
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(api).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('retryFailedCampaign', () => {
+    it('retries only the failed numbers when confirmed', async () => {
+      vi.mocked(api).mockResolvedValue({ status: 'running', initiated: 2, queued: 0 });
+      await retryFailedCampaign('c1');
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/retry-failed', { method: 'POST' });
+      expect(showToast).toHaveBeenCalled();
+    });
+
+    it('aborts when not confirmed', async () => {
+      vi.mocked(confirm).mockReturnValue(false);
+      await retryFailedCampaign('c1');
+      expect(api).not.toHaveBeenCalled();
+    });
+
+    it('reports queued numbers held back by the concurrency limit', async () => {
+      vi.mocked(api).mockResolvedValue({ status: 'running', initiated: 3, queued: 7 });
+      await retryFailedCampaign('c1');
+      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('7 number(s) queued'), 'info');
+    });
+
+    it('surfaces the server error when there is nothing to retry', async () => {
+      vi.mocked(api).mockRejectedValue(new Error('Campaign has no failed numbers to retry'));
+      await retryFailedCampaign('c1');
+      expect(showToast).toHaveBeenCalledWith('Campaign has no failed numbers to retry', 'error');
+    });
+
+    it('is offered on a card whose campaign has failures', async () => {
+      vi.mocked(api).mockResolvedValue([{
+        id: 'c1', name: 'Camp', status: 'running', agent: { name: 'A' },
+        _count: { contacts: 4 }, statusCounts: { pending: 0, calling: 1, completed: 1, failed: 2 },
+      }]);
+      await loadCampaigns();
+      const btn = document.querySelector('.btn-retry-failed-campaign') as HTMLButtonElement;
+      expect(btn).toBeTruthy();
+
+      vi.mocked(api).mockResolvedValue({ status: 'running', initiated: 2, queued: 0 });
+      btn.click();
+      await Promise.resolve();
+      expect(api).toHaveBeenCalledWith('/campaigns/c1/retry-failed', { method: 'POST' });
+    });
+
+    it('is hidden on a card with no failures', async () => {
+      vi.mocked(api).mockResolvedValue([{
+        id: 'c1', name: 'Camp', status: 'running', agent: { name: 'A' },
+        _count: { contacts: 2 }, statusCounts: { pending: 0, calling: 0, completed: 2, failed: 0 },
+      }]);
+      await loadCampaigns();
+      expect(document.querySelector('.btn-retry-failed-campaign')).toBeNull();
+    });
+
+    it('is hidden for a campaign list response without tallies', async () => {
+      vi.mocked(api).mockResolvedValue([{
+        id: 'c1', name: 'Camp', status: 'completed', agent: { name: 'A' }, _count: { contacts: 2 },
+      }]);
+      await loadCampaigns();
+      expect(document.querySelector('.btn-retry-failed-campaign')).toBeNull();
     });
   });
 

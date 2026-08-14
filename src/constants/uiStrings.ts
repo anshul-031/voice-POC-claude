@@ -141,6 +141,8 @@ export const UI_STRINGS = {
       authTokenPlaceholder: 'Your Auth Token',
       webhookUrlLabel: 'Webhook URL',
       webhookUrlPlaceholder: 'https://your-server.com/webhook',
+      concurrencyLabel: 'Concurrent Call Limit',
+      concurrencyHint: 'Maximum calls placed at the same time through this provider. Match the concurrency your telephony plan allows.',
       activeLabel: 'Active',
       saveBtn: 'Save Provider',
       updateBtn: 'Update Provider',
@@ -198,6 +200,7 @@ export const UI_STRINGS = {
       campaignNotPausable: 'Only scheduled or running campaigns can be paused',
       campaignNotResumable: 'Only paused campaigns can be resumed',
       campaignNotRunnable: 'Campaign has no pending contacts to call',
+      campaignNoFailedContacts: 'Campaign has no failed numbers to retry',
       campaignFileEmpty: 'The uploaded file is empty or could not be read',
       campaignFileInvalid: 'The uploaded file is not a valid Excel/CSV spreadsheet',
       campaignNoPhoneColumn: 'The spreadsheet must include a phone number column (e.g. "phone")',
@@ -210,6 +213,22 @@ export const UI_STRINGS = {
       recordingUploadFailed: 'Failed to store call recording',
       recordingAlreadyExists: 'A recording already exists for this call',
       recordingMissingBody: 'No recording data received',
+    },
+    /**
+     * Reasons stored on a campaign contact when a dialled call never reached a
+     * person. Shown verbatim in the per-number status table, so they read as
+     * explanations rather than provider error codes.
+     */
+    callOutcome: {
+      busy: 'Number was busy',
+      noAnswer: 'No answer',
+      rejected: 'Call rejected by the recipient',
+      unreachable: 'Number could not be reached',
+      cancelled: 'Call ended before it was answered',
+      machineDetected: 'Answering machine detected',
+      temporaryFailure: 'Carrier reported a temporary failure',
+      noProviderUpdate: 'No answer confirmation received from the telephony provider',
+      notConnected: (cause: string): string => `Call did not connect (${cause})`,
     },
     success: {
       deleteAgent: 'Agent deleted successfully',

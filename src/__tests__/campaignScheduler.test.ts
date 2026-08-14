@@ -5,6 +5,7 @@ import {
   isWithinCallWindow,
   resolvePublicBaseUrl,
   buildSchedulerAnswerUrl,
+  buildSchedulerHangupUrl,
   processScheduledCampaign,
   runSchedulerTick,
   startCampaignScheduler,
@@ -13,12 +14,12 @@ import {
 } from '../services/campaignScheduler.js';
 import { extractVobizCredentials } from '../services/vobizCalling.js';
 import { runCampaign } from '../services/campaignRunner.js';
-import { CAMPAIGN_STATUS } from '../types/index.js';
+import { CAMPAIGN_STATUS, CAMPAIGN_CONTACT_STATUS } from '../types/index.js';
 
 vi.mock('../lib/prisma.js', () => ({
   default: {
     campaign: { findMany: vi.fn(), update: vi.fn() },
-    campaignContact: { findMany: vi.fn(), updateMany: vi.fn() },
+    campaignContact: { findMany: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
     user: {
       findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
     },
@@ -48,6 +49,21 @@ const baseCampaign = (overrides: Partial<SchedulableCampaign> = {}): Schedulable
 });
 
 const IST = 'Asia/Kolkata';
+
+/**
+ * Stubs the per-status contact counts the scheduler reads before dialling.
+ * `pending` decides whether there is anything left to dial; `calling` is how
+ * many of the provider's channels are already occupied.
+ */
+const stubContactCounts = (pending: number, calling = 0): void => {
+  (prisma.campaignContact.count as any).mockImplementation(({ where }: any) =>
+    Promise.resolve(where.status === CAMPAIGN_CONTACT_STATUS.CALLING ? calling : pending));
+};
+
+/** The stale-"calling" sweep runs on every tick and needs a batch result. */
+const stubSweep = (count = 0): void => {
+  (prisma.campaignContact.updateMany as any).mockResolvedValue({ count });
+};
 
 describe('campaignScheduler pure helpers', () => {
   it('parses time-of-day into minutes', () => {
@@ -101,10 +117,12 @@ describe('campaignScheduler pure helpers', () => {
 describe('scheduled campaign start time regression (6 PM IST)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stubSweep();
+    stubContactCounts(1);
     (prisma.campaignContact.findMany as any).mockResolvedValue([{ id: 'c1', phoneNumber: '+1' }]);
-    (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'prov-1' });
+    (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'prov-1', concurrencyLimit: 3 });
     (extractVobizCredentials as any).mockReturnValue({ authId: 'a', authToken: 't', fromNumber: '+9' });
-    (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0 });
+    (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0, queued: 0 });
   });
 
   const istEveningCampaign = () => baseCampaign({
@@ -139,7 +157,7 @@ describe('scheduled campaign start time regression (6 PM IST)', () => {
   });
 });
 
-describe('resolvePublicBaseUrl / buildSchedulerAnswerUrl', () => {
+describe('resolvePublicBaseUrl / scheduler callback urls', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -162,11 +180,20 @@ describe('resolvePublicBaseUrl / buildSchedulerAnswerUrl', () => {
     expect(url).toContain('agentId=agent-1');
     expect(url).toContain('contactId=contact-9');
   });
+
+  it('builds a hangup url carrying the contact, so unanswered calls resolve', () => {
+    vi.stubEnv('PUBLIC_BASE_URL', 'https://calls.example.com');
+    const url = buildSchedulerHangupUrl('agent-1', 'contact-9');
+    expect(url).toContain('https://calls.example.com/api/webhooks/vobiz/hangup');
+    expect(url).toContain('contactId=contact-9');
+  });
 });
 
 describe('processScheduledCampaign', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stubSweep();
+    stubContactCounts(0);
   });
 
   it('skips a campaign that is not due yet', async () => {
@@ -185,10 +212,11 @@ describe('processScheduledCampaign', () => {
   });
 
   it('promotes a scheduled campaign to running and dispatches a batch', async () => {
+    stubContactCounts(1);
     (prisma.campaignContact.findMany as any).mockResolvedValue([{ id: 'c1', phoneNumber: '+1' }]);
-    (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'prov-1' });
+    (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'prov-1', concurrencyLimit: 3 });
     (extractVobizCredentials as any).mockReturnValue({ authId: 'a', authToken: 't', fromNumber: '+9' });
-    (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0 });
+    (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0, queued: 0 });
 
     await processScheduledCampaign(baseCampaign(), new Date('2026-07-07T10:00:00'));
 
@@ -197,12 +225,11 @@ describe('processScheduledCampaign', () => {
       data: { status: CAMPAIGN_STATUS.RUNNING },
     });
     expect(runCampaign).toHaveBeenCalledWith(
-      expect.objectContaining({ campaignId: 'camp-1', agentId: 'agent-1' }),
+      expect.objectContaining({ campaignId: 'camp-1', agentId: 'agent-1', concurrency: 3 }),
     );
   });
 
   it('marks the campaign completed when no pending contacts remain', async () => {
-    (prisma.campaignContact.findMany as any).mockResolvedValue([]);
     await processScheduledCampaign(
       baseCampaign({ status: CAMPAIGN_STATUS.RUNNING }),
       new Date('2026-07-07T10:00:00'),
@@ -214,8 +241,19 @@ describe('processScheduledCampaign', () => {
     expect(runCampaign).not.toHaveBeenCalled();
   });
 
+  it('keeps a campaign running while its dialled calls are still live', async () => {
+    stubContactCounts(0, 2);
+    await processScheduledCampaign(
+      baseCampaign({ status: CAMPAIGN_STATUS.RUNNING }),
+      new Date('2026-07-07T10:00:00'),
+    );
+    // Completing here would claim the campaign finished while numbers ring.
+    expect(prisma.campaign.update).not.toHaveBeenCalled();
+    expect(runCampaign).not.toHaveBeenCalled();
+  });
+
   it('fails the campaign when no active provider exists', async () => {
-    (prisma.campaignContact.findMany as any).mockResolvedValue([{ id: 'c1', phoneNumber: '+1' }]);
+    stubContactCounts(1);
     (prisma.telephonyProvider.findFirst as any).mockResolvedValue(null);
     await processScheduledCampaign(
       baseCampaign({ status: CAMPAIGN_STATUS.RUNNING }),
@@ -228,7 +266,7 @@ describe('processScheduledCampaign', () => {
   });
 
   it('fails the campaign when provider credentials are incomplete', async () => {
-    (prisma.campaignContact.findMany as any).mockResolvedValue([{ id: 'c1', phoneNumber: '+1' }]);
+    stubContactCounts(1);
     (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'prov-1' });
     (extractVobizCredentials as any).mockReturnValue(null);
     await processScheduledCampaign(
@@ -245,13 +283,14 @@ describe('processScheduledCampaign', () => {
 describe('runSchedulerTick', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stubSweep();
+    stubContactCounts(0);
   });
 
   it('processes each scheduled/running campaign', async () => {
     (prisma.campaign.findMany as any).mockResolvedValue([
       baseCampaign({ id: 'camp-1', status: CAMPAIGN_STATUS.RUNNING }),
     ]);
-    (prisma.campaignContact.findMany as any).mockResolvedValue([]);
     await runSchedulerTick(new Date('2026-07-07T10:00:00'));
     expect(prisma.campaign.update).toHaveBeenCalledWith({
       where: { id: 'camp-1' },
@@ -259,11 +298,17 @@ describe('runSchedulerTick', () => {
     });
   });
 
+  it('sweeps stuck calling contacts before dialling anything new', async () => {
+    (prisma.campaign.findMany as any).mockResolvedValue([]);
+    await runSchedulerTick(new Date('2026-07-07T10:00:00'));
+    expect(prisma.campaignContact.updateMany).toHaveBeenCalled();
+  });
+
   it('catches errors from an individual campaign', async () => {
     (prisma.campaign.findMany as any).mockResolvedValue([
       baseCampaign({ id: 'camp-err', status: CAMPAIGN_STATUS.RUNNING }),
     ]);
-    (prisma.campaignContact.findMany as any).mockRejectedValue(new Error('db down'));
+    (prisma.campaignContact.count as any).mockRejectedValue(new Error('db down'));
     await expect(runSchedulerTick(new Date('2026-07-07T10:00:00'))).resolves.toBeUndefined();
   });
 
@@ -277,6 +322,8 @@ describe('runSchedulerTick', () => {
 describe('start/stop scheduler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stubSweep();
+    stubContactCounts(0);
     vi.useFakeTimers();
   });
 

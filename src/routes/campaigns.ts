@@ -24,6 +24,8 @@ import {
 import { extractTemplateVariables } from '../utils/templateVariables.js';
 import { extractVobizCredentials } from '../services/vobizCalling.js';
 import { runCampaign, type RunCampaignContact } from '../services/campaignRunner.js';
+import { resolveConcurrency } from '../utils/concurrency.js';
+import type { CampaignTriggerSummary } from '../types/index.js';
 import { canStartWalletCall } from '../services/walletService.js';
 import { zonedWallClockToUtc } from '../utils/timezone.js';
 
@@ -50,12 +52,27 @@ function decodeBase64File(input: string): Buffer {
   return Buffer.from(base64, 'base64');
 }
 
-/** Builds the Vobiz answer_url carrying agent + campaign contact context. */
-function buildCampaignAnswerUrl(req: Request, agentId: string, contactId: string): string {
+/** Origin of the current request, used to build provider callback URLs. */
+function requestOrigin(req: Request): string {
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.headers['x-forwarded-host'] || req.get('host');
+  return `${proto}://${host}`;
+}
+
+/** Builds the Vobiz answer_url carrying agent + campaign contact context. */
+function buildCampaignAnswerUrl(req: Request, agentId: string, contactId: string): string {
   const query = `agentId=${encodeURIComponent(agentId)}&contactId=${encodeURIComponent(contactId)}`;
-  return `${proto}://${host}/api/webhooks/vobiz/answer?${query}`;
+  return `${requestOrigin(req)}/api/webhooks/vobiz/answer?${query}`;
+}
+
+/**
+ * Builds the Vobiz hangup_url. Carrying the contactId here is what lets an
+ * unanswered number move off "calling" — no media stream ever opens for it, so
+ * the hangup callback is the only completion signal that will ever arrive.
+ */
+function buildCampaignHangupUrl(req: Request, agentId: string, contactId: string): string {
+  const query = `agentId=${encodeURIComponent(agentId)}&contactId=${encodeURIComponent(contactId)}`;
+  return `${requestOrigin(req)}/api/webhooks/vobiz/hangup?${query}`;
 }
 
 /** Looks up an active outbound Vobiz provider for the user. */
@@ -76,6 +93,42 @@ async function findActiveProvider(
   return provider as Record<string, unknown> | null;
 }
 
+/** Zeroed tally, so every campaign exposes the same shape to the client. */
+function emptyStatusCounts(): Record<string, number> {
+  return {
+    [CAMPAIGN_CONTACT_STATUS.PENDING]: 0,
+    [CAMPAIGN_CONTACT_STATUS.CALLING]: 0,
+    [CAMPAIGN_CONTACT_STATUS.COMPLETED]: 0,
+    [CAMPAIGN_CONTACT_STATUS.FAILED]: 0,
+  };
+}
+
+/**
+ * Per-status contact tallies for each campaign, in one grouped query.
+ *
+ * The campaign list needs these to show how far a run got and whether there is
+ * anything worth retrying, without shipping every contact row to the client.
+ */
+async function contactStatusCounts(
+  campaignIds: string[],
+): Promise<Record<string, Record<string, number>>> {
+  const counts: Record<string, Record<string, number>> = {};
+  for (const id of campaignIds) counts[id] = emptyStatusCounts();
+  if (campaignIds.length === 0) return counts;
+
+  const grouped = await prisma.campaignContact.groupBy({
+    by: ['campaignId', 'status'] as const,
+    where: { campaignId: { in: campaignIds } },
+    _count: { _all: true },
+  }) as unknown as { campaignId: string; status: string; _count: { _all: number } }[];
+
+  for (const row of grouped) {
+    const tally = counts[row.campaignId];
+    if (tally) tally[row.status] = row._count._all;
+  }
+  return counts;
+}
+
 // GET /api/campaigns — list campaigns for the authenticated user
 router.get(
   '/',
@@ -92,8 +145,13 @@ router.get(
           provider: { select: { name: true } },
           _count: { select: { contacts: true } },
         },
-      });
-      res.json(campaigns);
+      }) as { id: string }[];
+
+      const counts = await contactStatusCounts(campaigns.map((campaign) => campaign.id));
+      res.json(campaigns.map((campaign) => ({
+        ...campaign,
+        statusCounts: counts[campaign.id] ?? emptyStatusCounts(),
+      })));
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Error fetching campaigns', { error: errMsg });
@@ -120,7 +178,11 @@ router.get(
         include: {
           agent: { select: { name: true } },
           provider: { select: { name: true } },
+          // Every contact, unpaged: the status view exists to show the whole
+          // list. `_count` travels with it so the client can prove that what it
+          // rendered is the complete set.
           contacts: { orderBy: { createdAt: 'asc' } },
+          _count: { select: { contacts: true } },
         },
       });
 
@@ -405,6 +467,32 @@ async function loadRunnableCampaign(
   };
 }
 
+/**
+ * Free channels on a provider for this campaign: its limit minus the calls
+ * already ringing. Contacts sit on "calling" until the provider reports a
+ * hangup, so this is what keeps a re-trigger from breaching the vendor's cap.
+ */
+async function availableCallSlots(campaignId: string, limit: number): Promise<number> {
+  const active = await prisma.campaignContact.count({
+    where: { campaignId, status: CAMPAIGN_CONTACT_STATUS.CALLING },
+  });
+  return Math.max(0, limit - active);
+}
+
+/**
+ * Status a campaign lands on after a dial pass.
+ *
+ * It stays RUNNING while anything is outstanding — live calls have not reported
+ * their outcome yet, and queued contacts are waiting for a free channel. The
+ * scheduler flips it to COMPLETED once neither remains. Marking it COMPLETED
+ * here (the old behaviour) claimed the campaign was finished while its numbers
+ * were still ringing.
+ */
+function triggerFinalStatus(summary: CampaignTriggerSummary): string {
+  if (summary.initiated > 0 || summary.queued > 0) return CAMPAIGN_STATUS.RUNNING;
+  return CAMPAIGN_STATUS.FAILED;
+}
+
 /** Loads a runnable campaign, dials its pending contacts, and records the outcome. */
 async function triggerCampaignRun(
   req: AuthenticatedRequest,
@@ -438,21 +526,24 @@ async function triggerCampaignRun(
     data: { status: CAMPAIGN_STATUS.RUNNING },
   });
 
+  const limit = resolveConcurrency(provider.concurrencyLimit as number | null | undefined);
   const summary = await runCampaign({
     campaignId: loaded.campaign.id,
     agentId: loaded.campaign.agentId,
     contacts: loaded.contacts,
     creds,
+    concurrency: await availableCallSlots(loaded.campaign.id, limit),
     answerUrlBuilder: (agentId, contactId) => buildCampaignAnswerUrl(req, agentId, contactId),
+    hangupUrlBuilder: (agentId, contactId) => buildCampaignHangupUrl(req, agentId, contactId),
   });
 
-  const finalStatus = summary.initiated > 0 ? CAMPAIGN_STATUS.COMPLETED : CAMPAIGN_STATUS.FAILED;
+  const finalStatus = triggerFinalStatus(summary);
   await prisma.campaign.update({
     where: { id: loaded.campaign.id },
     data: { status: finalStatus },
   });
 
-  logger.info('Campaign triggered', { id: loaded.campaign.id, ...summary });
+  logger.info('Campaign triggered', { id: loaded.campaign.id, concurrencyLimit: limit, ...summary });
   return { status: 200, body: { status: finalStatus, ...summary } };
 }
 
@@ -511,6 +602,55 @@ router.post(
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Error re-triggering campaign', { id: req.params.id, error: errMsg });
+      return res.status(500).json({ error: UI_STRINGS.api.errors.triggerCampaign });
+    }
+  },
+);
+
+/** Resets only the failed contacts of a campaign back to pending. */
+async function resetFailedContacts(id: string, userId: string): Promise<HandlerResult | null> {
+  const existing = await prisma.campaign.findFirst({ where: { id, userId } });
+  if (!existing) {
+    return { status: 404, body: { error: UI_STRINGS.api.errors.campaignNotFound } };
+  }
+
+  const reset = await prisma.campaignContact.updateMany({
+    where: { campaignId: id, status: CAMPAIGN_CONTACT_STATUS.FAILED },
+    data: { status: CAMPAIGN_CONTACT_STATUS.PENDING, callId: null, errorMessage: null },
+  });
+
+  if (reset.count === 0) {
+    return { status: 400, body: { error: UI_STRINGS.api.errors.campaignNoFailedContacts } };
+  }
+
+  logger.info('Campaign failed contacts reset for retry', { id, retried: reset.count });
+  return null;
+}
+
+// POST /api/campaigns/:id/retry-failed — re-dial only the numbers that failed
+router.post(
+  '/:id/retry-failed',
+  requireAuth,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async (_req: Request, res: Response): Promise<any> => {
+    const req = _req as AuthenticatedRequest;
+    const userId = req.user?.id as string;
+    try {
+      const paramsParse = CAMPAIGN_ID_PARAMS_SCHEMA.safeParse(req.params);
+      if (!paramsParse.success) {
+        return res.status(400).json({ error: UI_STRINGS.api.errors.invalidInput });
+      }
+
+      const blocked = await resetFailedContacts(paramsParse.data.id, userId);
+      if (blocked) {
+        return res.status(blocked.status).json(blocked.body);
+      }
+
+      const result = await triggerCampaignRun(req, paramsParse.data.id, userId);
+      return res.status(result.status).json(result.body);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('Error retrying failed campaign contacts', { id: req.params.id, error: errMsg });
       return res.status(500).json({ error: UI_STRINGS.api.errors.triggerCampaign });
     }
   },

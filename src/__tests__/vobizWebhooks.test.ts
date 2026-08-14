@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import router from '../routes/vobizWebhooks.js';
+import { applyCampaignHangup } from '../services/campaignCallOutcome.js';
 
 vi.mock('../utils/logger.js', () => ({
   default: {
@@ -8,6 +9,10 @@ vi.mock('../utils/logger.js', () => ({
     warn: vi.fn(),
     debug: vi.fn(),
   },
+}));
+
+vi.mock('../services/campaignCallOutcome.js', () => ({
+  applyCampaignHangup: vi.fn().mockResolvedValue(true),
 }));
 
 type MockFn = ReturnType<typeof vi.fn>;
@@ -150,7 +155,7 @@ describe('Vobiz Webhook Routes', () => {
   });
 
   describe('POST /hangup', () => {
-    it('returns empty XML response', () => {
+    it('returns empty XML response and resolves the campaign contact', async () => {
       const res = mockRes();
       const req = {
         body: {
@@ -158,35 +163,59 @@ describe('Vobiz Webhook Routes', () => {
           HangupCause: 'NORMAL_CLEARING',
           Duration: '30',
         },
+        query: { contactId: 'ct-1' },
       };
 
-      getRouteHandler('/hangup', 'post')(req as never, res);
+      await getRouteHandler('/hangup', 'post')(req as never, res);
 
       expect(res.set).toHaveBeenCalledWith('Content-Type', 'application/xml');
       const xml = (res.send as MockFn).mock.calls[0][0] as string;
       expect(xml).toContain('<Response></Response>');
+      expect(applyCampaignHangup).toHaveBeenCalledWith({
+        contactId: 'ct-1',
+        callId: 'call-456',
+        hangupCause: 'NORMAL_CLEARING',
+        callStatus: '',
+        durationSecs: 30,
+      });
     });
 
-    it('handles lowercase body fields', () => {
+    it('handles lowercase body fields', async () => {
       const res = mockRes();
       const req = {
         body: {
           callUuid: 'c2',
           hangupCause: 'NO_ANSWER',
           duration: '10',
+          callStatus: 'no-answer',
         },
+        query: {},
       };
 
-      getRouteHandler('/hangup', 'post')(req as never, res);
+      await getRouteHandler('/hangup', 'post')(req as never, res);
       expect(res.set).toHaveBeenCalledWith('Content-Type', 'application/xml');
+      expect(applyCampaignHangup).toHaveBeenCalledWith({
+        contactId: null,
+        callId: 'c2',
+        hangupCause: 'NO_ANSWER',
+        callStatus: 'no-answer',
+        durationSecs: 10,
+      });
     });
 
-    it('handles empty body', () => {
+    it('handles empty body without inventing provider values', async () => {
       const res = mockRes();
       const req = { body: {} };
 
-      getRouteHandler('/hangup', 'post')(req as never, res);
+      await getRouteHandler('/hangup', 'post')(req as never, res);
       expect(res.set).toHaveBeenCalledWith('Content-Type', 'application/xml');
+      expect(applyCampaignHangup).toHaveBeenCalledWith({
+        contactId: null,
+        callId: null,
+        hangupCause: null,
+        callStatus: '',
+        durationSecs: 0,
+      });
     });
   });
 });

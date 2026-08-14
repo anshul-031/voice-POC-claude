@@ -1695,7 +1695,8 @@ html[data-theme='light'] body::before {
 }
 
 .telephony-phone,
-.telephony-sip {
+.telephony-sip,
+.telephony-concurrency {
   font-size: 0.8rem;
   color: var(--text-muted);
 }
@@ -2352,10 +2353,80 @@ html[data-theme='light'] body::before {
   white-space: nowrap;
 }
 
+.campaign-status-table-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.campaign-status-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #67e8f9;
+}
+
+.campaign-status-live::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: campaign-status-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes campaign-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .campaign-status-live::before {
+    animation: none;
+  }
+}
+
+/*
+ * The status view is a bare div inside `.panel`, which is a flex column with
+ * `overflow: hidden`. Without a bounded height of its own, a contact table
+ * taller than the panel was simply clipped — no scrollbar appeared anywhere, so
+ * the numbers past the fold were unreachable. Sibling views escape this by
+ * borrowing `.telephony-provider-list` / `.telephony-form-inner`.
+ *
+ * `:not(.hidden)` keeps this away from the `.hidden` display utility.
+ */
+#campaign-status-container:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .campaign-status-table-wrap {
-  overflow-x: auto;
+  flex: 1;
+  min-height: 140px;
+  overflow: auto;
   border-radius: var(--radius-md);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+/*
+ * Column labels stay put while scrolling a long list of numbers. The header
+ * needs an opaque fill (the default tint is translucent, so rows would show
+ * through it) and an inset border, because a collapsed-border table drops the
+ * real border on a sticky cell.
+ */
+.campaign-status-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-tertiary);
+  box-shadow: inset 0 -1px 0 var(--border-color);
 }
 
 .campaign-status-table {
