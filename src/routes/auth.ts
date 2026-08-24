@@ -11,6 +11,7 @@ import {
   generateResetToken,
 } from '../services/auth.js';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth.js';
+import { invalidateCachedUser } from '../lib/userCache.js';
 import { z } from 'zod';
 import { ROUTES } from '../types/index.js';
 import { getWalletAccount } from '../services/walletService.js';
@@ -179,6 +180,10 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<any>
       where: { id: user.id },
       data: { passwordHash, resetToken: null, resetTokenExpiry: null },
     });
+
+    // Drop any identity cached for this user so a credential change is never
+    // served from a snapshot taken before it.
+    invalidateCachedUser(user.id);
 
     logger.info('Password reset completed', { userId: user.id });
     res.json({ message: 'Password has been reset successfully' });

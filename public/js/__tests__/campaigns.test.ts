@@ -38,6 +38,7 @@ import {
 } from '../campaigns.js';
 import { api } from '../api.js';
 import { showToast } from '../utils.js';
+import { CONFIG } from '../constants/config.js';
 
 function setupDOM() {
   document.body.innerHTML = `
@@ -877,7 +878,43 @@ describe('campaigns.js', () => {
       vi.mocked(api).mockResolvedValue({
         id: 'c1', name: 'Camp', contacts: [{ phoneNumber: '+111', status: 'completed' }],
       });
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(CONFIG.CAMPAIGN_STATUS_POLL_MS);
+      expect(api).toHaveBeenCalledWith('/campaigns/c1');
+    });
+
+    it('gives up polling once the refresh budget is spent', async () => {
+      // A campaign whose provider never reports back stays "live" forever. The
+      // budget is what stops an abandoned tab querying the database all day.
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp', contacts: [{ phoneNumber: '+111', status: 'calling' }],
+      });
+      await viewCampaignStatus('c1');
+      vi.clearAllMocks();
+
+      await vi.advanceTimersByTimeAsync(
+        CONFIG.CAMPAIGN_STATUS_POLL_MS * CONFIG.CAMPAIGN_STATUS_POLL_MAX_CYCLES,
+      );
+      const callsWhenSpent = vi.mocked(api).mock.calls.length;
+      expect(callsWhenSpent).toBe(CONFIG.CAMPAIGN_STATUS_POLL_MAX_CYCLES);
+
+      // Well past the budget, no further requests are made.
+      await vi.advanceTimersByTimeAsync(CONFIG.CAMPAIGN_STATUS_POLL_MS * 10);
+      expect(vi.mocked(api).mock.calls.length).toBe(callsWhenSpent);
+    });
+
+    it('restores the budget when the user reopens the view', async () => {
+      vi.mocked(api).mockResolvedValue({
+        id: 'c1', name: 'Camp', contacts: [{ phoneNumber: '+111', status: 'calling' }],
+      });
+      await viewCampaignStatus('c1');
+      await vi.advanceTimersByTimeAsync(
+        CONFIG.CAMPAIGN_STATUS_POLL_MS * CONFIG.CAMPAIGN_STATUS_POLL_MAX_CYCLES,
+      );
+
+      // A deliberate open is not a spent poll cycle, so polling resumes.
+      await viewCampaignStatus('c1');
+      vi.clearAllMocks();
+      await vi.advanceTimersByTimeAsync(CONFIG.CAMPAIGN_STATUS_POLL_MS);
       expect(api).toHaveBeenCalledWith('/campaigns/c1');
     });
 

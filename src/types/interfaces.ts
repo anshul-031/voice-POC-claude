@@ -8,6 +8,24 @@ export interface WalletAccount {
   canStartCall: boolean;
 }
 
+/** The identity fields auth resolves from a token and attaches to a request. */
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+/** What one scheduler pass learned about whether it needs to run again soon. */
+export interface SchedulerTickResult {
+  /** A campaign was due this pass, so the scheduler should keep ticking. */
+  active: boolean;
+  /**
+   * Earliest instant a campaign that was held becomes due, when none was
+   * actionable. Null means there is nothing left to wait for.
+   */
+  nextDueAt: Date | null;
+}
+
 export interface VoiceAgent {
   id: string;
   name: string;

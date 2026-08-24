@@ -19,7 +19,7 @@ import {
   TELEPHONY_DIRECTION,
   TELEPHONY_PROVIDER,
 } from '../types/index.js';
-import type { SchedulableCampaign } from '../types/index.js';
+import type { SchedulableCampaign, SchedulerTickResult } from '../types/index.js';
 import { extractVobizCredentials, type VobizCredentials } from './vobizCalling.js';
 import { runCampaign } from './campaignRunner.js';
 import { resolveConcurrency } from '../utils/concurrency.js';
@@ -64,6 +64,51 @@ export function isWithinCallWindow(
   }
   // Overnight window, e.g. 22:00 -> 06:00
   return nowMinutes >= start || nowMinutes < end;
+}
+
+/**
+ * Minutes from `from` until the campaign's call window next opens.
+ *
+ * Only called when the window is known to be shut. A degenerate window whose
+ * start is the current minute yet reads as closed returns a full day rather
+ * than zero, so it cannot spin the scheduler in a tight loop.
+ */
+function minutesUntilWindowOpen(from: Date, windowStart: string, timeZone?: string | null): number {
+  const current = getZonedMinutesSinceMidnight(from, timeZone);
+  const opensAt = parseTimeOfDay(windowStart);
+  const delta = (opensAt - current + CAMPAIGN_SCHEDULER.MINUTES_PER_DAY)
+    % CAMPAIGN_SCHEDULER.MINUTES_PER_DAY;
+  return delta === 0 ? CAMPAIGN_SCHEDULER.MINUTES_PER_DAY : delta;
+}
+
+/**
+ * When a campaign next becomes dialable, or null if it already is.
+ *
+ * This is what lets the scheduler sleep instead of polling. A campaign can be
+ * held for two reasons — its start time has not arrived, or its call window is
+ * shut — and both are predictable, so there is no need to keep asking.
+ *
+ * The result is a lower bound, not a guarantee: a window that opens after the
+ * start time is resolved in one step, so an awkward combination may wake the
+ * scheduler early. That costs a single query and is then re-evaluated, which is
+ * the safe direction to be wrong in.
+ */
+export function nextDueInstant(campaign: SchedulableCampaign, now: Date): Date | null {
+  const notBefore = campaign.scheduledAt && campaign.scheduledAt > now
+    ? campaign.scheduledAt
+    : now;
+
+  if (isWithinCallWindow(notBefore, campaign.windowStart, campaign.windowEnd, campaign.timezone)) {
+    return notBefore > now ? notBefore : null;
+  }
+
+  // `isWithinCallWindow` only reports false when both bounds are set.
+  const minutes = minutesUntilWindowOpen(
+    notBefore,
+    campaign.windowStart as string,
+    campaign.timezone,
+  );
+  return new Date(notBefore.getTime() + minutes * 60_000);
 }
 
 /** Resolves the public base URL used to build call answer webhooks. */
@@ -257,6 +302,19 @@ export async function processScheduledCampaign(
     return;
   }
 
+  const pending = await countContacts(campaign.id, CAMPAIGN_CONTACT_STATUS.PENDING);
+  const activeCalls = await countContacts(campaign.id, CAMPAIGN_CONTACT_STATUS.CALLING);
+
+  // Nothing left to dial — finish up once the calls already placed report back.
+  // Checked before the wallet so a campaign that is merely waiting on its last
+  // hangup callbacks costs no balance lookup, and so a campaign whose numbers
+  // have all been dialled completes rather than being failed for funds it no
+  // longer needs.
+  if (pending === 0) {
+    await completeWhenIdle(campaign, activeCalls);
+    return;
+  }
+
   if (!await canStartWalletCall(campaign.userId)) {
     await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.FAILED);
     await prisma.campaignContact.updateMany({
@@ -278,27 +336,21 @@ export async function processScheduledCampaign(
     await setCampaignStatus(campaign.id, CAMPAIGN_STATUS.RUNNING);
   }
 
-  const pending = await countContacts(campaign.id, CAMPAIGN_CONTACT_STATUS.PENDING);
-  const activeCalls = await countContacts(campaign.id, CAMPAIGN_CONTACT_STATUS.CALLING);
-
-  // Nothing left to dial — finish up once the calls already placed report back.
-  if (pending === 0) {
-    await completeWhenIdle(campaign, activeCalls);
-    return;
-  }
-
   const dialer = await resolveCampaignDialer(campaign);
   if (!dialer) return;
 
   await dispatchNextBatch(campaign, dialer, activeCalls);
 }
 
-/** One scheduler pass: process every scheduled or running campaign. */
-export async function runSchedulerTick(now: Date = new Date()): Promise<void> {
-  // Release channels held by contacts whose hangup callback never arrived
-  // before deciding how many new calls each campaign may place.
-  await sweepStaleCallingContacts(now);
-
+/**
+ * One scheduler pass: process every campaign that is due right now.
+ *
+ * Campaigns that exist but are not yet dialable are not "work" for the purpose
+ * of staying awake — reporting them as such is what previously kept a database
+ * busy every minute until a future start time arrived. Their due instants are
+ * returned instead so the caller can sleep until the earliest one.
+ */
+export async function runSchedulerTick(now: Date = new Date()): Promise<SchedulerTickResult> {
   const campaigns = (await prisma.campaign.findMany({
     where: { status: { in: [CAMPAIGN_STATUS.SCHEDULED, CAMPAIGN_STATUS.RUNNING] } },
     select: {
@@ -314,33 +366,32 @@ export async function runSchedulerTick(now: Date = new Date()): Promise<void> {
     },
   })) as SchedulableCampaign[];
 
+  // Release channels held by contacts whose hangup callback never arrived
+  // before deciding how many new calls each campaign may place. This also runs
+  // on a work-free tick, which is what frees contacts left mid-dial by a
+  // campaign that was paused or written off after its calls went out.
+  await sweepStaleCallingContacts(now);
+
+  let active = false;
+  let nextDueAt: Date | null = null;
+
   for (const campaign of campaigns) {
     try {
+      const dueAt = nextDueInstant(campaign, now);
+      if (dueAt) {
+        if (!nextDueAt || dueAt < nextDueAt) nextDueAt = dueAt;
+        continue;
+      }
+      // Due now. `processScheduledCampaign` repeats the start-time and window
+      // checks, which keeps it correct when called directly.
+      active = true;
       await processScheduledCampaign(campaign, now);
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Scheduler failed to process campaign', { campaignId: campaign.id, error: errMsg });
     }
   }
+
+  return { active, nextDueAt };
 }
 
-let tickTimer: ReturnType<typeof setInterval> | null = null;
-
-/** Starts the periodic scheduler. No-op if already running. */
-export function startCampaignScheduler(): void {
-  if (tickTimer) return;
-  tickTimer = setInterval(() => {
-    void runSchedulerTick();
-  }, CAMPAIGN_SCHEDULER.TICK_INTERVAL_MS);
-  // Do not keep the event loop alive solely for the scheduler.
-  if (typeof tickTimer.unref === 'function') tickTimer.unref();
-  logger.info('Campaign scheduler started', { intervalMs: CAMPAIGN_SCHEDULER.TICK_INTERVAL_MS });
-}
-
-/** Stops the periodic scheduler. */
-export function stopCampaignScheduler(): void {
-  if (tickTimer) {
-    clearInterval(tickTimer);
-    tickTimer = null;
-  }
-}

@@ -14,7 +14,9 @@ import callHistoryRoutes from './routes/callHistory.js';
 import vobizWebhookRoutes from './routes/vobizWebhooks.js';
 import integrationRoutes from './routes/integration.js';
 import signalingServer from './services/signalingServer.js';
-import { startCampaignScheduler } from './services/campaignScheduler.js';
+import { startCampaignScheduler, stopCampaignScheduler } from './services/campaignSchedulerLoop.js';
+import { disconnectPrisma } from './lib/prisma.js';
+import { clearUserCache } from './lib/userCache.js';
 import logger from './utils/logger.js';
 import { renderSsrPage } from './utils/ssr.js';
 import { RUNTIME_UI_CONFIG } from './constants/config.js';
@@ -175,5 +177,39 @@ server.listen(PORT, () => {
     apiPrefix: ROUTES.API_PREFIX,
     geminiApiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
     databaseConfigured: Boolean(process.env.DATABASE_URL),
+  });
+});
+
+let shuttingDown = false;
+
+/**
+ * Releases the database pool before the process exits.
+ *
+ * Without this a redeploy left its connections for the database to reap on its
+ * own timeout, so a restarting service could sit above its connection limit.
+ * A second signal is ignored so an impatient supervisor cannot interleave two
+ * shutdowns.
+ */
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info('Shutting down', { signal });
+
+  stopCampaignScheduler();
+  clearUserCache();
+  server.close();
+
+  try {
+    await disconnectPrisma();
+  } catch (error: unknown) {
+    logger.error('Failed to close database connections', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+(['SIGTERM', 'SIGINT'] as const).forEach((signal) => {
+  process.once(signal, () => {
+    void shutdown(signal);
   });
 });

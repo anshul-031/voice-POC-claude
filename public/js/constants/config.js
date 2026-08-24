@@ -72,7 +72,15 @@ export const CONFIG = {
   MAX_CALL_CONCURRENCY: 100,
   // Per-number campaign status is polled while calls are still in flight, so a
   // number moves off "Calling" on screen without the user hitting Refresh.
-  CAMPAIGN_STATUS_POLL_MS: 5000,
+  //
+  // Every poll costs a full campaign read on the server, so this trades a little
+  // on-screen latency for a large drop in database load: a tab left open on a
+  // live campaign was previously issuing 24 queries a minute indefinitely.
+  CAMPAIGN_STATUS_POLL_MS: 15000,
+  // Upper bound on consecutive automatic refreshes. A campaign whose provider
+  // never reports back would otherwise keep an idle tab polling forever; after
+  // this many cycles the user refreshes manually instead.
+  CAMPAIGN_STATUS_POLL_MAX_CYCLES: 40,
 };
 
 export const MESSAGE_TYPE = {

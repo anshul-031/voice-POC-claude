@@ -69,6 +69,30 @@ export const WALLET = {
   PAYMENT_REQUIRED_STATUS: 402,
 } as const;
 
+export const AUTH_CACHE = {
+  /**
+   * How long a resolved identity is reused before the database is asked again.
+   *
+   * Auth ran a `user` lookup on every authenticated request, so each poll from
+   * an open dashboard cost two queries instead of one. The JWT is already proof
+   * the session is valid; this lookup only turns a user id into a name and
+   * email, which almost never change.
+   *
+   * The window is deliberately short. A cached entry keeps answering for a user
+   * whose row has since disappeared, so this is the longest a revoked account
+   * could still be served — see `invalidateCachedUser` for the escape hatch used
+   * on security-relevant changes.
+   */
+  TTL_MS: 30_000,
+  /**
+   * Cap on cached identities, so a stream of tokens for different users cannot
+   * grow the map without bound. Reaching it clears the map rather than tracking
+   * per-entry recency: the whole cache is a disposable optimisation, and the
+   * cost of rebuilding it is one query per active user.
+   */
+  MAX_ENTRIES: 5_000,
+} as const;
+
 export const MESSAGE_TYPE = {
   START_CALL: 'start-call',
   AUDIO_DATA: 'audio-data',
@@ -204,6 +228,37 @@ export const CAMPAIGN_LIMITS = {
 export const CAMPAIGN_SCHEDULER = {
   /** How often the background scheduler wakes up to process due campaigns. */
   TICK_INTERVAL_MS: 60_000,
+  /**
+   * Consecutive work-free ticks tolerated before the scheduler goes dormant.
+   *
+   * Ticking on a fixed interval forever kept the database awake around the
+   * clock: a managed Postgres that suspends after a few minutes of inactivity
+   * never got the chance, so an idle deployment with no campaigns still burned
+   * its whole monthly compute allowance. The scheduler now stops its timer once
+   * there is nothing scheduled and is woken again by the routes that create
+   * work, which leaves a genuinely idle platform issuing no queries at all.
+   *
+   * Two ticks rather than one absorbs a transient read that returns nothing
+   * while a campaign is mid-status-change, at the cost of one extra query.
+   */
+  IDLE_TICKS_BEFORE_SLEEP: 2,
+  /**
+   * Longest single timer segment used while waiting for a campaign to come due.
+   *
+   * A campaign scheduled for next week, or one held outside its call window
+   * overnight, is real work that is not yet actionable. Ticking every minute
+   * until it becomes due would keep the database awake for days on end, so the
+   * scheduler sleeps until the due instant instead.
+   *
+   * A long wait is served as a chain of segments this size. That is partly a
+   * hard requirement — `setTimeout` cannot represent a delay beyond about 24
+   * days — and partly a correction for a machine that suspended or had its
+   * clock changed mid-wait. Crossing a segment boundary costs no queries: the
+   * due instant is held in memory, so the scheduler re-checks the clock and
+   * sleeps again without contacting the database. A campaign scheduled a century
+   * out therefore costs nothing until it is actually due.
+   */
+  MAX_SLEEP_MS: 21_600_000,
   /** Maximum number of calls dispatched per campaign per tick. */
   BATCH_SIZE: 25,
   /** Validates an "HH:MM" 24-hour time-of-day string. */

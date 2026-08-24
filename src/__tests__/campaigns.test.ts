@@ -40,9 +40,17 @@ vi.mock('../services/campaignRunner.js', () => ({
   runCampaign: vi.fn(),
 }));
 
+// The scheduler sleeps when idle, so the routes are responsible for waking it.
+// Mocking it keeps a real interval out of the test process while still letting
+// those wake-ups be asserted.
+vi.mock('../services/campaignSchedulerLoop.js', () => ({
+  wakeCampaignScheduler: vi.fn(),
+}));
+
 import { parseCampaignSpreadsheet, CampaignParseError, CAMPAIGN_PARSE_ERROR } from '../services/excelParser.js';
 import { extractVobizCredentials } from '../services/vobizCalling.js';
 import { runCampaign } from '../services/campaignRunner.js';
+import { wakeCampaignScheduler } from '../services/campaignSchedulerLoop.js';
 
 const mockRes = () => ({
   json: vi.fn().mockReturnThis(),
@@ -415,6 +423,9 @@ describe('Campaign Routes', () => {
       expect(res.json).toHaveBeenCalledWith({
         status: 'running', total: 1, initiated: 1, failed: 0, queued: 0,
       });
+      // A campaign left running needs the scheduler to settle it once the
+      // provider reports back.
+      expect(wakeCampaignScheduler).toHaveBeenCalled();
     });
 
     it('dials within the free channels left by the provider concurrency limit', async () => {
@@ -546,6 +557,19 @@ describe('Campaign Routes', () => {
       );
       expect(prisma.campaign.update).toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({ id: 'c1', status: 'scheduled' });
+      // Without this the campaign would sit unnoticed until something else woke
+      // the scheduler, because it no longer polls for new work.
+      expect(wakeCampaignScheduler).toHaveBeenCalled();
+    });
+
+    it('does not wake the scheduler when scheduling was rejected', async () => {
+      (prisma.campaign.findFirst as any).mockResolvedValue(null);
+      const res = mockRes();
+      await getRouteHandler('/:id/schedule', 'post')(
+        baseReq({ params: { id: 'c1' }, body: validBody }), res,
+      );
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(wakeCampaignScheduler).not.toHaveBeenCalled();
     });
 
     it('resets all contacts to pending so the scheduled run has contacts to dial', async () => {
@@ -689,6 +713,9 @@ describe('Campaign Routes', () => {
       const res = mockRes();
       await getRouteHandler('/:id/pause', 'post')(baseReq({ params: { id: 'c1' } }), res);
       expect(res.json).toHaveBeenCalledWith({ id: 'c1', status: 'paused' });
+      // A paused campaign drops out of the schedulable set, so one more tick is
+      // needed to release any contact still holding a provider channel.
+      expect(wakeCampaignScheduler).toHaveBeenCalled();
     });
 
     it('returns 400 for invalid params', async () => {
@@ -729,6 +756,7 @@ describe('Campaign Routes', () => {
       const data = (prisma.campaign.update as any).mock.calls[0][0].data;
       expect(data.status).toBe('running');
       expect(res.json).toHaveBeenCalled();
+      expect(wakeCampaignScheduler).toHaveBeenCalled();
     });
 
     it('resumes into scheduled when a future start time remains', async () => {

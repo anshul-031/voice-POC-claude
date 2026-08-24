@@ -74,16 +74,41 @@ vi.mock('express', () => {
   };
 });
 
+const mocks = vi.hoisted(() => ({
+  server: {
+    listen: vi.fn((_port: unknown, cb?: () => void) => cb && cb()),
+    close: vi.fn(),
+  },
+  startCampaignScheduler: vi.fn(),
+  stopCampaignScheduler: vi.fn(),
+  disconnectPrisma: vi.fn(async () => undefined),
+  clearUserCache: vi.fn(),
+}));
+
 vi.mock('http', () => ({
-  createServer: vi.fn(() => ({
-    listen: vi.fn((_port, cb) => cb && cb()),
-  })),
+  createServer: vi.fn(() => mocks.server),
 }));
 
 vi.mock('../services/signalingServer.js', () => ({
   default: {
     attach: vi.fn(),
   },
+}));
+
+// The scheduler probes the database on startup, so the real one would open a
+// connection just by importing the server.
+vi.mock('../services/campaignSchedulerLoop.js', () => ({
+  startCampaignScheduler: mocks.startCampaignScheduler,
+  stopCampaignScheduler: mocks.stopCampaignScheduler,
+}));
+
+vi.mock('../lib/prisma.js', () => ({
+  default: {},
+  disconnectPrisma: mocks.disconnectPrisma,
+}));
+
+vi.mock('../lib/userCache.js', () => ({
+  clearUserCache: mocks.clearUserCache,
 }));
 
 vi.mock('../routes/agents.js', () => ({
@@ -241,6 +266,80 @@ describe('Server initialization and Routes', () => {
         apiPrefix: ROUTES.API_PREFIX,
       }),
     );
+  });
+
+  /**
+   * A process that exits without disconnecting leaves its connections for the
+   * database to reap on its own timeout, so a restarting service can sit above
+   * its connection limit.
+   */
+  describe('graceful shutdown', () => {
+    /**
+     * Loads the server with signal registration captured rather than real, so a
+     * test can fire the handler without terminating the test process.
+     */
+    const withSignals = async (
+      load: () => Promise<unknown>,
+    ): Promise<Map<string, () => void>> => {
+      const handlers = new Map<string, () => void>();
+      const onceSpy = vi.spyOn(process, 'once').mockImplementation(
+        ((signal: string, handler: () => void) => {
+          handlers.set(signal, handler);
+          return process;
+        }) as unknown as typeof process.once,
+      );
+
+      await load();
+
+      onceSpy.mockRestore();
+      return handlers;
+    };
+
+    it('registers handlers for both termination signals', async () => {
+      // @ts-expect-error type-checked import with query
+      const handlers = await withSignals(() => import('../server.ts?test=signals'));
+      expect([...handlers.keys()]).toEqual(['SIGTERM', 'SIGINT']);
+    });
+
+    it('releases the scheduler, cache and database pool on SIGTERM', async () => {
+      // @ts-expect-error type-checked import with query
+      const handlers = await withSignals(() => import('../server.ts?test=sigterm'));
+
+      handlers.get('SIGTERM')?.();
+      await vi.waitFor(() => expect(mocks.disconnectPrisma).toHaveBeenCalled());
+
+      expect(logger.info).toHaveBeenCalledWith('Shutting down', { signal: 'SIGTERM' });
+      expect(mocks.stopCampaignScheduler).toHaveBeenCalled();
+      expect(mocks.clearUserCache).toHaveBeenCalled();
+      expect(mocks.server.close).toHaveBeenCalled();
+    });
+
+    it('ignores a second signal while already shutting down', async () => {
+      // @ts-expect-error type-checked import with query
+      const handlers = await withSignals(() => import('../server.ts?test=twice'));
+
+      handlers.get('SIGTERM')?.();
+      await vi.waitFor(() => expect(mocks.disconnectPrisma).toHaveBeenCalled());
+      handlers.get('SIGINT')?.();
+
+      expect(mocks.disconnectPrisma).toHaveBeenCalledTimes(1);
+      expect(mocks.server.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs but does not throw when disconnecting fails', async () => {
+      mocks.disconnectPrisma.mockRejectedValueOnce(new Error('pool already gone'));
+      // @ts-expect-error type-checked import with query
+      const handlers = await withSignals(() => import('../server.ts?test=disconnect-fail'));
+
+      handlers.get('SIGINT')?.();
+
+      await vi.waitFor(() => {
+        expect(logger.error).toHaveBeenCalledWith(
+          'Failed to close database connections',
+          { error: 'pool already gone' },
+        );
+      });
+    });
   });
 
   it('should fallback to static file when SSR render fails', async () => {

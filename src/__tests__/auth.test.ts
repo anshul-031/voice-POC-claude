@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import router from '../routes/auth.js';
 import * as authService from '../services/auth.js';
 import { requireAuth } from '../middleware/auth.js';
+import { clearUserCache, invalidateCachedUser } from '../lib/userCache.js';
 import prisma from '../lib/prisma.js';
 
 vi.mock('../lib/prisma.js', () => ({
@@ -88,8 +89,11 @@ describe('Auth Service', () => {
 });
 
 describe('Auth Middleware', () => {
-  beforeEach(() => { 
-    vi.clearAllMocks(); 
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Identities resolved by an earlier case would otherwise be served from the
+    // cache, so the middleware would never reach the mocked query under test.
+    clearUserCache();
   });
 
   it('requireAuth success', async () => {
@@ -101,6 +105,56 @@ describe('Auth Middleware', () => {
     await requireAuth(req as any, res as any, next);
     expect(next).toHaveBeenCalled();
     expect((req as any).user.id).toBe('1');
+  });
+
+  it('reuses a resolved identity instead of querying on every request', async () => {
+    // Every authenticated request used to cost a user lookup on top of the
+    // handler's own queries, which alone was enough to keep a scale-to-zero
+    // database from suspending.
+    const token = authService.generateToken('1', 'e@e.com');
+    (prisma.user.findUnique as any).mockResolvedValue({ id: '1', email: 'e@e.com', name: 'u' });
+
+    for (let i = 0; i < 5; i += 1) {
+      const { req, res } = mockReqRes({}, { token });
+      const next = vi.fn();
+      await requireAuth(req as any, res as any, next);
+      expect(next).toHaveBeenCalled();
+      expect((req as any).user.id).toBe('1');
+    }
+
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads the database once an identity is invalidated', async () => {
+    const token = authService.generateToken('1', 'e@e.com');
+    (prisma.user.findUnique as any).mockResolvedValue({ id: '1', email: 'e@e.com', name: 'u' });
+
+    const first = mockReqRes({}, { token });
+    await requireAuth(first.req as any, first.res as any, vi.fn());
+
+    invalidateCachedUser('1');
+
+    const second = mockReqRes({}, { token });
+    await requireAuth(second.req as any, second.res as any, vi.fn());
+
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache a token whose user no longer exists', async () => {
+    const token = authService.generateToken('gone', 'g@g.com');
+    (prisma.user.findUnique as any).mockResolvedValue(null);
+
+    const first = mockReqRes({}, { token });
+    await requireAuth(first.req as any, first.res as any, vi.fn());
+    expect(first.res.status).toHaveBeenCalledWith(401);
+
+    const second = mockReqRes({}, { token });
+    await requireAuth(second.req as any, second.res as any, vi.fn());
+    expect(second.res.status).toHaveBeenCalledWith(401);
+
+    // A miss must stay a miss: caching it would turn a deleted account into a
+    // silently accepted one for the rest of the TTL.
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
   });
 
   it('requireAuth failures', async () => {

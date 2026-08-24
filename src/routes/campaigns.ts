@@ -27,6 +27,7 @@ import { runCampaign, type RunCampaignContact } from '../services/campaignRunner
 import { resolveConcurrency } from '../utils/concurrency.js';
 import type { CampaignTriggerSummary } from '../types/index.js';
 import { canStartWalletCall } from '../services/walletService.js';
+import { wakeCampaignScheduler } from '../services/campaignSchedulerLoop.js';
 import { zonedWallClockToUtc } from '../utils/timezone.js';
 
 const router = Router();
@@ -181,7 +182,20 @@ router.get(
           // Every contact, unpaged: the status view exists to show the whole
           // list. `_count` travels with it so the client can prove that what it
           // rendered is the complete set.
-          contacts: { orderBy: { createdAt: 'asc' } },
+          //
+          // Only the four columns the status table renders are selected. This
+          // endpoint is polled while a campaign is live, and the per-contact
+          // `variables` JSON — unused here — dominated the row size, so reading
+          // it on every poll cost far more database work than the view needed.
+          contacts: {
+            select: {
+              id: true,
+              phoneNumber: true,
+              status: true,
+              errorMessage: true,
+            },
+            orderBy: { createdAt: 'asc' },
+          },
           _count: { select: { contacts: true } },
         },
       });
@@ -544,6 +558,10 @@ async function triggerCampaignRun(
   });
 
   logger.info('Campaign triggered', { id: loaded.campaign.id, concurrencyLimit: limit, ...summary });
+  // A campaign left RUNNING still needs the scheduler to settle it once the
+  // provider reports back; even a finished one needs a tick to sweep contacts
+  // whose hangup callback never arrived.
+  wakeCampaignScheduler('campaign triggered');
   return { status: 200, body: { status: finalStatus, ...summary } };
 }
 
@@ -745,6 +763,9 @@ async function persistCampaignSchedule(
     windowStart: windowStart ?? null,
     windowEnd: windowEnd ?? null,
   });
+  // The scheduler sleeps whenever nothing is schedulable, so a new schedule has
+  // to announce itself rather than wait to be discovered by a poll.
+  wakeCampaignScheduler('campaign scheduled');
   return { status: 200, body: campaign };
 }
 
@@ -803,6 +824,9 @@ router.post(
       });
 
       logger.info('Campaign paused', { id: campaign.id });
+      // Pausing removes the campaign from the schedulable set, so the sweep that
+      // frees any contact still ringing needs one more tick to run.
+      wakeCampaignScheduler('campaign paused');
       return res.json(campaign);
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
@@ -849,6 +873,7 @@ router.post(
       });
 
       logger.info('Campaign resumed', { id: campaign.id, status: campaign.status });
+      wakeCampaignScheduler('campaign resumed');
       return res.json(campaign);
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);

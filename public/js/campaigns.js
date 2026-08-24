@@ -32,6 +32,8 @@ let selectedFileBase64 = '';
 let selectedFileName = '';
 /** @type {ReturnType<typeof setTimeout> | null} */
 let statusPollTimer = null;
+/** Automatic refreshes spent on the campaign currently on screen. */
+let statusPollCycles = 0;
 
 /**
  * Load all campaigns from the API.
@@ -842,18 +844,29 @@ function renderContactStatus(container, campaign) {
 function scheduleStatusPoll(id, live) {
   clearStatusPoll();
   if (!live) return;
+  // A campaign whose provider never sends a final callback stays "live" forever.
+  // Without a budget an abandoned tab would poll the database for as long as it
+  // stayed open, so polling stops and leaves the user the Refresh button.
+  if (statusPollCycles >= CONFIG.CAMPAIGN_STATUS_POLL_MAX_CYCLES) return;
   statusPollTimer = setTimeout(() => {
     statusPollTimer = null;
-    if (isStatusViewOpen()) void viewCampaignStatus(id);
+    statusPollCycles += 1;
+    if (isStatusViewOpen()) void viewCampaignStatus(id, true);
   }, CONFIG.CAMPAIGN_STATUS_POLL_MS);
 }
 
-/** @returns {void} */
+/** Cancels any pending automatic refresh, leaving the budget untouched. */
 function clearStatusPoll() {
   if (statusPollTimer !== null) {
     clearTimeout(statusPollTimer);
     statusPollTimer = null;
   }
+}
+
+/** Cancels polling and restores the full budget for the next campaign viewed. */
+function resetStatusPoll() {
+  clearStatusPoll();
+  statusPollCycles = 0;
 }
 
 /**
@@ -868,12 +881,17 @@ function isStatusViewOpen() {
 /**
  * Fetch a campaign's contacts and display their per-number status.
  * @param {string} id
+ * @param {boolean} [fromPoll] True when the automatic refresh triggered this,
+ *   which is what distinguishes a spent poll cycle from a fresh user request.
  * @returns {Promise<void>}
  */
-export async function viewCampaignStatus(id) {
+export async function viewCampaignStatus(id, fromPoll = false) {
   const container = document.getElementById('campaign-status-container');
   const listSection = document.getElementById('campaign-list-section');
   if (!container || !listSection) return;
+
+  // Any deliberate open or Refresh hands back the full polling budget.
+  if (!fromPoll) statusPollCycles = 0;
 
   try {
     const campaign = await api(`/campaigns/${id}`);
@@ -891,7 +909,7 @@ export async function viewCampaignStatus(id) {
  * @returns {void}
  */
 export function hideStatusView() {
-  clearStatusPoll();
+  resetStatusPoll();
   const container = document.getElementById('campaign-status-container');
   const listSection = document.getElementById('campaign-list-section');
   if (container) container.classList.add('hidden');
@@ -1005,5 +1023,5 @@ export function resetCampaignState() {
   schedulingCampaignId = null;
   selectedFileBase64 = '';
   selectedFileName = '';
-  clearStatusPoll();
+  resetStatusPoll();
 }

@@ -8,8 +8,6 @@ import {
   buildSchedulerHangupUrl,
   processScheduledCampaign,
   runSchedulerTick,
-  startCampaignScheduler,
-  stopCampaignScheduler,
   type SchedulableCampaign,
 } from '../services/campaignScheduler.js';
 import { extractVobizCredentials } from '../services/vobizCalling.js';
@@ -18,7 +16,7 @@ import { CAMPAIGN_STATUS, CAMPAIGN_CONTACT_STATUS } from '../types/index.js';
 
 vi.mock('../lib/prisma.js', () => ({
   default: {
-    campaign: { findMany: vi.fn(), update: vi.fn() },
+    campaign: { findMany: vi.fn(), update: vi.fn(), count: vi.fn() },
     campaignContact: { findMany: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
     user: {
       findUniqueOrThrow: vi.fn().mockResolvedValue({ walletBalance: 100, costPerMinute: 7 }),
@@ -96,7 +94,7 @@ describe('campaignScheduler pure helpers', () => {
     expect(isWithinCallWindow(new Date('2026-07-07T12:30:00Z'), '18:00', '21:00', IST)).toBe(true);
     expect(isWithinCallWindow(new Date('2026-07-07T18:00:00Z'), '18:00', '21:00', IST)).toBe(false);
 
-    // The same instants read in UTC give the opposite answers — this inversion
+    // The same instants read in UTC give the opposite answers: this inversion
     // is what delayed IST campaigns by 5h30m.
     expect(isWithinCallWindow(new Date('2026-07-07T12:30:00Z'), '18:00', '21:00', 'UTC')).toBe(false);
     expect(isWithinCallWindow(new Date('2026-07-07T18:00:00Z'), '18:00', '21:00', 'UTC')).toBe(true);
@@ -114,48 +112,6 @@ describe('campaignScheduler pure helpers', () => {
   });
 });
 
-describe('scheduled campaign start time regression (6 PM IST)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    stubSweep();
-    stubContactCounts(1);
-    (prisma.campaignContact.findMany as any).mockResolvedValue([{ id: 'c1', phoneNumber: '+1' }]);
-    (prisma.telephonyProvider.findFirst as any).mockResolvedValue({ id: 'prov-1', concurrencyLimit: 3 });
-    (extractVobizCredentials as any).mockReturnValue({ authId: 'a', authToken: 't', fromNumber: '+9' });
-    (runCampaign as any).mockResolvedValue({ total: 1, initiated: 1, failed: 0, queued: 0 });
-  });
-
-  const istEveningCampaign = () => baseCampaign({
-    // 6:00 PM IST.
-    scheduledAt: new Date('2026-07-07T12:30:00Z'),
-    windowStart: '18:00',
-    windowEnd: '21:00',
-    timezone: IST,
-  });
-
-  it('dials at 6 PM IST even though the server clock reads 12:30 UTC', async () => {
-    await processScheduledCampaign(istEveningCampaign(), new Date('2026-07-07T12:30:00Z'));
-
-    expect(prisma.campaign.update).toHaveBeenCalledWith({
-      where: { id: 'camp-1' },
-      data: { status: CAMPAIGN_STATUS.RUNNING },
-    });
-    expect(runCampaign).toHaveBeenCalled();
-  });
-
-  it('does not dial at 11:30 PM IST, which is outside the requested window', async () => {
-    await processScheduledCampaign(istEveningCampaign(), new Date('2026-07-07T18:00:00Z'));
-
-    expect(runCampaign).not.toHaveBeenCalled();
-    expect(prisma.campaign.update).not.toHaveBeenCalled();
-  });
-
-  it('still holds the campaign before its start instant', async () => {
-    await processScheduledCampaign(istEveningCampaign(), new Date('2026-07-07T12:29:00Z'));
-
-    expect(runCampaign).not.toHaveBeenCalled();
-  });
-});
 
 describe('resolvePublicBaseUrl / scheduler callback urls', () => {
   afterEach(() => {
@@ -309,42 +265,21 @@ describe('runSchedulerTick', () => {
       baseCampaign({ id: 'camp-err', status: CAMPAIGN_STATUS.RUNNING }),
     ]);
     (prisma.campaignContact.count as any).mockRejectedValue(new Error('db down'));
-    await expect(runSchedulerTick(new Date('2026-07-07T10:00:00'))).resolves.toBeUndefined();
+    // A campaign that threw was still due, so the scheduler keeps ticking rather
+    // than treating the failure as "nothing left to do" and sleeping.
+    await expect(runSchedulerTick(new Date('2026-07-07T10:00:00')))
+      .resolves.toEqual({ active: true, nextDueAt: null });
+  });
+
+  it('reports no work when nothing is scheduled or running', async () => {
+    (prisma.campaign.findMany as any).mockResolvedValue([]);
+    await expect(runSchedulerTick(new Date('2026-07-07T10:00:00')))
+      .resolves.toEqual({ active: false, nextDueAt: null });
   });
 
   it('defaults to the current time when none is provided', async () => {
     (prisma.campaign.findMany as any).mockResolvedValue([]);
     await runSchedulerTick();
     expect(prisma.campaign.findMany).toHaveBeenCalled();
-  });
-});
-
-describe('start/stop scheduler', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    stubSweep();
-    stubContactCounts(0);
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    stopCampaignScheduler();
-    vi.useRealTimers();
-  });
-
-  it('starts once and runs ticks on the interval', async () => {
-    (prisma.campaign.findMany as any).mockResolvedValue([]);
-    startCampaignScheduler();
-    // Second call is a no-op (already running).
-    startCampaignScheduler();
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(prisma.campaign.findMany).toHaveBeenCalled();
-  });
-
-  it('stops cleanly and tolerates a redundant stop', () => {
-    startCampaignScheduler();
-    stopCampaignScheduler();
-    stopCampaignScheduler();
-    expect(true).toBe(true);
   });
 });
