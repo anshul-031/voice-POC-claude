@@ -480,6 +480,8 @@ export const UI_STRINGS = {
         `Playback scheduled: start=${startTime.toFixed(3)}s dur=${duration.toFixed(3)}s`,
       audioPlaybackUnderrun: (/** @type {number} */ gapMs) =>
         `⚠ Playback underrun: ${gapMs.toFixed(1)}ms gap`,
+      audioOutputRateMismatch: (/** @type {number} */ contextRate, /** @type {number} */ streamRate) =>
+        `⚠ Output runs at ${contextRate}Hz but the stream is ${streamRate}Hz; buffers are resampled per chunk`,
       audioPlaybackStats: (
         /** @type {number} */ played,
         /** @type {number} */ underruns,

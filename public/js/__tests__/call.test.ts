@@ -145,6 +145,27 @@ describe('Call Logic (call.js) — 90%+ Exclusive Coverage', () => {
       ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.TRANSCRIPT, role: 'model', text: 'hello' }) });
     });
 
+    it('should sample inbound audio logging instead of logging every frame', async () => {
+      const logBody = document.createElement('div');
+      logBody.id = 'debug-log-body';
+      document.body.appendChild(logBody);
+
+      await startCall('a1', mockCallbacks);
+      const ws = getWs() as any;
+      ws?.onmessage?.({ data: JSON.stringify({ type: MESSAGE_TYPE.CALL_STARTED }) });
+
+      const audioFrame = JSON.stringify({ type: MESSAGE_TYPE.AUDIO_RESPONSE, data: 'audio' });
+      for (let i = 0; i < 5; i++) ws?.onmessage?.({ data: audioFrame });
+
+      // Each entry forces a synchronous reflow, so only the first frame of a run
+      // gets reported.
+      const entries = Array.from(logBody.children)
+        .filter((child) => (child.textContent || '').includes(MESSAGE_TYPE.AUDIO_RESPONSE));
+      expect(entries).toHaveLength(1);
+
+      logBody.remove();
+    });
+
     it('should handle ws.onmessage parse failure and unknown messages', async () => {
       await startCall('a1', mockCallbacks);
       const ws = getWs() as any;

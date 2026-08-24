@@ -60,7 +60,32 @@ export const CONFIG = {
   DEBUG_LOG_MAX_ITEMS: 150,
   MODEL_INACTIVITY_WARN_MS: 8000,
   AUDIO_QUEUE_DEPTH_WARN: 20,
-  AUDIO_CROSSFADE_SAMPLES: 48,
+  // Lead time placed in front of the first buffer of a playback run. Gemini
+  // chunks arrive with network jitter, so scheduling the first one at
+  // currentTime leaves no slack: every later chunk lands in the past, the write
+  // head keeps getting re-based to "now", and each re-base loses the samples
+  // between the previous buffer's end and the next render quantum. Those tiny
+  // silences are what crackling sounds like.
+  AUDIO_JITTER_BUFFER_MS: 120,
+  // Fade applied only to a buffer that starts a run. Mid-run buffers continue
+  // an existing waveform, so fading them would carve an amplitude notch at
+  // every chunk boundary instead of smoothing anything.
+  AUDIO_LEAD_IN_FADE_SAMPLES: 48,
+  // Chunks already waiting are merged into one buffer before scheduling. Gemini
+  // emits a lot of very short chunks (sometimes a handful of samples), and every
+  // separate buffer is another boundary that can click.
+  AUDIO_MAX_COALESCE_SAMPLES: 24000,
+  // Gain ramp used when playback is cut short by barge-in or a server
+  // interrupt. Stopping a buffer mid-waveform is a step discontinuity, which is
+  // an audible pop.
+  AUDIO_INTERRUPT_FADE_MS: 12,
+  // Schedule slippage under this is ordinary render-quantum rounding: at 24kHz
+  // a quantum is 128/24000 = 5.33ms and currentTime only advances in those
+  // steps, so anything shorter says nothing about the scheduler.
+  AUDIO_UNDERRUN_LOG_THRESHOLD_MS: 8,
+  // Slippage at or above this is the model having stopped talking, not the
+  // scheduler falling behind, so it re-bases the clock without warning.
+  AUDIO_STREAM_RESTART_GAP_MS: 250,
   AUDIO_DIAG_LOG_INTERVAL_CHUNKS: 25,
   DEFAULT_INACTIVITY_TIMEOUT_MS: 10000,
   DEFAULT_MAX_INACTIVITY_NUDGES: 3,

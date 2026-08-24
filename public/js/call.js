@@ -148,6 +148,7 @@ let isMuted = false;
 /** @type {number | null} */ let callTimer = null;
 let callSeconds = 0;
 let audioChunksSent = 0;
+let audioChunksReceived = 0;
 let lastUserAudioSentAt = 0;
 let lastModelResponseAt = 0;
 /** @type {number | null} */ let inactivityCheckTimer = null;
@@ -532,6 +533,27 @@ function resetMuteButtonUI() {
 }
 
 
+/**
+ * Debug logging appends a DOM node and autoscrolls the pane, which forces a
+ * synchronous reflow. Audio frames arrive tens of times a second, so logging
+ * every one starves the same main thread that has to decode PCM and schedule
+ * playback: the schedule falls behind and the gaps are audible. Inbound audio
+ * is therefore sampled rather than logged in full.
+ * @param {string} messageType
+ * @returns {void}
+ */
+function logInboundMessage(messageType) {
+  if (messageType !== MESSAGE_TYPE.AUDIO_RESPONSE) {
+    appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageType), 'info');
+    return;
+  }
+
+  audioChunksReceived++;
+  if (audioChunksReceived % CONFIG.AUDIO_LOG_THROTTLE === 1) {
+    appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageType), 'info');
+  }
+}
+
 /** @param {string} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} variables @returns {Promise<void>} */
 function setupSocket(agentId, callbacks, variables) {
   const wsConnectStart = Date.now();
@@ -592,7 +614,7 @@ function setupSocket(agentId, callbacks, variables) {
           startupTrace.firstInboundTranscriptLogged = true;
           appendDebugLog(UI_STRINGS.signaling.logs.firstInboundTranscriptElapsed(getStartupElapsedMs()), 'info');
         }
-        appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageParse.data.type), 'info');
+        logInboundMessage(messageParse.data.type);
         handleWsMessage(messageParse.data, callbacks);
       } catch {
         appendDebugLog(UI_STRINGS.signaling.logs.inboundParseFailed, 'error');
@@ -706,6 +728,7 @@ export function handleWsMessage(message, callbacks) {
     [MESSAGE_TYPE.CALL_STARTED]: () => {
       isInCall = true;
       audioChunksSent = 0;
+      audioChunksReceived = 0;
       currentSessionId = message.sessionId || null;
       updateCallUI(true);
       onStatusChange(UI_STRINGS.callPanel.connected, 'active');
