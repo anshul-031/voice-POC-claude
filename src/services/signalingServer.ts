@@ -486,14 +486,17 @@ class SignalingServer {
     const bufferedAmountBeforeSend = socket.bufferedAmount;
     this._recordBrowserBufferedAmount(client, bufferedAmountBeforeSend);
     const sendStartedAt = Date.now();
+    // Only the send itself is guarded, so a logging fault cannot be recorded as
+    // a delivery failure for audio the socket already accepted.
     try {
       socket.send(payload);
-      this._recordBrowserSendSuccess(client, sendStartedAt);
-      this._recordModelAudioMetrics(client, sessionId, metrics, Date.now());
     } catch (error: unknown) {
       this._recordBrowserSendFailure(sessionId, client, metrics, sendStartedAt, error);
+      return;
     }
 
+    this._recordBrowserSendSuccess(client, sendStartedAt);
+    this._recordModelAudioMetrics(client, sessionId, metrics, Date.now());
     this._logBrowserBackpressure(sessionId, client, bufferedAmountBeforeSend);
     this._logBrowserModelAudioProgress(sessionId, client, metrics, bufferedAmountBeforeSend);
   }
@@ -909,6 +912,7 @@ class SignalingServer {
    * Idempotent — guarded by a per-client flag so end + disconnect don't double-write.
    */
   private _finalizeCall(client: SignalingClient, status: string): void {
+    this._clearAudioDiagnosticCounters(client.correlationId ?? '');
     if (client.callHistoryFinalized) {
       return;
     }

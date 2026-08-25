@@ -269,6 +269,25 @@ function adoptContext(audioContext) {
 }
 
 /**
+ * Push the write head out far enough that a run opening with a very short block
+ * still has a full jitter window between now and the moment that block runs
+ * out. Without this, a turn that starts with a few samples is already starved
+ * milliseconds later: the write head gets re-based, and the re-base is audible.
+ * Silence is added ahead of the audio rather than to it, so nothing is altered.
+ * @param {boolean} startsNewRun
+ * @param {number} now
+ * @param {number} chunkDuration
+ * @returns {void}
+ */
+function extendRunwayForNewRun(startsNewRun, now, chunkDuration) {
+  if (!startsNewRun) return;
+
+  const minimumRunwaySeconds = CONFIG.AUDIO_NEW_RUN_MIN_RUNWAY_MS / 1000;
+  const shortfall = (now + minimumRunwaySeconds) - (nextPlaybackTime + chunkDuration);
+  if (shortfall > 0) nextPlaybackTime += shortfall;
+}
+
+/**
  * Hand one contiguous block of samples to the output device, appended directly
  * to the end of whatever is already scheduled.
  * @param {AudioContext} audioContext
@@ -285,6 +304,8 @@ export function scheduleSamples(audioContext, analyserNode, samples, options = {
   const needsFade = startsNewRun || options.startsDiscontinuity === true;
   const playableSamples = needsFade ? applyLeadInFade(samples) : samples;
   if (needsFade) recordFadedBlock();
+  const chunkDuration = playableSamples.length / CONFIG.SAMPLE_RATE_OUTPUT;
+  extendRunwayForNewRun(startsNewRun, audioContext.currentTime, chunkDuration);
   recordScheduledLead((nextPlaybackTime - audioContext.currentTime) * 1000);
 
   const bufferSource = createScheduledSource(audioContext, playableSamples, analyserNode);
@@ -299,7 +320,6 @@ export function scheduleSamples(audioContext, analyserNode, samples, options = {
     return false;
   }
 
-  const chunkDuration = playableSamples.length / CONFIG.SAMPLE_RATE_OUTPUT;
   const isFirstChunk = recordScheduledChunk(
     nextPlaybackTime,
     chunkDuration,

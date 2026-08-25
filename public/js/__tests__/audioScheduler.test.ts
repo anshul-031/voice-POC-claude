@@ -19,12 +19,28 @@ import { createMockContext, loudSamples } from './audioMocks.js';
 
 const LEAD_SECONDS = CONFIG.AUDIO_JITTER_BUFFER_MS / 1000;
 
+/**
+ * Where the opening buffer of a run lands: the jitter buffer, widened when the
+ * block is too short to keep the stream fed for a full jitter window.
+ */
+function openingStart(now: number, sampleCount: number): number {
+  const runwaySeconds = CONFIG.AUDIO_NEW_RUN_MIN_RUNWAY_MS / 1000;
+  const blockSeconds = sampleCount / CONFIG.SAMPLE_RATE_OUTPUT;
+  return now + Math.max(LEAD_SECONDS, runwaySeconds - blockSeconds);
+}
+
 function loggedMessages(): string[] {
   return vi.mocked(appendDebugLog).mock.calls.map(([message]) => String(message));
 }
 
 function underrunLogCount(): number {
   return loggedMessages().filter(message => message.includes('underrun')).length;
+}
+
+function schedulerSummary(): string {
+  const summary = loggedMessages().find(message => message.includes('scheduler-summary'));
+  expect(summary).toBeDefined();
+  return String(summary);
 }
 
 describe('audioScheduler scheduling', () => {
@@ -36,11 +52,36 @@ describe('audioScheduler scheduling', () => {
 
   it('places the opening buffer a jitter buffer ahead of the clock', () => {
     const { context, sources } = createMockContext({ currentTime: 1 });
+    // Long enough to cover the runway on its own, so the plain lead applies.
+    const longBlock = CONFIG.SAMPLE_RATE_OUTPUT / 2;
 
-    expect(scheduleSamples(context, null, loudSamples(240))).toBe(true);
+    expect(scheduleSamples(context, null, loudSamples(longBlock))).toBe(true);
 
     expect(sources[0].start).toHaveBeenCalledWith(1 + LEAD_SECONDS);
     expect(hasScheduledPlayback()).toBe(true);
+  });
+
+  it('gives a run that opens with a tiny block a full jitter window of runway', () => {
+    const { context, sources } = createMockContext({ currentTime: 1 });
+
+    // A single sample is what Gemini actually sent at the start of a turn that
+    // then crackled: scheduling it at the plain lead leaves the stream starved
+    // 0.04ms later.
+    scheduleSamples(context, null, loudSamples(1));
+
+    const startAt = sources[0].start.mock.calls[0][0];
+    const runwayMs = (startAt + 1 / CONFIG.SAMPLE_RATE_OUTPUT - context.currentTime) * 1000;
+    expect(runwayMs).toBeCloseTo(CONFIG.AUDIO_NEW_RUN_MIN_RUNWAY_MS, 6);
+    expect(runwayMs).toBeGreaterThan(CONFIG.AUDIO_JITTER_BUFFER_MS);
+  });
+
+  it('does not delay a run whose opening block already covers the runway', () => {
+    const { context, sources } = createMockContext({ currentTime: 1 });
+    const longBlock = CONFIG.SAMPLE_RATE_OUTPUT;
+
+    scheduleSamples(context, null, loudSamples(longBlock));
+
+    expect(sources[0].start).toHaveBeenCalledWith(1 + LEAD_SECONDS);
   });
 
   it('appends later buffers sample-contiguously instead of re-basing to now', () => {
@@ -133,7 +174,7 @@ describe('audioScheduler scheduling', () => {
     scheduleSamples(second.context, null, loudSamples(240));
 
     // A write head inherited from the old clock would park playback ~10s out.
-    expect(second.sources[0].start).toHaveBeenCalledWith(LEAD_SECONDS);
+    expect(second.sources[0].start).toHaveBeenCalledWith(openingStart(0, 240));
     expect(loggedMessages().some(message => message.includes('48000Hz'))).toBe(true);
   });
 
@@ -198,6 +239,70 @@ describe('audioScheduler scheduling', () => {
     scheduleSamples(context, null, loudSamples(240));
 
     expect(underrunLogCount()).toBe(0);
-    expect(sources[1].start).toHaveBeenCalledWith(context.currentTime + LEAD_SECONDS);
+    expect(sources[1].start).toHaveBeenCalledWith(openingStart(context.currentTime, 240));
+  });
+
+  it('counts every gap but logs only a sample of them', () => {
+    const { context, sources } = createMockContext({ currentTime: 1 });
+    const blockSeconds = 240 / CONFIG.SAMPLE_RATE_OUTPUT;
+
+    // Each pass is moved just past the end of the block it scheduled, which is a
+    // real gap but small enough to stay under the turn-boundary threshold. The
+    // first pass has nothing scheduled yet, so it opens the run without a gap.
+    const gapCount = CONFIG.AUDIO_UNDERRUN_LOG_THROTTLE + 1;
+    for (let i = 0; i <= gapCount; i++) {
+      scheduleSamples(context, null, loudSamples(240));
+      const scheduledEnd = sources[i].start.mock.calls[0][0] + blockSeconds;
+      context.currentTime = scheduledEnd + 0.05;
+    }
+
+    // The first gap and then one per throttle interval: enough to see the
+    // problem live without logging through every gap of a bad stretch.
+    expect(underrunLogCount()).toBe(2);
+
+    // Throttling the log must not throttle the count, or a bad stretch would
+    // under-report itself in the summary.
+    resetScheduler();
+    expect(schedulerSummary()).toContain(`"underruns":${gapCount}`);
+  });
+
+  it('reports the silence a listener heard, not just the clock slip', () => {
+    const { context, sources } = createMockContext({ currentTime: 1 });
+    const slipSeconds = 0.05;
+
+    scheduleSamples(context, null, loudSamples(240));
+    const scheduledEnd = sources[0].start.mock.calls[0][0] + 240 / CONFIG.SAMPLE_RATE_OUTPUT;
+    context.currentTime = scheduledEnd + slipSeconds;
+    scheduleSamples(context, null, loudSamples(240));
+
+    resetScheduler();
+
+    // The stream stalled for the slip and then waited out a fresh lead before
+    // resuming, so reporting the slip alone would understate the dropout.
+    const expectedSilence = (slipSeconds * 1000) + CONFIG.AUDIO_JITTER_BUFFER_MS;
+    const summary = schedulerSummary();
+    expect(summary).toContain(`"maxUnderrunSilenceMs":${expectedSilence}`);
+    expect(summary).toContain(`"totalUnderrunSilenceMs":${expectedSilence}`);
+  });
+
+  it('clears gap counters between calls', () => {
+    const { context, sources } = createMockContext({ currentTime: 1 });
+
+    scheduleSamples(context, null, loudSamples(240));
+    const scheduledEnd = sources[0].start.mock.calls[0][0] + 240 / CONFIG.SAMPLE_RATE_OUTPUT;
+    context.currentTime = scheduledEnd + 0.05;
+    scheduleSamples(context, null, loudSamples(240));
+    resetScheduler();
+
+    vi.mocked(appendDebugLog).mockClear();
+    const next = createMockContext({ currentTime: 1 });
+    scheduleSamples(next.context, null, loudSamples(240));
+    resetScheduler();
+
+    // A fresh call must not inherit the previous call's dropouts.
+    const summary = schedulerSummary();
+    expect(summary).toContain('"underruns":0');
+    expect(summary).toContain('"maxUnderrunSilenceMs":0');
+    expect(summary).toContain('"totalUnderrunSilenceMs":0');
   });
 });

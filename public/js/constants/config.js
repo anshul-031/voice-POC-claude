@@ -67,7 +67,17 @@ export const CONFIG = {
   // head keeps getting re-based to "now", and each re-base loses the samples
   // between the previous buffer's end and the next render quantum. Those tiny
   // silences are what crackling sounds like.
-  AUDIO_JITTER_BUFFER_MS: 120,
+  //
+  // Sized against measured deployment jitter rather than local timings: hosted
+  // calls showed model audio arriving in bursts up to ~420ms apart where local
+  // calls stayed near 180ms, and 120ms of lead was too thin to absorb that.
+  AUDIO_JITTER_BUFFER_MS: 250,
+  // Minimum wall-clock runway a run must have between now and the end of its
+  // opening buffer. A turn sometimes opens with a handful of samples, and a
+  // block that short ends almost immediately after the lead, so the next chunk
+  // has no slack at all to arrive in. The lead is stretched for those blocks so
+  // the opening of a turn is protected as well as the middle of one.
+  AUDIO_NEW_RUN_MIN_RUNWAY_MS: 300,
   // Fade applied only to a buffer that starts a run. Mid-run buffers continue
   // an existing waveform, so fading them would carve an amplitude notch at
   // every chunk boundary instead of smoothing anything.
@@ -87,6 +97,12 @@ export const CONFIG = {
   // Slippage at or above this is the model having stopped talking, not the
   // scheduler falling behind, so it re-bases the clock without warning.
   AUDIO_STREAM_RESTART_GAP_MS: 250,
+  // Underruns are counted individually but logged sparsely. Each debug line
+  // appends a DOM node and scrolls the log pane, which is synchronous main
+  // thread work competing with the decode and scheduling that just fell behind;
+  // logging every gap during a bad stretch makes the stretch worse. Totals and
+  // the worst gap still reach the scheduler summary.
+  AUDIO_UNDERRUN_LOG_THROTTLE: 10,
   AUDIO_DIAG_LOG_INTERVAL_CHUNKS: 25,
   AUDIO_WS_BUFFERED_AMOUNT_WARN_BYTES: 1_000_000,
   AUDIO_CAPTURE_STARVATION_FACTOR: 2,

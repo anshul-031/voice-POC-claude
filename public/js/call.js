@@ -17,6 +17,18 @@ import {
 
 /** @typedef {Window & { webkitAudioContext?: typeof AudioContext }} WindowWithWebkitAudio */
 /** @typedef {Navigator & { audioSession?: { type?: string } }} NavigatorWithAudioSession */
+/**
+ * @typedef {Object} RecordingState
+ * @property {MediaRecorder} recorder
+ * @property {Blob[]} chunks
+ * @property {string} mimeType
+ * @property {number} chunkCount
+ * @property {number} bytes
+ * @property {string | null} runId
+ * @property {string | null} sessionId
+ * @property {Promise<void>} finalizationPromise
+ * @property {() => void} resolveFinalization
+ */
 
 /** @type {AudioContext | null} */ let audioContext = null;
 /** @type {MediaStream | null} */ let mediaStream = null;
@@ -28,9 +40,8 @@ let audioContextResumeFailures = 0;
 let hasShownAudioRecoveryToast = false;
 
 /** @type {MediaStreamAudioDestinationNode | null} */ let recordingDestination = null;
-/** @type {MediaRecorder | null} */ let mediaRecorder = null;
-/** @type {Blob[]} */ let recordedChunks = [];
-let recordingMimeType = 'audio/webm';
+/** @type {RecordingState | null} */ let activeRecording = null;
+/** @type {Promise<void> | null} */ let callTeardownPromise = null;
 /** @type {string | null} */ let currentSessionId = null;
 
 /**
@@ -66,9 +77,10 @@ export async function uploadCallRecording(sessionId, blob) {
 /**
  * Enables the download button with the recorded audio URL.
  * @param {string} url
+ * @param {string} mimeType
  * @returns {void}
  */
-function enableDownloadButton(url) {
+function enableDownloadButton(url, mimeType) {
   const btnDownload = document.getElementById('btn-download');
   if (!btnDownload) return;
 
@@ -82,9 +94,9 @@ function enableDownloadButton(url) {
     const a = document.createElement('a');
     a.href = url;
     let recordingExtension = 'webm';
-    if (recordingMimeType.includes('mp4')) {
+    if (mimeType.includes('mp4')) {
       recordingExtension = 'mp4';
-    } else if (recordingMimeType.includes('ogg')) {
+    } else if (mimeType.includes('ogg')) {
       recordingExtension = 'ogg';
     }
     a.download = `call-conversation-${Date.now()}.${recordingExtension}`;
@@ -689,6 +701,47 @@ function setupAudioGraph() {
   setupAudioRecording(processedSource);
 }
 
+/** @returns {string} */
+function getSupportedRecordingMimeType() {
+  let mimeType = 'audio/webm';
+  if (!MediaRecorder.isTypeSupported(mimeType)) {
+    mimeType = 'audio/mp4';
+  }
+  if (!MediaRecorder.isTypeSupported(mimeType)) {
+    mimeType = 'audio/ogg';
+  }
+  return MediaRecorder.isTypeSupported(mimeType) ? mimeType : '';
+}
+
+/** @param {RecordingState} recordingState @returns {void} */
+function finalizeRecording(recordingState) {
+  try {
+    recordingChunkCount = recordingState.chunkCount;
+    recordingBytes = recordingState.bytes;
+    appendDebugLog(
+      UI_STRINGS.signaling.logs.audioDiagnosticEvent('recording-stopped', {
+        mimeType: recordingState.mimeType || 'audio/octet-stream',
+        chunkCount: recordingState.chunkCount,
+        bytes: recordingState.bytes,
+        runId: recordingState.runId,
+        sessionId: recordingState.sessionId,
+      }),
+      'info',
+    );
+    if (recordingState.chunks.length > 0) {
+      const blob = new Blob(recordingState.chunks, {
+        type: recordingState.mimeType || 'audio/octet-stream',
+      });
+      const url = URL.createObjectURL(blob);
+      enableDownloadButton(url, recordingState.mimeType);
+      void uploadCallRecording(recordingState.sessionId, blob);
+    }
+  } finally {
+    activeRecording = null;
+    recordingState.resolveFinalization();
+  }
+}
+
 /**
  * @param {AudioNode} processedSource
  * @returns {void}
@@ -703,46 +756,49 @@ function setupAudioRecording(processedSource) {
     setPlaybackRecordingDestination(recordingDestination);
 
     if (typeof MediaRecorder !== 'undefined') {
-      recordedChunks = [];
       recordingChunkCount = 0;
       recordingBytes = 0;
-      recordingMimeType = 'audio/webm';
-      if (!MediaRecorder.isTypeSupported(recordingMimeType)) {
-        recordingMimeType = 'audio/mp4';
-      }
-      if (!MediaRecorder.isTypeSupported(recordingMimeType)) {
-        recordingMimeType = 'audio/ogg';
-      }
-      if (!MediaRecorder.isTypeSupported(recordingMimeType)) {
-        recordingMimeType = '';
-      }
-
-      const options = recordingMimeType ? { mimeType: recordingMimeType } : undefined;
-      mediaRecorder = new MediaRecorder(recordingDestination.stream, options);
-      mediaRecorder.ondataavailable = (event) => {
+      const mimeType = getSupportedRecordingMimeType();
+      const options = mimeType ? { mimeType } : undefined;
+      const recorder = new MediaRecorder(recordingDestination.stream, options);
+      /** @type {() => void} */
+      let resolveFinalization = () => {};
+      /** @type {Promise<void>} */
+      const finalizationPromise = new Promise((resolve) => {
+        resolveFinalization = () => resolve();
+      });
+      /** @type {RecordingState} */
+      const recordingState = {
+        recorder,
+        chunks: [],
+        mimeType,
+        chunkCount: 0,
+        bytes: 0,
+        runId: startupTrace?.runId ?? null,
+        sessionId: currentSessionId,
+        finalizationPromise,
+        resolveFinalization,
+      };
+      recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
-          recordedChunks.push(event.data);
-          recordingChunkCount++;
-          recordingBytes += event.data.size;
+          recordingState.chunks.push(event.data);
+          recordingState.chunkCount++;
+          recordingState.bytes += event.data.size;
+          recordingChunkCount = recordingState.chunkCount;
+          recordingBytes = recordingState.bytes;
         }
       };
-      mediaRecorder.onstop = () => {
-        appendDebugLog(
-          UI_STRINGS.signaling.logs.audioDiagnosticEvent('recording-stopped', {
-            mimeType: recordingMimeType || 'audio/octet-stream',
-            chunkCount: recordingChunkCount,
-            bytes: recordingBytes,
-          }),
-          'info',
-        );
-        if (recordedChunks.length > 0) {
-          const blob = new Blob(recordedChunks, { type: recordingMimeType || 'audio/octet-stream' });
-          const url = URL.createObjectURL(blob);
-          enableDownloadButton(url);
-          void uploadCallRecording(currentSessionId, blob);
-        }
-      };
-      mediaRecorder.start();
+      recorder.onstop = () => finalizeRecording(recordingState);
+      activeRecording = recordingState;
+      try {
+        recorder.start();
+      } catch (error) {
+        activeRecording = null;
+        recorder.ondataavailable = null;
+        recorder.onstop = null;
+        resolveFinalization();
+        throw error;
+      }
       appendDebugLog('Live call audio recording started', 'info');
     }
   } catch (err) {
@@ -958,6 +1014,9 @@ async function startCallResources(agentId, callbacks, variables, runId) {
 
 /** @param {string | null} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} [variables] @returns {Promise<void>} */
 export async function startCall(agentId, callbacks, variables = {}) {
+  if (callTeardownPromise) {
+    await callTeardownPromise;
+  }
   resetAudioDiagnostics();
   audioChunksSent = 0;
   audioChunksReceived = 0;
@@ -1012,6 +1071,9 @@ export function handleWsMessage(message, callbacks) {
       audioChunksSent = 0;
       audioChunksReceived = 0;
       currentSessionId = message.sessionId || null;
+      if (activeRecording && activeRecording.runId === startupTrace?.runId) {
+        activeRecording.sessionId = currentSessionId;
+      }
       if (startupTrace) startupTrace.correlationId = message.correlationId || null;
       updateCallUI(true);
       onStatusChange(UI_STRINGS.callPanel.connected, 'active');
@@ -1140,21 +1202,33 @@ async function closeAudioContextIfNeeded() {
   } catch (_e) { /* ignore */ }
 }
 
-/** @returns {boolean} */
-function stopActiveMediaRecorder() {
-  if (!mediaRecorder || mediaRecorder.state === 'inactive') return false;
+/** @returns {Promise<void>} */
+async function stopActiveMediaRecorder() {
+  const recordingState = activeRecording;
+  if (!recordingState) return;
+
+  recordingState.sessionId = recordingState.sessionId ?? currentSessionId;
+  if (recordingState.recorder.state === 'inactive') {
+    await recordingState.finalizationPromise;
+    return;
+  }
+
   try {
-    mediaRecorder.stop();
+    recordingState.recorder.stop();
     appendDebugLog('Live call audio recording stopped', 'info');
   } catch (e) {
+    recordingState.recorder.ondataavailable = null;
+    recordingState.recorder.onstop = null;
+    activeRecording = null;
+    recordingState.resolveFinalization();
     appendDebugLog(`Error stopping MediaRecorder: ${e}`, 'error');
-    return false;
+    return;
   }
-  return true;
+  await recordingState.finalizationPromise;
 }
 
 /** @returns {Promise<void>} */
-export async function endCall() {
+async function performCallTeardown() {
   appendDebugLog(UI_STRINGS.signaling.logs.callEndCleanup, 'info');
   isInCall = false;
   if (ws?.readyState === WebSocket.OPEN) {
@@ -1165,6 +1239,11 @@ export async function endCall() {
     } catch (_e) { /* ignore */ }
   }
   ws = null;
+
+  // Stop the recorder while its source graph is still alive so its final
+  // dataavailable event owns a complete, immutable snapshot for this call.
+  await stopActiveMediaRecorder();
+
   if (audioProcessor) {
     try { audioProcessor.disconnect(); } catch (_e) { /* ignore */ }
   }
@@ -1179,14 +1258,13 @@ export async function endCall() {
   hasPrimedAudioOutput = false;
   audioContextResumeFailures = 0;
   hasShownAudioRecoveryToast = false;
-  const recordingFinalizationPending = stopActiveMediaRecorder();
-  mediaRecorder = null;
   setPlaybackRecordingDestination(null);
   recordingDestination = null;
 
   analyserNode = null;
-  logAudioDiagnosticsSummary('call-end', recordingFinalizationPending);
+  logAudioDiagnosticsSummary('call-end', false);
   audioChunksSent = 0;
+  audioChunksReceived = 0;
   stopTimer();
   stopInactivityCheck();
   updateCallUI(false);
@@ -1198,9 +1276,24 @@ export async function endCall() {
   lastModelResponseAt = 0;
   inactivityWarned = false;
   activeInactivityConfig = null;
+  currentSessionId = null;
   startupTrace = null;
   resetAudioDiagnostics();
   appendDebugLog(UI_STRINGS.signaling.logs.callEndComplete, 'info');
+}
+
+/** @returns {Promise<void>} */
+export function endCall() {
+  if (callTeardownPromise) return callTeardownPromise;
+
+  // Install a placeholder before teardown starts so synchronous terminal
+  // callbacks cannot enter cleanup twice before the first await is reached.
+  callTeardownPromise = Promise.resolve();
+  const teardownPromise = performCallTeardown().finally(() => {
+    callTeardownPromise = null;
+  });
+  callTeardownPromise = teardownPromise;
+  return teardownPromise;
 }
 
 /** @param {boolean} enabled @returns {void} */
@@ -1277,6 +1370,10 @@ export function resetState() {
   audioProcessor = null;
   mediaStream = null;
   analyserNode = null;
+  recordingDestination = null;
+  activeRecording = null;
+  callTeardownPromise = null;
+  currentSessionId = null;
   startupTrace = null;
   if (callTimer) {
     clearInterval(callTimer);

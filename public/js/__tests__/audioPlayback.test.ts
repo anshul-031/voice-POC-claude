@@ -19,9 +19,10 @@ import {
 } from '../audioPlayback.js';
 import { createMockContext } from './audioMocks.js';
 
-const LEAD_SECONDS = CONFIG.AUDIO_JITTER_BUFFER_MS / 1000;
+const RUNWAY_SECONDS = CONFIG.AUDIO_NEW_RUN_MIN_RUNWAY_MS / 1000;
 // 'abcdabcd' decodes to 8 bytes, which is 4 samples of 16-bit PCM.
 const SAMPLES_PER_CHUNK = 4;
+const CHUNK_SECONDS = SAMPLES_PER_CHUNK / CONFIG.SAMPLE_RATE_OUTPUT;
 
 function stubAtob(value: string | (() => string)): void {
   const decode = typeof value === 'function' ? value : () => value;
@@ -165,7 +166,9 @@ describe('audioPlayback module', () => {
     // instead of producing two scheduling boundaries.
     expect(sources).toHaveLength(1);
     expect(context.createBuffer).toHaveBeenCalledWith(1, SAMPLES_PER_CHUNK * 2, CONFIG.SAMPLE_RATE_OUTPUT);
-    expect(sources[0].start).toHaveBeenCalledWith(1 + LEAD_SECONDS);
+    // These chunks are far too short to feed the stream for a jitter window, so
+    // the run opens with widened runway rather than the plain lead.
+    expect(sources[0].start).toHaveBeenCalledWith(1 + RUNWAY_SECONDS - CHUNK_SECONDS * 2);
 
     enqueueAudio('chunk3');
     await processAudioQueue(context as any, null);

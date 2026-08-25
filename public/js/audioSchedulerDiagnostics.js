@@ -3,6 +3,8 @@ import { UI_STRINGS } from './constants/uiStrings.js';
 import { appendDebugLog } from './transcript.js';
 
 let underrunCount = 0;
+let maxUnderrunSilenceMs = 0;
+let totalUnderrunSilenceMs = 0;
 let clockRebaseCount = 0;
 let streamRestartCount = 0;
 let scheduleFailureCount = 0;
@@ -27,6 +29,12 @@ function logSchedulerSummary(reason, activeSources, contextSampleRate) {
       reason,
       chunksPlayed,
       underruns: underrunCount,
+      // Individual gaps are logged sparsely, so the worst and cumulative
+      // silence are reported here; a throttled run would otherwise leave no
+      // record of how long the audible dropouts were. Slip alone understates
+      // them, because a re-base also holds the stream for the fresh lead.
+      maxUnderrunSilenceMs: Number(maxUnderrunSilenceMs.toFixed(2)),
+      totalUnderrunSilenceMs: Number(totalUnderrunSilenceMs.toFixed(2)),
       clockRebases: clockRebaseCount,
       streamRestarts: streamRestartCount,
       scheduleFailures: scheduleFailureCount,
@@ -40,6 +48,42 @@ function logSchedulerSummary(reason, activeSources, contextSampleRate) {
       contextSampleRate,
     }),
     underrunCount > 0 || scheduleFailureCount > 0 || startFailureCount > 0 ? 'warn' : 'info',
+  );
+}
+
+/**
+ * Count every gap but write only a sample of them to the log pane. Appending a
+ * node and scrolling the pane is synchronous main thread work, and doing it for
+ * every gap competes with the decoding and scheduling that just fell behind,
+ * which lengthens the very stretch being reported.
+ *
+ * The silence a listener hears is longer than the slip: the run resumes a fresh
+ * lead after the re-base, so both are recorded. A run opening with a very short
+ * block is held marginally longer still, which is not included here.
+ * @param {number} slipMs
+ * @returns {void}
+ */
+function recordUnderrun(slipMs) {
+  const silenceMs = slipMs + CONFIG.AUDIO_JITTER_BUFFER_MS;
+  underrunCount++;
+  maxUnderrunSilenceMs = Math.max(maxUnderrunSilenceMs, silenceMs);
+  totalUnderrunSilenceMs += silenceMs;
+  if (underrunCount !== 1 && underrunCount % CONFIG.AUDIO_UNDERRUN_LOG_THROTTLE !== 1) return;
+
+  appendDebugLog(UI_STRINGS.signaling.logs.audioPlaybackUnderrun(slipMs), 'warn');
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioDiagnosticEvent('clock-gap', {
+      slipMs: Number(slipMs.toFixed(2)),
+      silenceMs: Number(silenceMs.toFixed(2)),
+      gapEvents: underrunCount,
+      maxSilenceMs: Number(maxUnderrunSilenceMs.toFixed(2)),
+      totalSilenceMs: Number(totalUnderrunSilenceMs.toFixed(2)),
+      thresholdMs: CONFIG.AUDIO_UNDERRUN_LOG_THRESHOLD_MS,
+      // Slips at or past the turn-boundary threshold are classified as stream
+      // restarts instead, so these counters only cover in-turn starvation.
+      classifiedBelowMs: CONFIG.AUDIO_STREAM_RESTART_GAP_MS,
+    }),
+    'warn',
   );
 }
 
@@ -71,16 +115,7 @@ export function alignPlaybackClock(now, scheduledTime) {
       'info',
     );
   } else if (Number.isFinite(slipMs) && slipMs > CONFIG.AUDIO_UNDERRUN_LOG_THRESHOLD_MS) {
-    underrunCount++;
-    appendDebugLog(UI_STRINGS.signaling.logs.audioPlaybackUnderrun(slipMs), 'warn');
-    appendDebugLog(
-      UI_STRINGS.signaling.logs.audioDiagnosticEvent('clock-gap', {
-        slipMs: Number(slipMs.toFixed(2)),
-        gapEvents: underrunCount,
-        thresholdMs: CONFIG.AUDIO_UNDERRUN_LOG_THRESHOLD_MS,
-      }),
-      'warn',
-    );
+    recordUnderrun(slipMs);
   }
 
   return {
@@ -223,6 +258,8 @@ export function logPlaybackStop(sourceCount, didRamp, stopAt, allowFade) {
 export function resetSchedulerDiagnostics(reason, activeSources, contextSampleRate) {
   logSchedulerSummary(reason, activeSources, contextSampleRate);
   underrunCount = 0;
+  maxUnderrunSilenceMs = 0;
+  totalUnderrunSilenceMs = 0;
   clockRebaseCount = 0;
   streamRestartCount = 0;
   scheduleFailureCount = 0;

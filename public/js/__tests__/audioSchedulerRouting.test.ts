@@ -145,7 +145,14 @@ describe('audioScheduler interruption', () => {
     context.currentTime = 2.05;
     scheduleSamples(context, null, loudSamples(240));
 
-    expect(sources[1].start).toHaveBeenCalledWith(2.05 + (CONFIG.AUDIO_JITTER_BUFFER_MS / 1000));
+    // The post-interrupt block opens a new run, so it gets the same protected
+    // runway as any other run opening rather than the bare jitter buffer.
+    const blockSeconds = 240 / CONFIG.SAMPLE_RATE_OUTPUT;
+    const expectedStart = 2.05 + Math.max(
+      CONFIG.AUDIO_JITTER_BUFFER_MS / 1000,
+      (CONFIG.AUDIO_NEW_RUN_MIN_RUNWAY_MS / 1000) - blockSeconds,
+    );
+    expect(sources[1].start).toHaveBeenCalledWith(expectedStart);
     expect(channels[1][0]).toBe(0);
   });
 });
