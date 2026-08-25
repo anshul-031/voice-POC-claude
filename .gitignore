@@ -38,3 +38,7 @@ coverage/
 
 # Vitest
 .vitest/
+
+# Prompt History
+PROMPT_HISTORY.md
+

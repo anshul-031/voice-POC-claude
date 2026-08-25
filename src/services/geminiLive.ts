@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import { GoogleGenAI, Modality } from '@google/genai';
 import {
   getTranscriptText,
@@ -12,6 +13,7 @@ import {
   shouldLogChunkProgress,
 } from './geminiLiveLogging.js';
 import { closeGeminiSession, sendAudioToGemini, sendTextToGemini } from './geminiLiveTransport.js';
+import { GeminiKeyManager } from './geminiKeyManager.js';
 import { AUDIO_CONFIG, LIVE_CALL } from '../types/index.js';
 import type { AudioChunkMetrics, GeminiSession, Transcript } from '../types/index.js';
 import type {
@@ -25,17 +27,32 @@ import logger from '../utils/logger.js';
 type AudioCallback = NonNullable<CreateSessionCallbacks['onAudio']>;
 
 class GeminiLiveService {
-  private ai: GoogleGenAI;
+  public keyManager: GeminiKeyManager;
+  private clients: Map<string, GoogleGenAI>;
   /** @internal */
   public sessions: Map<string, GeminiSession>;
 
-  constructor() {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not defined');
-    // @ts-expect-error - SDK constructor types are strictly checked but it accepts string
-    this.ai = new GoogleGenAI(apiKey);
+  constructor(keyManager?: GeminiKeyManager) {
+    this.keyManager =
+      keyManager || new GeminiKeyManager(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS);
+    if (!this.keyManager.hasKeys()) throw new Error('GEMINI_API_KEY is not defined');
+    this.clients = new Map<string, GoogleGenAI>();
+    for (const key of this.keyManager.getKeys()) {
+      this.clients.set(key, new GoogleGenAI({ apiKey: key }));
+    }
     this.sessions = new Map<string, GeminiSession>();
-    logger.info('GeminiLive Service initialized');
+    logger.info('GeminiLive Service initialized', {
+      keyCount: this.keyManager.getKeyCount(),
+    });
+  }
+
+  private _getClientForKey(key: string): GoogleGenAI {
+    let client = this.clients.get(key);
+    if (!client) {
+      client = new GoogleGenAI({ apiKey: key });
+      this.clients.set(key, client);
+    }
+    return client;
   }
 
   private _resolveModel(modelName?: string): string {
@@ -94,6 +111,8 @@ class GeminiLiveService {
       onClose,
     } = callbacks;
     try {
+      const keySelection = this.keyManager.getNextKey();
+      const aiClient = this._getClientForKey(keySelection.key);
       const model = this._resolveModel(modelName);
       const voice = voiceName || 'Puck';
       const config = this._buildConfig(voice, systemPrompt);
@@ -103,6 +122,8 @@ class GeminiLiveService {
         model,
         voice,
         systemPromptChars: (systemPrompt || '').length,
+        keyIndex: keySelection.index,
+        keyCount: keySelection.total,
         correlationId,
       });
       logger.info('Applied Gemini Live first-turn tuning', {
@@ -115,9 +136,14 @@ class GeminiLiveService {
       });
 
       const startTime = Date.now();
-      logger.debug('Connecting to Gemini Live API', { sessionId, model, correlationId });
+      logger.debug('Connecting to Gemini Live API', {
+        sessionId,
+        model,
+        keyIndex: keySelection.index,
+        correlationId,
+      });
 
-      const session = await this.ai.live.connect({
+      const session = await aiClient.live.connect({
         model,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         config: config as any,
@@ -166,6 +192,7 @@ class GeminiLiveService {
         voiceName: voice,
         model,
         correlationId,
+        keyIndex: keySelection.index,
         startTime,
         audioChunksSent: 0, audioChunksReceived: 0,
         audioBytesSent: 0, audioSamplesSent: 0,

@@ -47,12 +47,19 @@ export interface ModelAudioRelayMetrics extends AudioChunkMetrics {
   audioDurationMs: number;
 }
 
+export interface GeminiKeySelection {
+  key: string;
+  index: number;
+  total: number;
+}
+
 export interface GeminiSession {
   session: unknown;
   // Actually, let's use a more specific type if we can find it, or mark it as an interface.
   voiceName: string;
   model: string;
   correlationId?: string;
+  keyIndex?: number;
   startTime: number;
   audioChunksSent: number;
   audioChunksReceived: number;

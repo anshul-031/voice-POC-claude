@@ -264,11 +264,55 @@ describe('GeminiLiveService', () => {
     await expect(geminiLiveService.createSession('sid-err', {})).rejects.toThrow('FAIL');
   });
 
+  it('should rotate through multiple Gemini API keys round-robin across sessions', async () => {
+    geminiLiveService.keyManager.setKeys(['key-1', 'key-2', 'key-3']);
+    
+    const callbacks = {
+      systemPrompt: 'sys',
+      voiceName: 'Puck',
+      modelName: 'gemini-2.0-flash',
+    };
+
+    // First session: key 0 ('key-1')
+    await geminiLiveService.createSession('session-key-0', callbacks);
+    const session0 = geminiLiveService.sessions.get('session-key-0');
+    expect(session0?.keyIndex).toBe(0);
+
+    // Second session: key 1 ('key-2')
+    await geminiLiveService.createSession('session-key-1', callbacks);
+    const session1 = geminiLiveService.sessions.get('session-key-1');
+    expect(session1?.keyIndex).toBe(1);
+
+    // Third session: key 2 ('key-3')
+    await geminiLiveService.createSession('session-key-2', callbacks);
+    const session2 = geminiLiveService.sessions.get('session-key-2');
+    expect(session2?.keyIndex).toBe(2);
+
+    // Fourth session: wraps back to key 0 ('key-1')
+    await geminiLiveService.createSession('session-key-3', callbacks);
+    const session3 = geminiLiveService.sessions.get('session-key-3');
+    expect(session3?.keyIndex).toBe(0);
+
+    // Test client pool fallback / creation for dynamic keys
+    const dynamicClient = (geminiLiveService as any)._getClientForKey('unseen-key');
+    expect(dynamicClient).toBeDefined();
+
+    // Reset back to test-key for other tests
+    geminiLiveService.keyManager.setKeys(['test-key']);
+  });
+
+  it('should fallback to default model when an unsupported model is requested', () => {
+    const resolved = (geminiLiveService as any)._resolveModel('unsupported-custom-model');
+    expect(resolved).toBe('gemini-3.1-flash-live-preview');
+  });
+
   it('should throw if GEMINI_API_KEY is not defined on module initialization', async () => {
     vi.resetModules();
     vi.stubEnv('GEMINI_API_KEY', '');
+    delete process.env.GEMINI_API_KEYS;
     await expect(import('../services/geminiLive.js')).rejects.toThrow('GEMINI_API_KEY is not defined');
     vi.stubEnv('GEMINI_API_KEY', 'test-key');
   });
 
 });
+

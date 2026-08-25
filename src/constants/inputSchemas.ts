@@ -224,6 +224,16 @@ export const R2_CONFIG_SCHEMA = z.object({
   publicUrl: z.string().trim().url().optional(),
 }).strict();
 
+export const GEMINI_API_KEYS_SCHEMA = z.union([
+  z.string().transform((val) =>
+    val
+      .split(',')
+      .map((key) => key.trim())
+      .filter((key) => key.length > 0),
+  ),
+  z.array(z.string().trim().min(1)),
+]);
+
 export type AgentIdParams = z.infer<typeof AGENT_ID_PARAMS_SCHEMA>;
 export type CreateAgentBody = z.infer<typeof CREATE_AGENT_BODY_SCHEMA>;
 export type UpdateAgentBody = z.infer<typeof UPDATE_AGENT_BODY_SCHEMA>;
@@ -241,3 +251,4 @@ export type CallHistoryIdParams = z.infer<typeof CALL_HISTORY_ID_PARAMS_SCHEMA>;
 export type CallHistorySessionParams = z.infer<typeof CALL_HISTORY_SESSION_PARAMS_SCHEMA>;
 export type R2Config = z.infer<typeof R2_CONFIG_SCHEMA>;
 export type SalesAnalyserCredentials = z.infer<typeof SALES_ANALYSER_CREDENTIALS_SCHEMA>;
+export type GeminiApiKeys = z.infer<typeof GEMINI_API_KEYS_SCHEMA>;
