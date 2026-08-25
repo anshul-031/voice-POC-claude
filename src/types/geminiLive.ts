@@ -41,3 +41,7 @@ export interface CreateSessionCallbacks {
 export interface GeminiRealtimeTextInput {
   text: string;
 }
+
+export interface GeminiRealtimeAudioStreamEnd {
+  audioStreamEnd: true;
+}

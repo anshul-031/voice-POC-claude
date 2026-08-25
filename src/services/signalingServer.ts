@@ -343,6 +343,10 @@ class SignalingServer {
       );
     }
     client.lastModelResponseAt = Math.max(now, client.lastModelResponseAt) + metrics.audioDurationMs;
+    // Deliberately does not clear the nudge cycle. A nudge asks the model to prod
+    // an apparently absent user, and the model answering proves nothing about
+    // whether the user came back — clearing here would let an abandoned call
+    // nudge indefinitely instead of reaching the cutoff.
   }
 
   private _logModelAudioProgress(
@@ -644,6 +648,13 @@ class SignalingServer {
         client.transcriptOpenRole === transcript.role,
       );
       client.transcriptOpenRole = transcript.role;
+    }
+
+    if (transcript.role === 'user') {
+      // Gemini transcribed real speech, unlike raw microphone frames, so this is
+      // the only trustworthy evidence that the user is still present.
+      client.nudgeCount = 0;
+      client.lastUserTranscriptAt = now;
     }
 
     if (transcript.role === 'user' && !client.firstUserTranscriptRelayedAt) {
@@ -1083,7 +1094,11 @@ class SignalingServer {
       client.maxAudioInterArrivalMs = Math.max(client.maxAudioInterArrivalMs ?? 0, interArrivalMs);
     }
     client.lastUserAudioAt = now;
-    client.nudgeCount = 0;
+    // The nudge cycle is deliberately not reset here. A browser streams the
+    // microphone continuously whether or not anyone is speaking, so resetting on
+    // every chunk held the counter at zero: nudges repeated forever and the
+    // max-nudges cutoff could never fire. It is reset on real conversational
+    // progress instead — a transcribed user turn or model audio.
     return { audioBytes, audioSamples, interArrivalMs };
   }
 
@@ -1394,6 +1409,23 @@ class SignalingServer {
     }
   }
 
+  /**
+   * Whether the model has gone quiet long enough to prod, and prodding is safe.
+   */
+  private _shouldNudgeForInactivity(client: SignalingClient, now: number): boolean {
+    if (now - client.lastModelResponseAt < client.inactivityTimeoutMs) return false;
+
+    const userSpokeAfterModel = client.lastUserAudioAt > client.lastModelResponseAt;
+    const inNudgeCycle = client.nudgeCount > 0;
+    if (!userSpokeAfterModel && !inNudgeCycle) return false;
+
+    // A nudge now closes the input turn as well as prompting, so nudging over a
+    // user who is still mid-sentence would commit that half utterance and make
+    // the model answer it. Their speech is already going to produce a reply.
+    const sinceUserTranscriptMs = now - (client.lastUserTranscriptAt ?? 0);
+    return sinceUserTranscriptMs >= LIVE_CALL.USER_SPEAKING_GRACE_MS;
+  }
+
   private _startInactivityMonitor(
     socket: WSWebSocket,
     sessionId: string,
@@ -1410,18 +1442,10 @@ class SignalingServer {
       }
 
       const now = Date.now();
+      if (!this._shouldNudgeForInactivity(currentClient, now)) return;
+
       const silenceMs = now - currentClient.lastModelResponseAt;
-      const userSpokeAfterModel = currentClient.lastUserAudioAt > currentClient.lastModelResponseAt;
-      const inNudgeCycle = currentClient.nudgeCount > 0;
-
-      if (silenceMs < currentClient.inactivityTimeoutMs) {
-        return;
-      }
-
-      if (!userSpokeAfterModel && !inNudgeCycle) {
-        return;
-      }
-
+      const sinceUserTranscriptMs = now - (currentClient.lastUserTranscriptAt ?? 0);
       currentClient.nudgeCount++;
       currentClient.lastModelResponseAt = now;
 
@@ -1431,6 +1455,13 @@ class SignalingServer {
           correlationId,
           nudgeCount: currentClient.nudgeCount - 1,
           silenceMs,
+          // A user who is speaking into a microphone the model never registers
+          // looks identical to an abandoned call unless the input path is shown
+          // alongside the decision to hang up.
+          sinceUserTranscriptMs: currentClient.lastUserTranscriptAt
+            ? sinceUserTranscriptMs
+            : undefined,
+          ...this._getInputAudioDiagnostics(currentClient),
         });
         this._autoEndCall(
           socket,

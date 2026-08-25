@@ -105,6 +105,8 @@ export interface SignalingClient {
   proactiveGreetingSentAt?: number;
   lastModelResponseAt: number;
   lastUserAudioAt: number;
+  /** When Gemini last transcribed user speech, as opposed to raw mic frames. */
+  lastUserTranscriptAt?: number;
   nudgeCount: number;
   inactivityTimeoutMs: number;
   maxInactivityNudges: number;

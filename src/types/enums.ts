@@ -55,12 +55,34 @@ export const LIVE_CALL = {
   FIRST_RESPONSE_WARN_THRESHOLD_MS: 2500,
   VAD_PREFIX_PADDING_MS: 180,
   VAD_SILENCE_DURATION_MS: 300,
-  VAD_START_SENSITIVITY: 'START_SENSITIVITY_LOW',
+  /**
+   * How readily Gemini accepts incoming audio as the start of user speech.
+   *
+   * This was LOW to suppress false barge-ins, but LOW also means a quiet speaker
+   * or a low-gain microphone may never register as speaking at all: a call
+   * recorded 172 microphone chunks and produced no input transcript, so the
+   * model never saw a user turn to respond to, and nothing the user said could
+   * clear an inactivity cycle.
+   *
+   * The trade-off is not free, and it is not confined to browser calls. This
+   * setting is what makes the model abandon its own generation, so a false start
+   * truncates a reply. Browser capture has echo cancellation, noise suppression
+   * and a high-pass filter in front of it; the telephony route shares this
+   * config with none of them. Tune with prefix padding and silence duration if
+   * interruptions become twitchy — the API offers no middle sensitivity.
+   */
+  VAD_START_SENSITIVITY: 'START_SENSITIVITY_HIGH',
   VAD_END_SENSITIVITY: 'END_SENSITIVITY_HIGH',
   DEFAULT_INACTIVITY_TIMEOUT_MS: 10000,
   DEFAULT_MAX_INACTIVITY_NUDGES: 3,
   DEFAULT_MAX_CALL_DURATION_SECS: 0,
   INACTIVITY_CHECK_INTERVAL_MS: 3000,
+  /**
+   * How recently transcribed user speech suppresses an inactivity nudge. A nudge
+   * closes the input turn, so prodding someone who is still talking would commit
+   * a partial sentence and answer it.
+   */
+  USER_SPEAKING_GRACE_MS: 1000,
   NUDGE_PROMPT: 'The user seems to be waiting for a response. Please continue the conversation naturally.',
 } as const;
 

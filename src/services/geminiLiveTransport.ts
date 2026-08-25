@@ -1,6 +1,6 @@
 import { AUDIO_CONFIG, LOGGING } from '../types/index.js';
 import type { AudioChunkMetrics, GeminiSession } from '../types/index.js';
-import type { GeminiRealtimeTextInput } from '../types/geminiLive.js';
+import type { GeminiRealtimeAudioStreamEnd, GeminiRealtimeTextInput } from '../types/geminiLive.js';
 import logger from '../utils/logger.js';
 
 function getAudioMetrics(audioBase64: string): AudioChunkMetrics {
@@ -148,11 +148,17 @@ export async function sendTextToGemini(
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (entry.session as any).sendRealtimeInput(payload);
+    // Every prompt we send is one the model is meant to answer now, so close the
+    // input activity here rather than leaving each caller to remember it.
+    const flushed = await flushGeminiAudioStream(sessionId, entry, reason);
     logger.info('Text prompt sent to Gemini', {
       sessionId,
       reason,
       correlationId: entry.correlationId,
       elapsedMs: Date.now() - sendStartedAt,
+      // A prompt that was delivered but not flushed is the shape of the original
+      // stall, so it is reported rather than inferred from a separate log line.
+      flushed,
     });
     return true;
   } catch (error: unknown) {
@@ -162,6 +168,45 @@ export async function sendTextToGemini(
       reason,
       correlationId: entry.correlationId,
       error: errMsg,
+    });
+    return false;
+  }
+}
+
+/**
+ * Close the current input audio activity so Gemini stops waiting for the user
+ * and generates from what it already has.
+ *
+ * Text sent as realtime input does not complete a turn on its own: with
+ * automatic voice activity detection the model generates when the audio stream
+ * signals the user has finished. A browser mic streams continuously and a quiet
+ * room may never register as speech at all, so a prompt sent while that stream
+ * is open can sit unanswered indefinitely — a greeting stalled for 25 seconds
+ * that way. This is the documented flush for a paused audio stream, and the
+ * client is free to keep streaming audio afterwards.
+ */
+async function flushGeminiAudioStream(
+  sessionId: string,
+  entry: GeminiSession,
+  reason: string,
+): Promise<boolean> {
+  const payload: GeminiRealtimeAudioStreamEnd = { audioStreamEnd: true };
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (entry.session as any).sendRealtimeInput(payload);
+    logger.info('Flushed Gemini input audio stream', {
+      sessionId,
+      reason,
+      correlationId: entry.correlationId,
+    });
+    return true;
+  } catch (error: unknown) {
+    logger.error('Error flushing input audio stream', {
+      sessionId,
+      reason,
+      correlationId: entry.correlationId,
+      error: error instanceof Error ? error.message : String(error),
     });
     return false;
   }

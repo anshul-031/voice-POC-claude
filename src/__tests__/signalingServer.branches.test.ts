@@ -569,4 +569,110 @@ describe('SignalingServer branch helpers', () => {
     );
     // 49 + 1 = 50, which triggers the modulo 50 logging
   });
+
+  /** A client mid-call with no conversational progress yet. */
+  function inactiveClient(overrides: Record<string, unknown> = {}): any {
+    const now = Date.now();
+    return {
+      sessionId: 'sid-nudge',
+      agentId: '1',
+      correlationId: 'cid-nudge',
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      startTime: now - 5000,
+      proactiveGreetingSent: false,
+      lastModelResponseAt: now - 5000,
+      lastUserAudioAt: now - 4000,
+      nudgeCount: 0,
+      inactivityTimeoutMs: 1000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
+      ...overrides,
+    };
+  }
+
+  it('keeps counting nudges while the microphone keeps streaming', async () => {
+    vi.useFakeTimers();
+    (geminiLiveService.sendText as any).mockResolvedValue(true);
+    (geminiLiveService.closeSession as any).mockClear();
+    (geminiLiveService.closeSession as any).mockResolvedValue(undefined);
+    const client = inactiveClient();
+    signalingServer.clients.set(mockWs as WebSocket, client);
+
+    (signalingServer as any)._startInactivityMonitor(mockWs, 'sid-nudge', 'cid-nudge');
+
+    // A browser streams the microphone continuously even in silence. That used
+    // to reset the counter on every chunk, so the cutoff could never be reached
+    // and a dead call nudged forever.
+    for (let i = 0; i < client.maxInactivityNudges; i++) {
+      await (signalingServer as any)._handleAudioData(mockWs, { data: 'AAAA' }, 'cid-nudge');
+      vi.advanceTimersByTime(LIVE_CALL.INACTIVITY_CHECK_INTERVAL_MS);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(client.nudgeCount).toBe(i + 1);
+    }
+
+    // One more pass exhausts the allowance and ends the call.
+    await (signalingServer as any)._handleAudioData(mockWs, { data: 'AAAA' }, 'cid-nudge');
+    vi.advanceTimersByTime(LIVE_CALL.INACTIVITY_CHECK_INTERVAL_MS);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(geminiLiveService.closeSession).toHaveBeenCalledWith('sid-nudge');
+    expect(signalingServer.clients.has(mockWs as WebSocket)).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('ends the nudge cycle only when the user actually speaks', () => {
+    const client = inactiveClient({ nudgeCount: 2 });
+    signalingServer.clients.set(mockWs as WebSocket, client);
+
+    // The model answering a nudge says nothing about whether the user returned,
+    // so an abandoned call must keep progressing towards the cutoff.
+    (signalingServer as any)._relayModelAudioToClient(mockWs, 'sid-nudge', 'AAAA');
+    expect(client.nudgeCount).toBe(2);
+
+    // A model transcript is not evidence of the user either.
+    (signalingServer as any)._relayTranscriptToClient(
+      mockWs,
+      'sid-nudge',
+      { role: 'model', text: 'hi' },
+      'cid-nudge',
+    );
+    expect(client.nudgeCount).toBe(2);
+
+    (signalingServer as any)._relayTranscriptToClient(
+      mockWs,
+      'sid-nudge',
+      { role: 'user', text: 'hello' },
+      'cid-nudge',
+    );
+    expect(client.nudgeCount).toBe(0);
+  });
+
+  it('does not nudge over a user who is still talking', async () => {
+    vi.useFakeTimers();
+    (geminiLiveService.sendText as any).mockClear();
+    (geminiLiveService.sendText as any).mockResolvedValue(true);
+    const client = inactiveClient();
+    signalingServer.clients.set(mockWs as WebSocket, client);
+
+    (signalingServer as any)._startInactivityMonitor(mockWs, 'sid-nudge', 'cid-nudge');
+
+    // Gemini transcribes an utterance incrementally, so a user who is mid-sentence
+    // when the monitor ticks has just produced a transcript.
+    vi.advanceTimersByTime(LIVE_CALL.INACTIVITY_CHECK_INTERVAL_MS - 500);
+    client.lastUserTranscriptAt = Date.now();
+    vi.advanceTimersByTime(500);
+    await Promise.resolve();
+
+    expect(geminiLiveService.sendText).not.toHaveBeenCalled();
+
+    // Once they stop, the nudge is allowed through again.
+    vi.advanceTimersByTime(LIVE_CALL.INACTIVITY_CHECK_INTERVAL_MS);
+    await Promise.resolve();
+
+    expect(geminiLiveService.sendText).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });

@@ -121,10 +121,18 @@ describe('GeminiLiveService', () => {
     mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw 'RAW_AUDIO_ERR'; });
     await geminiLiveService.sendAudio('sid2', 'data');
 
-    await geminiLiveService.sendText('sid2', 'text');
-    expect(mockSession.sendRealtimeInput).toHaveBeenLastCalledWith({
-      text: 'text',
-    });
+    mockSession.sendRealtimeInput.mockClear();
+    expect(await geminiLiveService.sendText('sid2', 'text')).toBe(true);
+    expect(mockSession.sendRealtimeInput).toHaveBeenNthCalledWith(1, { text: 'text' });
+    // Realtime text does not complete a turn on its own, so the input activity is
+    // closed straight after or the model keeps waiting for the speaker to finish.
+    expect(mockSession.sendRealtimeInput).toHaveBeenNthCalledWith(2, { audioStreamEnd: true });
+
+    // A failed flush must not report the prompt as undelivered.
+    mockSession.sendRealtimeInput.mockImplementationOnce(() => undefined);
+    mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw new Error('FLUSH_ERR'); });
+    expect(await geminiLiveService.sendText('sid2', 'text')).toBe(true);
+
     mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw new Error('ERR'); });
     await geminiLiveService.sendText('sid2', 'text');
     mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw 'RAW_TEXT_ERR'; });
