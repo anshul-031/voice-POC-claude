@@ -421,6 +421,10 @@ export const UI_STRINGS = {
     logs: {
       callInit: 'Initializing call',
       callRunId: (/** @type {string} */ runId) => `Call run ID: ${runId}`,
+      audioDiagnosticEvent: (
+        /** @type {string} */ event,
+        /** @type {Record<string, unknown>} */ details,
+      ) => `Audio diagnostic ${event}: ${JSON.stringify(details)}`,
       startupBegin: 'Startup sequence started',
       startupComplete: (/** @type {number} */ elapsedMs) => `Startup sequence completed in ${elapsedMs}ms`,
       startupFailed: (/** @type {number} */ elapsedMs) => `Startup failed after ${elapsedMs}ms`,

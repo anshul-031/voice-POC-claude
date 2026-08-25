@@ -57,6 +57,7 @@ export const SIGNALING_START_CALL_MESSAGE_SCHEMA = z.object({
   type: z.literal(MESSAGE_TYPE.START_CALL),
   agentId: z.string().trim().min(1),
   variables: z.record(z.string().trim().min(1), z.string()).optional(),
+  clientTraceId: z.string().trim().min(1).max(100).optional(),
 }).strict();
 
 export const SIGNALING_AUDIO_DATA_MESSAGE_SCHEMA = z.object({

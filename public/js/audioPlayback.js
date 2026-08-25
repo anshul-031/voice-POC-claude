@@ -18,10 +18,47 @@ export { setPlaybackRecordingDestination };
 
 /** @type {string[]} */
 const audioQueue = [];
+let pendingBase64Chars = 0;
 let isProcessingQueue = false;
 let speechFrameStreak = 0;
 let lastBargeInAtMs = 0;
 let adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
+let decodedChunkCount = 0;
+let decodedByteCount = 0;
+let decodedSampleCount = 0;
+let oddByteChunkCount = 0;
+let decodeFailureCount = 0;
+let coalescedBatchCount = 0;
+let coalescedSourceChunkCount = 0;
+let queueHighWatermark = 0;
+let playbackDiscontinuityCount = 0;
+let playbackScheduleFailureCount = 0;
+
+/** @param {string} reason @returns {void} */
+function logPlaybackSummary(reason) {
+  if (
+    decodedChunkCount === 0
+    && decodeFailureCount === 0
+    && queueHighWatermark === 0
+    && playbackScheduleFailureCount === 0
+  ) return;
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioDiagnosticEvent('playback-summary', {
+      reason,
+      decodedChunks: decodedChunkCount,
+      decodedBytes: decodedByteCount,
+      decodedSamples: decodedSampleCount,
+      oddByteChunks: oddByteChunkCount,
+      decodeFailures: decodeFailureCount,
+      coalescedBatches: coalescedBatchCount,
+      coalescedSourceChunks: coalescedSourceChunkCount,
+      queueHighWatermark,
+      discontinuities: playbackDiscontinuityCount,
+      scheduleFailures: playbackScheduleFailureCount,
+    }),
+    decodeFailureCount > 0 || playbackScheduleFailureCount > 0 ? 'warn' : 'info',
+  );
+}
 
 /** @param {string} base64Data @returns {Float32Array} */
 function decodePcmBase64(base64Data) {
@@ -34,6 +71,10 @@ function decodePcmBase64(base64Data) {
   const int16 = new Int16Array(bytes.buffer);
   const float32 = new Float32Array(int16.length);
   for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
+  decodedChunkCount++;
+  decodedByteCount += usableBytes;
+  decodedSampleCount += int16.length;
+  if (usableBytes !== binaryString.length) oddByteChunkCount++;
   return float32;
 }
 
@@ -73,25 +114,43 @@ function drainQueueIntoSamples() {
   const segments = [];
   let totalSamples = 0;
   let droppedChunk = false;
+  let sourceChunkCount = 0;
 
   while (audioQueue.length > 0 && totalSamples < CONFIG.AUDIO_MAX_COALESCE_SAMPLES) {
     const base64Data = /** @type {string} */ (audioQueue.shift());
+    pendingBase64Chars = Math.max(0, pendingBase64Chars - base64Data.length);
+    sourceChunkCount++;
     try {
       const samples = decodePcmBase64(base64Data);
       if (samples.length === 0) continue;
       segments.push(samples);
       totalSamples += samples.length;
     } catch (_e) {
+      decodeFailureCount++;
       // End the batch at the hole. Merging across it would splice two unrelated
       // waveforms inside one buffer, where neither a fade nor a scheduling
       // boundary can smooth the step.
       droppedChunk = true;
+      appendDebugLog(
+        UI_STRINGS.signaling.logs.audioDiagnosticEvent('decode-failure', {
+          decodeFailures: decodeFailureCount,
+          queueDepth: audioQueue.length,
+          sourceChunkCount,
+        }),
+        'warn',
+      );
       break;
     }
   }
 
+  if (sourceChunkCount > 0) {
+    coalescedBatchCount++;
+    coalescedSourceChunkCount += sourceChunkCount;
+  }
+
   const startsDiscontinuity = pendingDiscontinuity;
   pendingDiscontinuity = droppedChunk;
+  if (startsDiscontinuity || droppedChunk) playbackDiscontinuityCount++;
 
   if (totalSamples === 0) {
     pendingDiscontinuity = pendingDiscontinuity || startsDiscontinuity;
@@ -111,6 +170,7 @@ export function interruptModelPlayback() {
   const hadPlayback = hasModelPlayback();
   stopScheduledPlayback();
   audioQueue.length = 0;
+  pendingBase64Chars = 0;
   // The clock is re-based on the next block anyway, which already fades it in.
   pendingDiscontinuity = false;
   return hadPlayback;
@@ -166,12 +226,24 @@ export function detectSpeechBargeIn(inputData) {
 export function enqueueAudio(base64Data) {
   if (!base64Data) return false;
   audioQueue.push(base64Data);
+  pendingBase64Chars += base64Data.length;
 
   const sampleEstimate = Math.floor((base64Data.length * 3) / 4 / 2);
 
   const depth = audioQueue.length;
+  queueHighWatermark = Math.max(queueHighWatermark, depth);
   if (depth % CONFIG.AUDIO_DIAG_LOG_INTERVAL_CHUNKS === 0) {
     appendDebugLog(UI_STRINGS.signaling.logs.audioChunkEnqueued(sampleEstimate, depth), 'info');
+    appendDebugLog(
+      UI_STRINGS.signaling.logs.audioDiagnosticEvent('queue', {
+        depth,
+        queueHighWatermark,
+        pendingBase64Chars,
+        decodedBytes: decodedByteCount,
+        decodedSamples: decodedSampleCount,
+      }),
+      'info',
+    );
   }
   if (depth >= CONFIG.AUDIO_QUEUE_DEPTH_WARN && depth % CONFIG.AUDIO_DIAG_LOG_INTERVAL_CHUNKS === 0) {
     appendDebugLog(UI_STRINGS.signaling.logs.audioQueueDepthWarn(depth), 'warn');
@@ -217,8 +289,18 @@ export async function processAudioQueue(audioContext, analyserNode, options = {}
         startsDiscontinuity: batch.startsDiscontinuity,
       });
       if (!scheduled) {
+        playbackScheduleFailureCount++;
         // The batch is already off the queue and never reached the device.
         pendingDiscontinuity = true;
+        appendDebugLog(
+          UI_STRINGS.signaling.logs.audioDiagnosticEvent('schedule-failure', {
+            failures: playbackScheduleFailureCount,
+            queueDepth: audioQueue.length,
+            decodedBytes: decodedByteCount,
+            decodedSamples: decodedSampleCount,
+          }),
+          'warn',
+        );
         break;
       }
     }
@@ -229,10 +311,22 @@ export async function processAudioQueue(audioContext, analyserNode, options = {}
 
 /** @returns {void} */
 export function resetAudioPlaybackState() {
+  logPlaybackSummary('reset');
   audioQueue.length = 0;
+  pendingBase64Chars = 0;
   resetScheduler();
   pendingDiscontinuity = false;
   speechFrameStreak = 0;
   lastBargeInAtMs = 0;
   adaptiveNoiseFloorRms = CONFIG.BARGE_IN_NOISE_FLOOR_INITIAL_RMS;
+  decodedChunkCount = 0;
+  decodedByteCount = 0;
+  decodedSampleCount = 0;
+  oddByteChunkCount = 0;
+  decodeFailureCount = 0;
+  coalescedBatchCount = 0;
+  coalescedSourceChunkCount = 0;
+  queueHighWatermark = 0;
+  playbackDiscontinuityCount = 0;
+  playbackScheduleFailureCount = 0;
 }

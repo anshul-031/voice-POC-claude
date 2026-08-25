@@ -1,4 +1,4 @@
-import type { Transcript } from './interfaces.js';
+import type { AudioChunkMetrics, Transcript } from './interfaces.js';
 
 export interface GeminiTurnPart {
   inlineData?: {
@@ -30,7 +30,7 @@ export interface CreateSessionCallbacks {
   voiceName?: string;
   modelName?: string;
   correlationId?: string;
-  onAudio?: (audioBase64: string) => void;
+  onAudio?: (audioBase64: string, metrics?: AudioChunkMetrics) => void;
   onTranscript?: (transcript: Transcript) => void;
   onTurnComplete?: () => void;
   onInterrupted?: () => void;

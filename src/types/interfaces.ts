@@ -37,6 +37,16 @@ export interface VoiceAgent {
   updatedAt: Date;
 }
 
+export interface AudioChunkMetrics {
+  audioBytes: number;
+  audioSamples: number;
+  interArrivalMs?: number;
+}
+
+export interface ModelAudioRelayMetrics extends AudioChunkMetrics {
+  audioDurationMs: number;
+}
+
 export interface GeminiSession {
   session: unknown;
   // Actually, let's use a more specific type if we can find it, or mark it as an interface.
@@ -52,6 +62,16 @@ export interface GeminiSession {
   firstModelTranscriptAt?: number;
   firstTextPromptAt?: number;
   lastAudioChunkSentAt?: number;
+  audioBytesSent?: number;
+  audioSamplesSent?: number;
+  audioBytesReceived?: number;
+  audioSamplesReceived?: number;
+  audioSendFailures?: number;
+  audioSendInFlight?: number;
+  maxAudioSendInFlight?: number;
+  maxAudioSendLatencyMs?: number;
+  lastAudioChunkReceivedAt?: number;
+  maxAudioInterArrivalMs?: number;
   firstResponseLatencyWarned?: boolean;
 }
 
@@ -59,9 +79,24 @@ export interface SignalingClient {
   sessionId: string;
   agentId: string;
   correlationId?: string;
+  clientTraceId?: string;
   streamId?: string;
   audioChunksRelayed: number;
+  audioBytesRelayed?: number;
+  audioSamplesRelayed?: number;
+  audioRelayInFlight?: number;
+  maxAudioRelayInFlight?: number;
+  maxAudioRelayLatencyMs?: number;
+  maxAudioInterArrivalMs?: number;
   modelAudioChunksRelayed: number;
+  modelAudioBytesRelayed?: number;
+  modelAudioSamplesRelayed?: number;
+  modelAudioDurationMsRelayed?: number;
+  lastModelAudioAt?: number;
+  maxModelAudioInterArrivalMs?: number;
+  modelAudioRelayFailures?: number;
+  maxModelAudioBufferedAmount?: number;
+  modelAudioSendLatencyMs?: number;
   startTime: number;
   firstModelAudioRelayedAt?: number;
   firstUserTranscriptRelayedAt?: number;

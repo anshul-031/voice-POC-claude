@@ -45,6 +45,8 @@ export const TIME = {
 
 export const LOGGING = {
   THROTTLE_CHUNKS: 50,
+  AUDIO_INTERARRIVAL_WARN_MS: 100,
+  WS_BUFFERED_AMOUNT_WARN_BYTES: 1_000_000,
 } as const;
 
 export const LIVE_CALL = {

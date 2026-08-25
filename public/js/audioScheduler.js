@@ -8,8 +8,17 @@
  * cannot push a buffer into the past. Everything else is audible as crackle.
  */
 import { CONFIG } from './constants/config.js';
-import { UI_STRINGS } from './constants/uiStrings.js';
-import { appendDebugLog } from './transcript.js';
+import {
+  alignPlaybackClock,
+  recordBufferCreationFailure,
+  recordFadedBlock,
+  recordScheduledChunk,
+  recordScheduledLead,
+  recordSourceStartFailure,
+  resetSchedulerDiagnostics,
+  warnOnOutputRateMismatch,
+  logPlaybackStop,
+} from './audioSchedulerDiagnostics.js';
 
 /** @type {Set<AudioBufferSourceNode>} */
 const activePlaybackSources = new Set();
@@ -26,8 +35,6 @@ let recordingDestinationNode = null;
  * Zero means no run is currently in flight.
  */
 let nextPlaybackTime = 0;
-let chunksPlayed = 0;
-let underrunCount = 0;
 /** @type {AudioContext | null} */
 let lastScheduledContext = null;
 
@@ -191,21 +198,10 @@ function applyLeadInFade(samples) {
  * @param {number} now
  * @returns {boolean}
  */
-function alignPlaybackClock(now) {
-  if (nextPlaybackTime > now) return false;
-
-  const slipMs = nextPlaybackTime > 0
-    ? (now - nextPlaybackTime) * 1000
-    : Number.POSITIVE_INFINITY;
-  const isStreamRestart = slipMs >= CONFIG.AUDIO_STREAM_RESTART_GAP_MS;
-
-  if (!isStreamRestart && slipMs > CONFIG.AUDIO_UNDERRUN_LOG_THRESHOLD_MS) {
-    underrunCount++;
-    appendDebugLog(UI_STRINGS.signaling.logs.audioPlaybackUnderrun(slipMs), 'warn');
-  }
-
-  nextPlaybackTime = now + (CONFIG.AUDIO_JITTER_BUFFER_MS / 1000);
-  return true;
+function alignPlaybackClockForScheduler(now) {
+  const alignment = alignPlaybackClock(now, nextPlaybackTime);
+  nextPlaybackTime = alignment.nextPlaybackTime;
+  return alignment.startsNewRun;
 }
 
 /** @param {AudioContext} audioContext @param {Float32Array} samples @returns {AudioBuffer} */
@@ -215,12 +211,7 @@ function createAudioBuffer(audioContext, samples) {
   return audioBuffer;
 }
 
-/**
- * @param {AudioContext} audioContext
- * @param {AudioBuffer} audioBuffer
- * @param {AnalyserNode | null} analyserNode
- * @returns {AudioBufferSourceNode}
- */
+/** @param {AudioContext} audioContext @param {AudioBuffer} audioBuffer @param {AnalyserNode | null} analyserNode @returns {AudioBufferSourceNode} */
 function createPlaybackSource(audioContext, audioBuffer, analyserNode) {
   const bufferSource = audioContext.createBufferSource();
   bufferSource.buffer = audioBuffer;
@@ -230,38 +221,37 @@ function createPlaybackSource(audioContext, audioBuffer, analyserNode) {
   return bufferSource;
 }
 
-/**
- * @param {number} scheduledTime
- * @param {number} chunkDuration
- * @param {number} queueDepth
- * @returns {void}
- */
-function logPlaybackDiagnostics(scheduledTime, chunkDuration, queueDepth) {
-  if (chunksPlayed % CONFIG.AUDIO_DIAG_LOG_INTERVAL_CHUNKS !== 0) return;
-  appendDebugLog(
-    UI_STRINGS.signaling.logs.audioPlaybackScheduled(scheduledTime, chunkDuration),
-    'info',
-  );
-  appendDebugLog(
-    UI_STRINGS.signaling.logs.audioPlaybackStats(chunksPlayed, underrunCount, queueDepth),
-    'info',
-  );
+/** @param {AudioContext} audioContext @param {Float32Array} samples @param {AnalyserNode | null} analyserNode @returns {AudioBufferSourceNode | null} */
+function createScheduledSource(audioContext, samples, analyserNode) {
+  try {
+    const audioBuffer = createAudioBuffer(audioContext, samples);
+    return createPlaybackSource(audioContext, audioBuffer, analyserNode);
+  } catch (error) {
+    recordBufferCreationFailure(error, samples.length);
+    return null;
+  }
 }
 
-/**
- * Buffers declared at the stream rate are resampled one buffer at a time when
- * the context runs at a different rate, and the resampler carries no state
- * across buffers, so every boundary becomes an artifact again.
- * @param {AudioContext} audioContext
- * @returns {void}
- */
-function warnOnOutputRateMismatch(audioContext) {
-  const contextRate = audioContext.sampleRate;
-  if (!contextRate || contextRate === CONFIG.SAMPLE_RATE_OUTPUT) return;
-  appendDebugLog(
-    UI_STRINGS.signaling.logs.audioOutputRateMismatch(contextRate, CONFIG.SAMPLE_RATE_OUTPUT),
-    'warn',
-  );
+/** @param {AudioBufferSourceNode} bufferSource @param {number} scheduledTime @param {number} previousPlaybackTime @returns {boolean} */
+function startScheduledSource(bufferSource, scheduledTime, previousPlaybackTime) {
+  activePlaybackSources.add(bufferSource);
+  bufferSource.onended = () => {
+    activePlaybackSources.delete(bufferSource);
+  };
+
+  try {
+    bufferSource.start(scheduledTime);
+  } catch (error) {
+    activePlaybackSources.delete(bufferSource);
+    try {
+      bufferSource.disconnect();
+    } catch (_e) { /* ignore */ }
+    nextPlaybackTime = previousPlaybackTime;
+    recordSourceStartFailure(error, previousPlaybackTime);
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -291,35 +281,36 @@ export function scheduleSamples(audioContext, analyserNode, samples, options = {
   adoptContext(audioContext);
 
   const previousPlaybackTime = nextPlaybackTime;
-  const startsNewRun = alignPlaybackClock(audioContext.currentTime);
+  const startsNewRun = alignPlaybackClockForScheduler(audioContext.currentTime);
   const needsFade = startsNewRun || options.startsDiscontinuity === true;
   const playableSamples = needsFade ? applyLeadInFade(samples) : samples;
+  if (needsFade) recordFadedBlock();
+  recordScheduledLead((nextPlaybackTime - audioContext.currentTime) * 1000);
 
-  /** @type {AudioBufferSourceNode} */
-  let bufferSource;
-  try {
-    const audioBuffer = createAudioBuffer(audioContext, playableSamples);
-    bufferSource = createPlaybackSource(audioContext, audioBuffer, analyserNode);
-  } catch (_e) {
+  const bufferSource = createScheduledSource(audioContext, playableSamples, analyserNode);
+  if (!bufferSource) {
     // Nothing was handed to the device, so leave the write head where it was
     // rather than pointing at a stretch of time holding no audio.
     nextPlaybackTime = previousPlaybackTime;
     return false;
   }
 
-  activePlaybackSources.add(bufferSource);
-  bufferSource.onended = () => {
-    activePlaybackSources.delete(bufferSource);
-  };
-
-  if (options.onPlaybackStarted && chunksPlayed === 0) {
-    options.onPlaybackStarted();
+  if (!startScheduledSource(bufferSource, nextPlaybackTime, previousPlaybackTime)) {
+    return false;
   }
 
   const chunkDuration = playableSamples.length / CONFIG.SAMPLE_RATE_OUTPUT;
-  bufferSource.start(nextPlaybackTime);
-  chunksPlayed++;
-  logPlaybackDiagnostics(nextPlaybackTime, chunkDuration, options.queueDepth || 0);
+  const isFirstChunk = recordScheduledChunk(
+    nextPlaybackTime,
+    chunkDuration,
+    playableSamples.length,
+    options.queueDepth || 0,
+    activePlaybackSources.size,
+    lastScheduledContext,
+  );
+  if (isFirstChunk && options.onPlaybackStarted) {
+    options.onPlaybackStarted();
+  }
   nextPlaybackTime += chunkDuration;
   return true;
 }
@@ -376,6 +367,7 @@ function rampDownPlaybackGain(context, gainNode) {
 
 /** @param {StopOptions} [options] @returns {void} */
 export function stopScheduledPlayback(options = {}) {
+  const sourceCount = activePlaybackSources.size;
   const context = playbackGainNodeContext;
   const gainNode = playbackGainNode;
   const didRamp = options.allowFade !== false
@@ -384,6 +376,8 @@ export function stopScheduledPlayback(options = {}) {
   const stopAt = didRamp && context
     ? context.currentTime + (CONFIG.AUDIO_INTERRUPT_FADE_MS / 1000)
     : 0;
+
+  logPlaybackStop(sourceCount, didRamp, stopAt, options.allowFade !== false);
 
   activePlaybackSources.forEach(source => {
     try {
@@ -407,9 +401,12 @@ export function resetScheduler() {
   // right after, so a scheduled ramp would never render. Cut cleanly instead of
   // pretending to fade.
   stopScheduledPlayback({ allowFade: false });
+  resetSchedulerDiagnostics(
+    'reset',
+    activePlaybackSources.size,
+    lastScheduledContext?.sampleRate ?? null,
+  );
   resetPlaybackRouting();
   nextPlaybackTime = 0;
-  chunksPlayed = 0;
-  underrunCount = 0;
   lastScheduledContext = null;
 }

@@ -1,6 +1,72 @@
 import logger from '../utils/logger.js';
-import { LIVE_CALL, LOGGING } from '../types/index.js';
-import type { GeminiSession } from '../types/index.js';
+import { AUDIO_CONFIG, LIVE_CALL, LOGGING } from '../types/index.js';
+import type { AudioChunkMetrics, GeminiSession } from '../types/index.js';
+
+/**
+ * Update the session counters for one model PCM chunk without retaining or
+ * logging the audio payload itself.
+ * @param {string} sessionId
+ * @param {GeminiSession | undefined} entry
+ * @param {string} data
+ * @param {number} now
+ * @returns {AudioChunkMetrics}
+ */
+export function recordModelAudioChunk(
+  sessionId: string,
+  entry: GeminiSession | undefined,
+  data: string,
+  now: number,
+): AudioChunkMetrics {
+  const audioBytes = Buffer.from(data, 'base64').length;
+  const audioSamples = Math.floor(audioBytes / AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE);
+  const interArrivalMs = entry?.lastAudioChunkReceivedAt
+    ? now - entry.lastAudioChunkReceivedAt
+    : undefined;
+  if (entry) {
+    entry.audioChunksReceived++;
+    entry.audioBytesReceived = (entry.audioBytesReceived ?? 0) + audioBytes;
+    entry.audioSamplesReceived = (entry.audioSamplesReceived ?? 0) + audioSamples;
+    entry.lastAudioChunkReceivedAt = now;
+    if (interArrivalMs !== undefined) {
+      entry.maxAudioInterArrivalMs = Math.max(entry.maxAudioInterArrivalMs ?? 0, interArrivalMs);
+    }
+    markFirstModelAudio(sessionId, entry, now);
+  }
+  return { audioBytes, audioSamples, interArrivalMs };
+}
+
+/** @param {string} sessionId @param {GeminiSession} entry @param {AudioChunkMetrics} metrics @returns {void} */
+export function logModelAudioChunk(sessionId: string, entry: GeminiSession, metrics: AudioChunkMetrics): void {
+  logger.debug('Audio data received', {
+    sessionId,
+    totalReceived: entry.audioChunksReceived,
+    audioBytes: metrics.audioBytes,
+    audioSamples: metrics.audioSamples,
+    interArrivalMs: metrics.interArrivalMs,
+    maxInterArrivalMs: entry.maxAudioInterArrivalMs,
+    correlationId: entry.correlationId,
+  });
+}
+
+/** @param {string} sessionId @param {GeminiSession | undefined} entry @param {AudioChunkMetrics} metrics @param {number} callbackLatencyMs @returns {void} */
+export function logSlowModelAudioRelay(
+  sessionId: string,
+  entry: GeminiSession | undefined,
+  metrics: AudioChunkMetrics,
+  callbackLatencyMs: number,
+): void {
+  if (
+    callbackLatencyMs <= LOGGING.AUDIO_INTERARRIVAL_WARN_MS
+    || (entry && entry.audioChunksReceived % LOGGING.THROTTLE_CHUNKS !== 1)
+  ) return;
+  logger.warn('Model audio relay callback was slow', {
+    sessionId,
+    callbackLatencyMs,
+    audioBytes: metrics.audioBytes,
+    correlationId: entry?.correlationId,
+  });
+}
+
 
 function toMessageObject(message: unknown): Record<string, unknown> | null {
   if (!message || typeof message !== 'object') {

@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WebSocket } from 'ws';
-import { LIVE_CALL } from '../types/index.js';
+import { LIVE_CALL, LOGGING } from '../types/index.js';
 import signalingServer from '../services/signalingServer.js';
 import geminiLiveService from '../services/geminiLive.js';
 import prisma from '../lib/prisma.js';
@@ -102,8 +102,31 @@ describe('SignalingServer branch helpers', () => {
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,
     });
+    mockWs.bufferedAmount = LOGGING.WS_BUFFERED_AMOUNT_WARN_BYTES;
     (signalingServer as any)._relayModelAudioToClient(mockWs, 'sid2', 'audio-c');
+    mockWs.send.mockImplementationOnce(() => { throw new Error('browser-send-failure'); });
     (signalingServer as any)._relayModelAudioToClient(mockWs, 'sid2', 'audio-d');
+    mockWs.send.mockImplementationOnce(() => { throw 'raw-browser-send-failure'; });
+    (signalingServer as any)._relayModelAudioToClient(mockWs, 'sid2', 'audio-e');
+
+    signalingServer.clients.set(mockWs as WebSocket, {
+      sessionId: 'telephony-sid',
+      agentId: '1',
+      correlationId: 'telephony-cid',
+      streamId: 'stream-1',
+      audioChunksRelayed: 0,
+      modelAudioChunksRelayed: 0,
+      startTime: Date.now() - 100,
+      proactiveGreetingSent: false,
+      lastModelResponseAt: Date.now(),
+      lastUserAudioAt: Date.now(),
+      nudgeCount: 0,
+      inactivityTimeoutMs: 10000,
+      maxInactivityNudges: 3,
+      maxCallDurationSecs: 0,
+      recordingChunks: [],
+    });
+    (signalingServer as any)._relayModelAudioToClient(mockWs, 'telephony-sid', 'audio-f');
   });
 
   it('covers _relayTranscriptToClient model transcript branches', () => {

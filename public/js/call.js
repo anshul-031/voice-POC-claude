@@ -128,6 +128,7 @@ function resetDownloadButton() {
  * @typedef {Object} StartupTrace
  * @property {string} runId
  * @property {number} startAt
+ * @property {string | null} correlationId
  * @property {boolean} firstAudioRelayedLogged
  * @property {boolean} firstInboundAudioLogged
  * @property {boolean} firstInboundTranscriptLogged
@@ -149,6 +150,27 @@ let isMuted = false;
 let callSeconds = 0;
 let audioChunksSent = 0;
 let audioChunksReceived = 0;
+let captureFrameCount = 0;
+let captureMetricFrameCount = 0;
+let captureIgnoredNotInCall = 0;
+let captureIgnoredMuted = 0;
+let captureDroppedSocket = 0;
+let captureInputSamples = 0;
+let captureOutputBytes = 0;
+let captureClippedSamples = 0;
+let capturePeak = 0;
+let captureRmsTotal = 0;
+let captureMaxProcessGapMs = 0;
+let captureStarvationCount = 0;
+let lastCaptureProcessAt = 0;
+let wsMessagesSent = 0;
+let wsMessagesReceived = 0;
+let wsReceivedBytes = 0;
+let inboundAudioBase64Chars = 0;
+let wsMaxBufferedAmount = 0;
+let wsSendFailures = 0;
+let recordingChunkCount = 0;
+let recordingBytes = 0;
 let lastUserAudioSentAt = 0;
 let lastModelResponseAt = 0;
 /** @type {number | null} */ let inactivityCheckTimer = null;
@@ -156,7 +178,122 @@ let inactivityWarned = false;
 /** @type {{ inactivityTimeoutMs: number, maxInactivityNudges: number, maxCallDurationSecs: number } | null} */
 let activeInactivityConfig = null;
 
-/** @returns {typeof AudioContext | null} */
+/** @returns {void} */
+function resetAudioDiagnostics() {
+  captureFrameCount = 0;
+  captureMetricFrameCount = 0;
+  captureIgnoredNotInCall = 0;
+  captureIgnoredMuted = 0;
+  captureDroppedSocket = 0;
+  captureInputSamples = 0;
+  captureOutputBytes = 0;
+  captureClippedSamples = 0;
+  capturePeak = 0;
+  captureRmsTotal = 0;
+  captureMaxProcessGapMs = 0;
+  captureStarvationCount = 0;
+  lastCaptureProcessAt = 0;
+  wsMessagesSent = 0;
+  wsMessagesReceived = 0;
+  wsReceivedBytes = 0;
+  inboundAudioBase64Chars = 0;
+  wsMaxBufferedAmount = 0;
+  wsSendFailures = 0;
+  recordingChunkCount = 0;
+  recordingBytes = 0;
+}
+
+/** @param {string} reason @param {boolean} [recordingFinalizationPending] @returns {void} */
+function logAudioDiagnosticsSummary(reason, recordingFinalizationPending = false) {
+  if (!startupTrace && captureFrameCount === 0 && audioChunksReceived === 0) return;
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioDiagnosticEvent('call-summary', {
+      reason,
+      runId: startupTrace?.runId,
+      correlationId: startupTrace?.correlationId,
+      sessionId: currentSessionId,
+      captureFrames: captureFrameCount,
+      ignoredNotInCall: captureIgnoredNotInCall,
+      ignoredMuted: captureIgnoredMuted,
+      droppedSocket: captureDroppedSocket,
+      captureInputSamples,
+      captureOutputBytes,
+      captureMetricFrames: captureMetricFrameCount,
+      captureClippedSamples,
+      capturePeak: Number(capturePeak.toFixed(4)),
+      captureAverageRms: Number((captureRmsTotal / Math.max(1, captureMetricFrameCount)).toFixed(4)),
+      captureMaxProcessGapMs,
+      captureStarvationCount,
+      audioChunksSent,
+      audioChunksReceived,
+      inboundAudioBase64Chars,
+      wsMessagesSent,
+      wsMessagesReceived,
+      wsReceivedBytes,
+      wsMaxBufferedAmount,
+      wsSendFailures,
+      recordingChunkCount,
+      recordingBytes,
+      recordingFinalizationPending,
+    }),
+    'info',
+  );
+}
+
+/** @returns {void} */
+function logCaptureSnapshot() {
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioDiagnosticEvent('capture', {
+      frames: captureFrameCount,
+      metricFrames: captureMetricFrameCount,
+      inputSamples: captureInputSamples,
+      outputBytes: captureOutputBytes,
+      peak: Number(capturePeak.toFixed(4)),
+      averageRms: Number((captureRmsTotal / Math.max(1, captureMetricFrameCount)).toFixed(4)),
+      clippedSamples: captureClippedSamples,
+      maxProcessGapMs: captureMaxProcessGapMs,
+      starvationCount: captureStarvationCount,
+      socketBufferedAmount: ws?.bufferedAmount ?? 0,
+    }),
+    'info',
+  );
+}
+
+/** @param {Float32Array} inputData @param {number} contextRate @returns {void} */
+function recordCaptureFrame(inputData, contextRate) {
+  const now = Date.now();
+  const expectedFrameMs = (inputData.length / contextRate) * 1000;
+  if (lastCaptureProcessAt > 0) {
+    const processGapMs = now - lastCaptureProcessAt;
+    captureMaxProcessGapMs = Math.max(captureMaxProcessGapMs, processGapMs);
+    captureStarvationCount += Math.min(
+      1,
+      Math.floor(processGapMs / (expectedFrameMs * CONFIG.AUDIO_CAPTURE_STARVATION_FACTOR)),
+    );
+  }
+  lastCaptureProcessAt = now;
+  captureFrameCount++;
+  captureInputSamples += inputData.length;
+  if (captureFrameCount % CONFIG.AUDIO_CAPTURE_METRIC_SAMPLE_INTERVAL !== 1) return;
+
+  let energy = 0;
+  let framePeak = 0;
+  let frameClippedSamples = 0;
+  for (let i = 0; i < inputData.length; i++) {
+    const sample = inputData[i];
+    const absoluteSample = Math.abs(sample);
+    energy += sample * sample;
+    framePeak = Math.max(framePeak, absoluteSample);
+    frameClippedSamples += Math.min(1, Math.floor(absoluteSample));
+  }
+
+  const frameRms = Math.sqrt(energy / Math.max(1, inputData.length));
+  captureMetricFrameCount++;
+  captureClippedSamples += frameClippedSamples;
+  capturePeak = Math.max(capturePeak, framePeak);
+  captureRmsTotal += frameRms;
+}
+
 function getAudioContextCtor() {
   const browserWindow = /** @type {WindowWithWebkitAudio} */ (window);
   const ContextCtor = globalThis.AudioContext || browserWindow.webkitAudioContext;
@@ -423,16 +560,101 @@ function relayAudioChunk(inputData) {
     const sample = Math.max(-1, Math.min(1, downsampled[i]));
     pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
   }
-  if (ws?.readyState !== WebSocket.OPEN) return;
+  const pcmBytes = new Uint8Array(pcm16.buffer);
+  captureOutputBytes += pcmBytes.byteLength;
+
+  if (ws?.readyState !== WebSocket.OPEN) {
+    captureDroppedSocket++;
+    return;
+  }
+
+  const encodedAudio = uint8ToBase64(pcmBytes);
+  const payload = JSON.stringify({ type: MESSAGE_TYPE.AUDIO_DATA, data: encodedAudio });
+  const bufferedAmountBeforeSend = ws.bufferedAmount;
+  wsMaxBufferedAmount = Math.max(wsMaxBufferedAmount, bufferedAmountBeforeSend);
   audioChunksSent++;
   if (audioChunksSent === 1) {
     logFirstAudioChunkRelay(contextRate);
   }
   if (audioChunksSent % CONFIG.AUDIO_LOG_THROTTLE === 1) {
     appendDebugLog(UI_STRINGS.signaling.logs.audioRelay(audioChunksSent), 'info');
+    logCaptureSnapshot();
   }
-  ws.send(JSON.stringify({ type: MESSAGE_TYPE.AUDIO_DATA, data: uint8ToBase64(new Uint8Array(pcm16.buffer)) }));
-  lastUserAudioSentAt = Date.now();
+
+  try {
+    ws.send(payload);
+    wsMessagesSent++;
+    lastUserAudioSentAt = Date.now();
+  } catch (error) {
+    wsSendFailures++;
+    appendDebugLog(
+      UI_STRINGS.signaling.logs.audioDiagnosticEvent('capture-send-failed', {
+        chunk: audioChunksSent,
+        error: getErrorMessage(error),
+      }),
+      'error',
+    );
+  }
+}
+
+/** @returns {MediaTrackSettings | Record<string, never>} */
+function getAudioTrackSettings() {
+  const track = typeof mediaStream?.getAudioTracks === 'function'
+    ? mediaStream.getAudioTracks()[0]
+    : undefined;
+  return track?.getSettings ? track.getSettings() : {};
+}
+
+/** @returns {Record<string, unknown>} */
+function getAudioGraphContextDiagnostics() {
+  return {
+    contextState: audioContext?.state,
+    contextSampleRate: audioContext?.sampleRate,
+    baseLatency: audioContext?.baseLatency ?? null,
+    outputLatency: audioContext?.outputLatency ?? null,
+  };
+}
+
+/** @param {MediaTrackSettings | Record<string, never>} trackSettings @returns {Record<string, unknown>} */
+function getAudioGraphTrackDiagnostics(trackSettings) {
+  return {
+    trackSampleRate: trackSettings.sampleRate ?? null,
+    trackChannelCount: trackSettings.channelCount ?? null,
+    echoCancellation: trackSettings.echoCancellation ?? null,
+    noiseSuppression: trackSettings.noiseSuppression ?? null,
+    autoGainControl: trackSettings.autoGainControl ?? null,
+  };
+}
+
+/** @param {MediaTrackSettings | Record<string, never>} trackSettings @returns {void} */
+function logAudioGraphReady(trackSettings) {
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioDiagnosticEvent('audio-graph-ready', {
+      ...getAudioGraphContextDiagnostics(),
+      ...getAudioGraphTrackDiagnostics(trackSettings),
+      processorBufferSize: 4096,
+      highPassFrequencyHz: CONFIG.MIC_HIGHPASS_FREQUENCY_HZ,
+    }),
+    'info',
+  );
+}
+
+/** @param {AudioProcessingEvent} event @returns {void} */
+function processAudioFrame(event) {
+  if (!isInCall) {
+    captureIgnoredNotInCall++;
+    return;
+  }
+  if (isMuted) {
+    captureIgnoredMuted++;
+    return;
+  }
+  const inputData = event.inputBuffer.getChannelData(0);
+  recordCaptureFrame(inputData, audioContext?.sampleRate || CONFIG.SAMPLE_RATE_OUTPUT);
+  if (detectSpeechBargeIn(inputData)) {
+    appendDebugLog(UI_STRINGS.signaling.logs.bargeInDetected, 'warn');
+  }
+  relayAudioChunk(inputData);
 }
 
 /** @returns {void} */
@@ -461,14 +683,8 @@ function setupAudioGraph() {
   audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
   processedSource.connect(audioProcessor);
   audioProcessor.connect(audioContext.destination);
-  audioProcessor.onaudioprocess = (/** @type {AudioProcessingEvent} */ event) => {
-    if (!isInCall || isMuted) return;
-    const inputData = event.inputBuffer.getChannelData(0);
-    if (detectSpeechBargeIn(inputData)) {
-      appendDebugLog(UI_STRINGS.signaling.logs.bargeInDetected, 'warn');
-    }
-    relayAudioChunk(inputData);
-  };
+  logAudioGraphReady(getAudioTrackSettings());
+  audioProcessor.onaudioprocess = processAudioFrame;
 
   setupAudioRecording(processedSource);
 }
@@ -488,6 +704,8 @@ function setupAudioRecording(processedSource) {
 
     if (typeof MediaRecorder !== 'undefined') {
       recordedChunks = [];
+      recordingChunkCount = 0;
+      recordingBytes = 0;
       recordingMimeType = 'audio/webm';
       if (!MediaRecorder.isTypeSupported(recordingMimeType)) {
         recordingMimeType = 'audio/mp4';
@@ -504,9 +722,19 @@ function setupAudioRecording(processedSource) {
       mediaRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           recordedChunks.push(event.data);
+          recordingChunkCount++;
+          recordingBytes += event.data.size;
         }
       };
       mediaRecorder.onstop = () => {
+        appendDebugLog(
+          UI_STRINGS.signaling.logs.audioDiagnosticEvent('recording-stopped', {
+            mimeType: recordingMimeType || 'audio/octet-stream',
+            chunkCount: recordingChunkCount,
+            bytes: recordingBytes,
+          }),
+          'info',
+        );
         if (recordedChunks.length > 0) {
           const blob = new Blob(recordedChunks, { type: recordingMimeType || 'audio/octet-stream' });
           const url = URL.createObjectURL(blob);
@@ -540,22 +768,80 @@ function resetMuteButtonUI() {
  * playback: the schedule falls behind and the gaps are audible. Inbound audio
  * is therefore sampled rather than logged in full.
  * @param {string} messageType
+ * @param {number} [audioBase64Length]
  * @returns {void}
  */
-function logInboundMessage(messageType) {
+function logInboundMessage(messageType, audioBase64Length = 0) {
   if (messageType !== MESSAGE_TYPE.AUDIO_RESPONSE) {
     appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageType), 'info');
     return;
   }
 
   audioChunksReceived++;
+  inboundAudioBase64Chars += audioBase64Length;
   if (audioChunksReceived % CONFIG.AUDIO_LOG_THROTTLE === 1) {
     appendDebugLog(UI_STRINGS.signaling.logs.recvType(messageType), 'info');
+    appendDebugLog(
+      UI_STRINGS.signaling.logs.audioDiagnosticEvent('inbound-audio', {
+        chunks: audioChunksReceived,
+        base64Chars: inboundAudioBase64Chars,
+        websocketMessages: wsMessagesReceived,
+        websocketBytes: wsReceivedBytes,
+        socketBufferedAmount: ws?.bufferedAmount ?? 0,
+      }),
+      'info',
+    );
   }
 }
 
-/** @param {string} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} variables @returns {Promise<void>} */
-function setupSocket(agentId, callbacks, variables) {
+/** @param {string} messageType @returns {void} */
+function logFirstInboundAudio(messageType) {
+  if (messageType !== MESSAGE_TYPE.AUDIO_RESPONSE || !startupTrace || startupTrace.firstInboundAudioLogged) {
+    return;
+  }
+  startupTrace.firstInboundAudioLogged = true;
+  appendDebugLog(UI_STRINGS.signaling.logs.firstInboundAudioElapsed(getStartupElapsedMs()), 'info');
+}
+
+/** @param {string} messageType @returns {void} */
+function logFirstInboundTranscript(messageType) {
+  if (messageType !== MESSAGE_TYPE.TRANSCRIPT || !startupTrace || startupTrace.firstInboundTranscriptLogged) {
+    return;
+  }
+  startupTrace.firstInboundTranscriptLogged = true;
+  appendDebugLog(UI_STRINGS.signaling.logs.firstInboundTranscriptElapsed(getStartupElapsedMs()), 'info');
+}
+
+/** @param {{ data: string }} event @param {WebSocket} socket @param {CallCallbacks} callbacks @returns {void} */
+function handleSocketMessage(event, socket, callbacks) {
+  try {
+    const rawData = typeof event.data === 'string' ? event.data : String(event.data);
+    wsMessagesReceived++;
+    wsReceivedBytes += rawData.length;
+    wsMaxBufferedAmount = Math.max(wsMaxBufferedAmount, socket.bufferedAmount);
+    const message = JSON.parse(rawData);
+    const messageParse = WS_INBOUND_MESSAGE_SCHEMA.safeParse(message);
+    if (!messageParse.success) {
+      showToast(UI_STRINGS.signaling.errors.invalidMessageFormat, 'error');
+      appendDebugLog(UI_STRINGS.signaling.logs.inboundValidationFailed, 'error');
+      return;
+    }
+    const parsedMessage = messageParse.data;
+    const messageType = parsedMessage.type;
+    logFirstInboundAudio(messageType);
+    logFirstInboundTranscript(messageType);
+    logInboundMessage(
+      messageType,
+      typeof parsedMessage.data === 'string' ? parsedMessage.data.length : 0,
+    );
+    handleWsMessage(parsedMessage, callbacks);
+  } catch {
+    appendDebugLog(UI_STRINGS.signaling.logs.inboundParseFailed, 'error');
+  }
+}
+
+/** @param {string} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} variables @param {string} clientRunId @returns {Promise<void>} */
+function setupSocket(agentId, callbacks, variables, clientRunId) {
   const wsConnectStart = Date.now();
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   appendDebugLog(UI_STRINGS.signaling.logs.wsConnecting, 'info');
@@ -578,48 +864,19 @@ function setupSocket(agentId, callbacks, variables) {
       appendDebugLog(UI_STRINGS.signaling.logs.wsOpen, 'info');
       appendDebugLog(UI_STRINGS.signaling.logs.wsOpenElapsed(Date.now() - wsConnectStart), 'info');
       appendDebugLog(UI_STRINGS.signaling.logs.sendingStart(agentId), 'info');
-      /** @type {{ type: string, agentId: string, variables?: Record<string, string> }} */
-      const startMessage = { type: MESSAGE_TYPE.START_CALL, agentId };
+      /** @type {{ type: string, agentId: string, variables?: Record<string, string>, clientTraceId: string }} */
+      const startMessage = { type: MESSAGE_TYPE.START_CALL, agentId, clientTraceId: clientRunId };
       if (variables && Object.keys(variables).length > 0) {
         startMessage.variables = variables;
       }
       socket.send(JSON.stringify(startMessage));
+      wsMessagesSent++;
       appendDebugLog(UI_STRINGS.signaling.logs.startSentElapsed(getStartupElapsedMs()), 'info');
       appendDebugLog(UI_STRINGS.signaling.logs.startupComplete(getStartupElapsedMs()), 'info');
       resolve();
     };
 
-    socket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        const messageParse = WS_INBOUND_MESSAGE_SCHEMA.safeParse(message);
-        if (!messageParse.success) {
-          showToast(UI_STRINGS.signaling.errors.invalidMessageFormat, 'error');
-          appendDebugLog(UI_STRINGS.signaling.logs.inboundValidationFailed, 'error');
-          return;
-        }
-        if (
-          messageParse.data.type === MESSAGE_TYPE.AUDIO_RESPONSE
-          && startupTrace
-          && !startupTrace.firstInboundAudioLogged
-        ) {
-          startupTrace.firstInboundAudioLogged = true;
-          appendDebugLog(UI_STRINGS.signaling.logs.firstInboundAudioElapsed(getStartupElapsedMs()), 'info');
-        }
-        if (
-          messageParse.data.type === MESSAGE_TYPE.TRANSCRIPT
-          && startupTrace
-          && !startupTrace.firstInboundTranscriptLogged
-        ) {
-          startupTrace.firstInboundTranscriptLogged = true;
-          appendDebugLog(UI_STRINGS.signaling.logs.firstInboundTranscriptElapsed(getStartupElapsedMs()), 'info');
-        }
-        logInboundMessage(messageParse.data.type);
-        handleWsMessage(messageParse.data, callbacks);
-      } catch {
-        appendDebugLog(UI_STRINGS.signaling.logs.inboundParseFailed, 'error');
-      }
-    };
+    socket.onmessage = event => handleSocketMessage(event, socket, callbacks);
 
     socket.onerror = () => {
       clearTimeout(timeoutId);
@@ -639,12 +896,77 @@ function setupSocket(agentId, callbacks, variables) {
   });
 }
 
+/** @param {string} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} variables @param {string} runId @returns {Promise<void>} */
+async function startCallResources(agentId, callbacks, variables, runId) {
+  audioContext = getOrCreateAudioContext();
+  if (!audioContext) {
+    throw new Error(UI_STRINGS.signaling.errors.audioContextUnsupported);
+  }
+  appendDebugLog(UI_STRINGS.signaling.logs.audioContextInitState(audioContext.state), 'info');
+  configureAudioSessionForCall();
+  const contextRunning = await resumeAudioContextWithRetries(audioContext);
+  if (!contextRunning) {
+    appendDebugLog(UI_STRINGS.signaling.logs.playbackResumeBlocked, 'warn');
+  }
+  primeAudioOutput(audioContext);
+  appendDebugLog(UI_STRINGS.signaling.logs.audioOutputPrimed, 'info');
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioCtxSampleRate(audioContext.sampleRate || CONFIG.SAMPLE_RATE_OUTPUT),
+    'info',
+  );
+  appendDebugLog(
+    UI_STRINGS.signaling.logs.audioDiagnosticEvent('audio-context', {
+      state: audioContext.state,
+      sampleRate: audioContext.sampleRate,
+      baseLatency: audioContext.baseLatency ?? null,
+      outputLatency: audioContext.outputLatency ?? null,
+      currentTime: audioContext.currentTime,
+    }),
+    'info',
+  );
+  appendDebugLog(UI_STRINGS.signaling.logs.micRequesting, 'info');
+
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    throw new Error(UI_STRINGS.signaling.errors.mediaDevicesUnsupported);
+  }
+
+  const micReadyStart = Date.now();
+  const mediaPromise = withTimeout(
+    navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: CONFIG.SAMPLE_RATE_INPUT,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    }),
+    CONFIG.MEDIA_ACCESS_TIMEOUT_MS,
+    new Error(UI_STRINGS.signaling.errors.micAccessTimeout),
+  );
+  const socketPromise = setupSocket(agentId, callbacks, variables, runId);
+  socketPromise.catch((socketError) => {
+    handleCallStartFailure(socketError, callbacks);
+    endCall();
+  });
+
+  mediaStream = await mediaPromise;
+  appendDebugLog(UI_STRINGS.signaling.logs.micReady, 'info');
+  appendDebugLog(UI_STRINGS.signaling.logs.micReadyElapsed(Date.now() - micReadyStart), 'info');
+  setupAudioGraph();
+}
+
 /** @param {string | null} agentId @param {CallCallbacks} callbacks @param {Record<string, string>} [variables] @returns {Promise<void>} */
 export async function startCall(agentId, callbacks, variables = {}) {
+  resetAudioDiagnostics();
+  audioChunksSent = 0;
+  audioChunksReceived = 0;
+  currentSessionId = null;
   const runId = createRunId();
   startupTrace = {
     runId,
     startAt: Date.now(),
+    correlationId: null,
     firstAudioRelayedLogged: false,
     firstInboundAudioLogged: false,
     firstInboundTranscriptLogged: false,
@@ -669,52 +991,12 @@ export async function startCall(agentId, callbacks, variables = {}) {
   resetDownloadButton();
 
   try {
-    audioContext = getOrCreateAudioContext();
-    if (!audioContext) {
-      throw new Error(UI_STRINGS.signaling.errors.audioContextUnsupported);
-    }
-    appendDebugLog(UI_STRINGS.signaling.logs.audioContextInitState(audioContext.state), 'info');
-    configureAudioSessionForCall();
-    const contextRunning = await resumeAudioContextWithRetries(audioContext);
-    if (!contextRunning) {
-      appendDebugLog(UI_STRINGS.signaling.logs.playbackResumeBlocked, 'warn');
-    }
-    primeAudioOutput(audioContext);
-    appendDebugLog(UI_STRINGS.signaling.logs.audioOutputPrimed, 'info');
-    appendDebugLog(
-      UI_STRINGS.signaling.logs.audioCtxSampleRate(audioContext.sampleRate || CONFIG.SAMPLE_RATE_OUTPUT),
-      'info',
+    await startCallResources(
+      callInputParse.data.agentId,
+      callbacks,
+      callInputParse.data.variables || {},
+      runId,
     );
-    appendDebugLog(UI_STRINGS.signaling.logs.micRequesting, 'info');
-
-    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-      throw new Error(UI_STRINGS.signaling.errors.mediaDevicesUnsupported);
-    }
-
-    const micReadyStart = Date.now();
-    const mediaPromise = withTimeout(
-      navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: CONFIG.SAMPLE_RATE_INPUT,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      }),
-      CONFIG.MEDIA_ACCESS_TIMEOUT_MS,
-      new Error(UI_STRINGS.signaling.errors.micAccessTimeout),
-    );
-    const socketPromise = setupSocket(callInputParse.data.agentId, callbacks, callInputParse.data.variables || {});
-    socketPromise.catch((socketError) => {
-      handleCallStartFailure(socketError, callbacks);
-      endCall();
-    });
-
-    mediaStream = await mediaPromise;
-    appendDebugLog(UI_STRINGS.signaling.logs.micReady, 'info');
-    appendDebugLog(UI_STRINGS.signaling.logs.micReadyElapsed(Date.now() - micReadyStart), 'info');
-    setupAudioGraph();
   } catch (_err) {
     handleCallStartFailure(_err, callbacks);
     endCall();
@@ -730,6 +1012,7 @@ export function handleWsMessage(message, callbacks) {
       audioChunksSent = 0;
       audioChunksReceived = 0;
       currentSessionId = message.sessionId || null;
+      if (startupTrace) startupTrace.correlationId = message.correlationId || null;
       updateCallUI(true);
       onStatusChange(UI_STRINGS.callPanel.connected, 'active');
       startTimer(callbacks.onTimerUpdate);
@@ -857,6 +1140,19 @@ async function closeAudioContextIfNeeded() {
   } catch (_e) { /* ignore */ }
 }
 
+/** @returns {boolean} */
+function stopActiveMediaRecorder() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return false;
+  try {
+    mediaRecorder.stop();
+    appendDebugLog('Live call audio recording stopped', 'info');
+  } catch (e) {
+    appendDebugLog(`Error stopping MediaRecorder: ${e}`, 'error');
+    return false;
+  }
+  return true;
+}
+
 /** @returns {Promise<void>} */
 export async function endCall() {
   appendDebugLog(UI_STRINGS.signaling.logs.callEndCleanup, 'info');
@@ -864,6 +1160,7 @@ export async function endCall() {
   if (ws?.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({ type: MESSAGE_TYPE.END_CALL }));
+      wsMessagesSent++;
       ws.close();
     } catch (_e) { /* ignore */ }
   }
@@ -882,19 +1179,13 @@ export async function endCall() {
   hasPrimedAudioOutput = false;
   audioContextResumeFailures = 0;
   hasShownAudioRecoveryToast = false;
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    try {
-      mediaRecorder.stop();
-      appendDebugLog('Live call audio recording stopped', 'info');
-    } catch (e) {
-      appendDebugLog(`Error stopping MediaRecorder: ${e}`, 'error');
-    }
-  }
+  const recordingFinalizationPending = stopActiveMediaRecorder();
   mediaRecorder = null;
   setPlaybackRecordingDestination(null);
   recordingDestination = null;
 
   analyserNode = null;
+  logAudioDiagnosticsSummary('call-end', recordingFinalizationPending);
   audioChunksSent = 0;
   stopTimer();
   stopInactivityCheck();
@@ -908,6 +1199,7 @@ export async function endCall() {
   inactivityWarned = false;
   activeInactivityConfig = null;
   startupTrace = null;
+  resetAudioDiagnostics();
   appendDebugLog(UI_STRINGS.signaling.logs.callEndComplete, 'info');
 }
 
@@ -974,6 +1266,8 @@ export function resetState() {
   isMuted = false;
   callSeconds = 0;
   audioChunksSent = 0;
+  audioChunksReceived = 0;
+  resetAudioDiagnostics();
   resetAudioPlaybackState();
   ws = null;
   audioContext = null;

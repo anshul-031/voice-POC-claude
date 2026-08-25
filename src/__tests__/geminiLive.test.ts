@@ -101,8 +101,21 @@ describe('GeminiLiveService', () => {
     
     // Create session to test sending
     await geminiLiveService.createSession('sid2', callbacks);
-
+    const sid2Entry = geminiLiveService.sessions.get('sid2');
+    if (sid2Entry) {
+      sid2Entry.audioBytesSent = undefined;
+      sid2Entry.audioSamplesSent = undefined;
+      sid2Entry.audioSendInFlight = undefined;
+      sid2Entry.maxAudioSendInFlight = undefined;
+      sid2Entry.maxAudioSendLatencyMs = undefined;
+      sid2Entry.audioBytesReceived = undefined;
+      sid2Entry.audioSamplesReceived = undefined;
+      sid2Entry.maxAudioInterArrivalMs = undefined;
+      sid2Entry.lastAudioChunkReceivedAt = Date.now() - 5;
+    }
     await geminiLiveService.sendAudio('sid2', 'data');
+    if (state.callbacks) state.callbacks.onmessage({ data: 'received-audio' });
+    if (sid2Entry) sid2Entry.audioSendFailures = undefined;
     mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw new Error('ERR'); });
     await geminiLiveService.sendAudio('sid2', 'data');
     mockSession.sendRealtimeInput.mockImplementationOnce(() => { throw 'RAW_AUDIO_ERR'; });
@@ -121,6 +134,15 @@ describe('GeminiLiveService', () => {
     
     // close fail block
     await geminiLiveService.createSession('sid3', callbacks);
+    const sid3Entry = geminiLiveService.sessions.get('sid3');
+    if (sid3Entry) {
+      sid3Entry.audioBytesSent = undefined;
+      sid3Entry.audioBytesReceived = undefined;
+      sid3Entry.audioSendFailures = undefined;
+      sid3Entry.maxAudioSendInFlight = undefined;
+      sid3Entry.maxAudioSendLatencyMs = undefined;
+      sid3Entry.maxAudioInterArrivalMs = undefined;
+    }
     mockSession.close.mockImplementationOnce(() => { throw new Error('ERR'); });
     await geminiLiveService.closeSession('sid3');
 
@@ -203,6 +225,18 @@ describe('GeminiLiveService', () => {
     // Call the private method directly since _handleMessage early-returns if session is missing
     (geminiLiveService as any)._processDirectAudio('ghost-session', 'ghost-audio', onAudio);
     expect(onAudio).toHaveBeenCalledWith('ghost-audio');
+  });
+
+  it('records a slow model audio relay callback', () => {
+    const nowValues = [1000, 1000, 1205];
+    let nowIndex = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => nowValues[nowIndex++] || 1205);
+    const onAudio = vi.fn();
+
+    (geminiLiveService as any)._processDirectAudio('slow-callback', 'slow-audio', onAudio);
+
+    nowSpy.mockRestore();
+    expect(onAudio).toHaveBeenCalledWith('slow-audio');
   });
 
   it('should cover missing session on close', async () => {

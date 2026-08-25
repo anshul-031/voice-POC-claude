@@ -19,7 +19,7 @@ import {
   RECORDING,
   TELEPHONY_DIRECTION,
 } from '../types/index.js';
-import type { SignalingClient } from '../types/index.js';
+import type { AudioChunkMetrics, ModelAudioRelayMetrics, SignalingClient } from '../types/index.js';
 import logger from '../utils/logger.js';
 import { verifyToken } from './auth.js';
 import {
@@ -64,6 +64,53 @@ class SignalingServer {
   public wss: WSWebSocketServer | null = null;
   /** @internal */
   public clients: Map<WSWebSocket, SignalingClient> = new Map();
+  private audioDiagnosticCounters: Map<string, number> = new Map();
+
+  private _shouldLogAudioDiagnostic(correlationId: string, reason: string): boolean {
+    const key = `${correlationId}:${reason}`;
+    const count = (this.audioDiagnosticCounters.get(key) ?? 0) + 1;
+    this.audioDiagnosticCounters.set(key, count);
+    return count === 1 || count % LOGGING.THROTTLE_CHUNKS === 1;
+  }
+
+  private _logAudioDiagnosticWarning(
+    correlationId: string,
+    reason: string,
+    message: string,
+  ): void {
+    if (!this._shouldLogAudioDiagnostic(correlationId, reason)) return;
+    logger.warn(message, { correlationId });
+  }
+
+  private _logInvalidSignalingMessage(
+    correlationId: string,
+    rawMessage: unknown,
+    issues: string[],
+    payloadBytes: number,
+  ): void {
+    const messageType = rawMessage && typeof rawMessage === 'object'
+      ? (rawMessage as Record<string, unknown>).type
+      : undefined;
+    if (messageType === MESSAGE_TYPE.AUDIO_DATA) {
+      this._logAudioDiagnosticWarning(
+        correlationId,
+        'invalid-client-audio',
+        'Rejected invalid client audio payload',
+      );
+      return;
+    }
+    logger.warn('Invalid signaling message payload', {
+      correlationId,
+      issues,
+      payloadBytes,
+    });
+  }
+
+  private _clearAudioDiagnosticCounters(correlationId: string): void {
+    this.audioDiagnosticCounters.delete(`${correlationId}:invalid-client-audio`);
+    this.audioDiagnosticCounters.delete(`${correlationId}:missing-client-audio`);
+    this.audioDiagnosticCounters.delete(`${correlationId}:missing-vobiz-audio`);
+  }
 
   public attach(httpServer: Server): void {
     const wss = new WebSocketServer({ server: httpServer, path: ROUTES.WS_PATH });
@@ -71,13 +118,17 @@ class SignalingServer {
 
     wss.on('connection', (socket: WSWebSocket, req: IncomingMessage) => {
       const correlationId = uuidv4();
-      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-      logger.info('New WebSocket connection', { clientIp, correlationId });
+      const hasClientAddress = Boolean(req.headers['x-forwarded-for'] || req.socket.remoteAddress);
+      let signalingMessagesReceived = 0;
+      let signalingMessageBytes = 0;
+      logger.info('New WebSocket connection', { correlationId, hasClientAddress });
 
       socket.on('message', async (data: Buffer | string | ArrayBuffer | Buffer[]) => {
         try {
           const messageStart = Date.now();
           const dataString = data.toString();
+          signalingMessagesReceived++;
+          signalingMessageBytes += dataString.length;
           const rawMessage = JSON.parse(dataString);
 
           // Detect Vobiz stream protocol (uses 'event' field, not 'type')
@@ -89,12 +140,12 @@ class SignalingServer {
           const requesterUserId = this._resolveRequesterUserId(req);
           const messageParse = SIGNALING_MESSAGE_SCHEMA.safeParse(rawMessage);
           if (!messageParse.success) {
-            logger.warn('Invalid signaling message payload', {
-              clientIp,
+            this._logInvalidSignalingMessage(
               correlationId,
-              issues: messageParse.error.issues,
-              payloadPreview: dataString.slice(0, 400),
-            });
+              rawMessage,
+              messageParse.error.issues.map(issue => issue.code),
+              dataString.length,
+            );
             socket.send(JSON.stringify({
               type: MESSAGE_TYPE.ERROR,
               message: UI_STRINGS.signaling.errors.invalidMessageFormat,
@@ -105,9 +156,10 @@ class SignalingServer {
           const message = messageParse.data;
           logger.debug('Signaling message received', {
             type: message.type,
-            clientIp,
             correlationId,
             payloadBytes: dataString.length,
+            messageCount: signalingMessagesReceived,
+            totalMessageBytes: signalingMessageBytes,
           });
           await this._handleMessage(socket, message, requesterUserId, correlationId);
           logger.debug('Signaling message handled', {
@@ -119,9 +171,9 @@ class SignalingServer {
           const isJsonParseError = error instanceof SyntaxError;
           const errMsg = error instanceof Error ? error.message : String(error);
           logger.error('Error handling signaling message', {
-            error: errMsg, 
-            clientIp,
+            error: errMsg,
             correlationId,
+            messageCount: signalingMessagesReceived,
           });
           socket.send(JSON.stringify({
             type: MESSAGE_TYPE.ERROR,
@@ -131,21 +183,29 @@ class SignalingServer {
       });
 
       socket.on('close', (code: number, reason: Buffer) => {
-        logger.info('WebSocket closed', { 
-          code, 
-          reason: reason.toString() || 'none', 
-          clientIp,
+        const client = this.clients.get(socket);
+        logger.info('WebSocket closed', {
+          code,
+          reasonCodePresent: reason.length > 0,
           correlationId,
+          messageCount: signalingMessagesReceived,
+          messageBytes: signalingMessageBytes,
+          audioChunksRelayed: client?.audioChunksRelayed ?? 0,
+          modelAudioChunksRelayed: client?.modelAudioChunksRelayed ?? 0,
+          modelAudioRelayFailures: client?.modelAudioRelayFailures ?? 0,
         });
+        this._clearAudioDiagnosticCounters(correlationId);
         this._handleDisconnect(socket);
       });
 
       socket.on('error', (error: Error) => {
-        logger.error('WebSocket error', { 
-          error: error.message, 
-          clientIp,
+        logger.error('WebSocket error', {
+          error: error.message,
           correlationId,
+          messageCount: signalingMessagesReceived,
+          messageBytes: signalingMessageBytes,
         });
+        this._clearAudioDiagnosticCounters(correlationId);
         this._handleDisconnect(socket);
       });
     });
@@ -266,50 +326,196 @@ class SignalingServer {
     await geminiLiveService.closeSession(existing.sessionId);
   }
 
-  private _relayModelAudioToClient(socket: WSWebSocket, sessionId: string, audioData: string): void {
+  private _updateModelAudioClientState(
+    client: SignalingClient,
+    metrics: ModelAudioRelayMetrics,
+    now: number,
+  ): void {
+    client.modelAudioChunksRelayed++;
+    client.modelAudioBytesRelayed = (client.modelAudioBytesRelayed ?? 0) + metrics.audioBytes;
+    client.modelAudioSamplesRelayed = (client.modelAudioSamplesRelayed ?? 0) + metrics.audioSamples;
+    client.modelAudioDurationMsRelayed = (client.modelAudioDurationMsRelayed ?? 0) + metrics.audioDurationMs;
+    client.lastModelAudioAt = now;
+    if (metrics.interArrivalMs !== undefined) {
+      client.maxModelAudioInterArrivalMs = Math.max(
+        client.maxModelAudioInterArrivalMs ?? 0,
+        metrics.interArrivalMs,
+      );
+    }
+    client.lastModelResponseAt = Math.max(now, client.lastModelResponseAt) + metrics.audioDurationMs;
+  }
+
+  private _logModelAudioProgress(
+    client: SignalingClient,
+    sessionId: string,
+    metrics: ModelAudioRelayMetrics,
+  ): void {
+    if (client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS !== 1) return;
+    logger.debug('Relaying model audio to client', {
+      sessionId,
+      correlationId: client.correlationId,
+      clientTraceId: client.clientTraceId,
+      route: client.streamId ? 'telephony' : 'browser',
+      modelAudioChunksRelayed: client.modelAudioChunksRelayed,
+      audioBytes: metrics.audioBytes,
+      audioSamples: metrics.audioSamples,
+      audioDurationMs: metrics.audioDurationMs,
+      interArrivalMs: metrics.interArrivalMs,
+      maxInterArrivalMs: client.maxModelAudioInterArrivalMs,
+    });
+  }
+
+  private _buildModelAudioRelayMetrics(
+    client: SignalingClient | undefined,
+    audioData: string,
+    audioMetrics: AudioChunkMetrics | undefined,
+    now: number,
+  ): ModelAudioRelayMetrics {
+    const decodedAudio = audioMetrics ? undefined : Buffer.from(audioData, 'base64');
+    const baseMetrics = audioMetrics ?? {
+      audioBytes: decodedAudio?.length ?? 0,
+      audioSamples: Math.floor(
+        (decodedAudio?.length ?? 0) / AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE,
+      ),
+    };
+    const audioDurationMs = baseMetrics.audioBytes
+      / (AUDIO_CONFIG.SAMPLE_RATE_OUTPUT * AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE)
+      * TIME.MS_TO_SEC;
+    const interArrivalMs = client?.lastModelAudioAt
+      ? now - client.lastModelAudioAt
+      : undefined;
+    return { ...baseMetrics, audioDurationMs, interArrivalMs };
+  }
+
+  private _recordModelAudioMetrics(
+    client: SignalingClient | undefined,
+    sessionId: string,
+    metrics: ModelAudioRelayMetrics,
+    deliveredAt: number,
+  ): void {
+    if (!client) return;
+    this._updateModelAudioClientState(client, metrics, deliveredAt);
+    this._trackFirstModelAudio(client, sessionId, deliveredAt);
+    this._logModelAudioProgress(client, sessionId, metrics);
+  }
+
+  private _recordBrowserBufferedAmount(client: SignalingClient | undefined, bufferedAmount: number): void {
+    if (!client) return;
+    client.maxModelAudioBufferedAmount = Math.max(
+      client.maxModelAudioBufferedAmount ?? 0,
+      bufferedAmount,
+    );
+  }
+
+  private _recordBrowserSendSuccess(
+    client: SignalingClient | undefined,
+    sendStartedAt: number,
+  ): void {
+    if (client) client.modelAudioSendLatencyMs = Date.now() - sendStartedAt;
+  }
+
+  private _recordBrowserSendFailure(
+    sessionId: string,
+    client: SignalingClient | undefined,
+    metrics: ModelAudioRelayMetrics,
+    sendStartedAt: number,
+    error: unknown,
+  ): void {
+    if (client) client.modelAudioRelayFailures = (client.modelAudioRelayFailures ?? 0) + 1;
+    logger.error('Failed to relay model audio to browser', {
+      sessionId,
+      correlationId: client?.correlationId,
+      audioBytes: metrics.audioBytes,
+      sendLatencyMs: Date.now() - sendStartedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  private _logBrowserBackpressure(
+    sessionId: string,
+    client: SignalingClient | undefined,
+    bufferedAmount: number,
+  ): void {
+    if (
+      !client
+      || bufferedAmount < LOGGING.WS_BUFFERED_AMOUNT_WARN_BYTES
+      || client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS !== 1
+    ) return;
+    logger.warn('WebSocket buffered amount is high while relaying model audio', {
+      sessionId,
+      correlationId: client.correlationId,
+      bufferedAmount,
+      thresholdBytes: LOGGING.WS_BUFFERED_AMOUNT_WARN_BYTES,
+      modelAudioChunksRelayed: client.modelAudioChunksRelayed,
+    });
+  }
+
+  private _logBrowserModelAudioProgress(
+    sessionId: string,
+    client: SignalingClient | undefined,
+    metrics: ModelAudioRelayMetrics,
+    bufferedAmount: number,
+  ): void {
+    if (!client || client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS !== 1) return;
+    logger.debug('Model audio chunk relayed', {
+      sessionId,
+      correlationId: client.correlationId,
+      clientTraceId: client.clientTraceId,
+      route: 'browser',
+      chunkIndex: client.modelAudioChunksRelayed,
+      audioBytes: metrics.audioBytes,
+      audioSamples: metrics.audioSamples,
+      audioDurationMs: metrics.audioDurationMs,
+      bufferedAmount,
+      sendLatencyMs: client.modelAudioSendLatencyMs,
+    });
+  }
+
+  private _sendBrowserModelAudio(
+    socket: WSWebSocket,
+    sessionId: string,
+    client: SignalingClient | undefined,
+    audioData: string,
+    metrics: ModelAudioRelayMetrics,
+  ): void {
+    const payload = JSON.stringify({
+      type: MESSAGE_TYPE.AUDIO_RESPONSE,
+      data: audioData,
+    });
+    const bufferedAmountBeforeSend = socket.bufferedAmount;
+    this._recordBrowserBufferedAmount(client, bufferedAmountBeforeSend);
+    const sendStartedAt = Date.now();
+    try {
+      socket.send(payload);
+      this._recordBrowserSendSuccess(client, sendStartedAt);
+      this._recordModelAudioMetrics(client, sessionId, metrics, Date.now());
+    } catch (error: unknown) {
+      this._recordBrowserSendFailure(sessionId, client, metrics, sendStartedAt, error);
+    }
+
+    this._logBrowserBackpressure(sessionId, client, bufferedAmountBeforeSend);
+    this._logBrowserModelAudioProgress(sessionId, client, metrics, bufferedAmountBeforeSend);
+  }
+
+  private _relayModelAudioToClient(
+    socket: WSWebSocket,
+    sessionId: string,
+    audioData: string,
+    audioMetrics?: AudioChunkMetrics,
+  ): void {
     if (socket.readyState !== WebSocket.OPEN) {
+      logger.debug('Dropping model audio because signaling socket is not open', { sessionId });
       return;
     }
 
-    const now = Date.now();
     const client = this.clients.get(socket);
-
-    if (client) {
-      client.modelAudioChunksRelayed++;
-      const audioDurationMs = Buffer.from(audioData, 'base64').length
-        / (AUDIO_CONFIG.SAMPLE_RATE_OUTPUT * AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE)
-        * TIME.MS_TO_SEC;
-      client.lastModelResponseAt = Math.max(now, client.lastModelResponseAt) + audioDurationMs;
-      this._trackFirstModelAudio(client, sessionId, now);
-
-      if (client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
-        logger.debug('Relaying model audio to client', {
-          sessionId,
-          correlationId: client.correlationId,
-          modelAudioChunksRelayed: client.modelAudioChunksRelayed,
-        });
-      }
-    }
-
+    const metrics = this._buildModelAudioRelayMetrics(client, audioData, audioMetrics, Date.now());
     if (client?.streamId) {
-      // Telephony stream (Vobiz)
-      this._sendVobizPlayAudio(socket, client, audioData);
-    } else {
-      // Browser client
-      socket.send(JSON.stringify({
-        type: MESSAGE_TYPE.AUDIO_RESPONSE,
-        data: audioData,
-      }));
+      this._sendVobizPlayAudio(socket, client, audioData, metrics);
+      return;
     }
 
-    if (client && client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
-      logger.debug('Model audio chunk relayed', {
-        sessionId,
-        correlationId: client.correlationId,
-        chunkIndex: client.modelAudioChunksRelayed,
-        chunkBytes: audioData.length,
-      });
-    }
+    this._sendBrowserModelAudio(socket, sessionId, client, audioData, metrics);
   }
 
   private _trackFirstModelAudio(client: SignalingClient, sessionId: string, now: number): void {
@@ -352,17 +558,35 @@ class SignalingServer {
     try {
       // audioData from Gemini is 24kHz. Vobiz expects 8kHz.
       const resampledData = downsample24To8(audioData);
+      const outputBytes = Buffer.from(resampledData, 'base64').length;
       client.recordingChunks?.push(Buffer.from(resampledData, 'base64'));
       socket.send(JSON.stringify({
         event: 'playAudio',
-        media: { 
+        media: {
           contentType: 'audio/x-l16',
           sampleRate: 8000,
           payload: resampledData,
         },
       }));
-    } catch {
-      // Silently ignore — socket may have closed
+      if (client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
+        logger.debug('Telephony model audio relayed', {
+          sessionId: client.sessionId,
+          correlationId: client.correlationId,
+          modelAudioChunksRelayed: client.modelAudioChunksRelayed,
+          inputBytes: Buffer.from(audioData, 'base64').length,
+          outputBytes,
+          outputSampleRate: 8000,
+          bufferedAmount: socket.bufferedAmount,
+        });
+      }
+    } catch (error: unknown) {
+      client.modelAudioRelayFailures = (client.modelAudioRelayFailures ?? 0) + 1;
+      logger.error('Failed to relay model audio to telephony provider', {
+        sessionId: client.sessionId,
+        correlationId: client.correlationId,
+        failures: client.modelAudioRelayFailures,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -519,6 +743,7 @@ class SignalingServer {
     agent: StartCallAgent,
     streamId?: string,
     requesterUserId?: string | null,
+    clientTraceId?: string,
   ): void {
     const now = Date.now();
     const callType = resolveCallType(streamId, requesterUserId);
@@ -526,9 +751,23 @@ class SignalingServer {
       sessionId,
       agentId,
       correlationId,
+      clientTraceId,
       streamId,
       audioChunksRelayed: 0,
+      audioBytesRelayed: 0,
+      audioSamplesRelayed: 0,
+      audioRelayInFlight: 0,
+      maxAudioRelayInFlight: 0,
+      maxAudioRelayLatencyMs: 0,
+      maxAudioInterArrivalMs: 0,
       modelAudioChunksRelayed: 0,
+      modelAudioBytesRelayed: 0,
+      modelAudioSamplesRelayed: 0,
+      modelAudioDurationMsRelayed: 0,
+      modelAudioRelayFailures: 0,
+      maxModelAudioInterArrivalMs: 0,
+      maxModelAudioBufferedAmount: 0,
+      modelAudioSendLatencyMs: 0,
       startTime,
       proactiveGreetingSent: false,
       lastModelResponseAt: now,
@@ -602,6 +841,62 @@ class SignalingServer {
     });
   }
 
+  private _getInputAudioDiagnostics(client: SignalingClient): Record<string, unknown> {
+    return {
+      inputAudioChunks: client.audioChunksRelayed,
+      inputAudioBytes: client.audioBytesRelayed ?? 0,
+      inputAudioSamples: client.audioSamplesRelayed ?? 0,
+      inputMaxInterArrivalMs: client.maxAudioInterArrivalMs ?? 0,
+      inputMaxRelayLatencyMs: client.maxAudioRelayLatencyMs ?? 0,
+      inputMaxInFlight: client.maxAudioRelayInFlight ?? 0,
+      inputRelayInFlight: client.audioRelayInFlight ?? 0,
+    };
+  }
+
+  private _getModelAudioDiagnostics(client: SignalingClient): Record<string, unknown> {
+    return {
+      modelAudioChunks: client.modelAudioChunksRelayed,
+      modelAudioBytes: client.modelAudioBytesRelayed ?? 0,
+      modelAudioSamples: client.modelAudioSamplesRelayed ?? 0,
+      modelAudioDurationMs: client.modelAudioDurationMsRelayed ?? 0,
+      modelMaxInterArrivalMs: client.maxModelAudioInterArrivalMs ?? 0,
+      modelMaxBufferedAmount: client.maxModelAudioBufferedAmount ?? 0,
+      modelLastSendLatencyMs: client.modelAudioSendLatencyMs ?? 0,
+      relayFailures: client.modelAudioRelayFailures ?? 0,
+    };
+  }
+
+  private _getRecordingDiagnostics(
+    client: SignalingClient,
+    recordingChunks: Buffer[],
+  ): Record<string, unknown> {
+    return {
+      transcriptEntryCount: client.transcriptEntries?.length ?? 0,
+      recordingChunkCount: recordingChunks.length,
+      recordingBytes: recordingChunks.reduce((total, chunk) => total + chunk.length, 0),
+    };
+  }
+
+  private _logCallAudioDiagnostics(
+    client: SignalingClient,
+    status: string,
+    durationSecs: number,
+    recordingChunks: Buffer[],
+  ): void {
+    logger.info('Call audio diagnostics summary', {
+      sessionId: client.sessionId,
+      agentId: client.agentId,
+      correlationId: client.correlationId,
+      clientTraceId: client.clientTraceId,
+      callType: client.callType,
+      status,
+      durationSecs,
+      ...this._getInputAudioDiagnostics(client),
+      ...this._getModelAudioDiagnostics(client),
+      ...this._getRecordingDiagnostics(client, recordingChunks),
+    });
+  }
+
   /**
    * Finalize the call history record (duration, transcript, recording, status).
    * Idempotent — guarded by a per-client flag so end + disconnect don't double-write.
@@ -615,6 +910,8 @@ class SignalingServer {
     const durationSecs = Math.round((Date.now() - client.startTime) / TIME.MS_TO_SEC);
     const isTelephony = !!client.streamId;
     const recordingChunks = client.recordingChunks ?? [];
+    this._logCallAudioDiagnostics(client, status, durationSecs, recordingChunks);
+
     void finalizeCallRecord({
       sessionId: client.sessionId,
       status,
@@ -630,7 +927,7 @@ class SignalingServer {
   /** @internal */
   public async _handleStartCall(
     socket: WSWebSocket,
-    message: { agentId: string; variables?: Record<string, string> },
+    message: { agentId: string; variables?: Record<string, string>; clientTraceId?: string },
     requesterUserId: string | null = null,
     correlationId = uuidv4(),
     streamId?: string,
@@ -639,17 +936,19 @@ class SignalingServer {
     const parseResult = SIGNALING_START_CALL_MESSAGE_SCHEMA.safeParse({
       type: MESSAGE_TYPE.START_CALL,
       agentId: message.agentId,
-      ...(message.variables !== undefined && { variables: message.variables }),
+      variables: message.variables,
+      clientTraceId: message.clientTraceId,
     });
     if (!parseResult.success) {
       this._sendSocketError(socket, UI_STRINGS.signaling.errors.agentIdRequired);
       return;
     }
 
-    const { agentId, variables } = parseResult.data;
+    const { agentId, variables, clientTraceId } = parseResult.data;
     logger.info('Start call request', {
       agentId,
       correlationId,
+      clientTraceId,
       variableCount: variables ? Object.keys(variables).length : 0,
     });
 
@@ -677,7 +976,15 @@ class SignalingServer {
 
       const callStartedAt = Date.now();
       this._registerClientSession(
-        socket, sessionId, agentId, correlationId, callStartedAt, agent, streamId, requesterUserId,
+        socket,
+        sessionId,
+        agentId,
+        correlationId,
+        callStartedAt,
+        agent,
+        streamId,
+        requesterUserId,
+        clientTraceId,
       );
       await this._createCallHistoryRecord(
         socket,
@@ -744,6 +1051,31 @@ class SignalingServer {
     }
   }
 
+  private _recordIncomingAudio(
+    client: SignalingClient,
+    audioBytes: number,
+    audioSamples: number,
+    now: number,
+  ): AudioChunkMetrics {
+    const interArrivalMs = client.audioChunksRelayed > 0
+      ? now - client.lastUserAudioAt
+      : undefined;
+    client.audioChunksRelayed++;
+    client.audioBytesRelayed = (client.audioBytesRelayed ?? 0) + audioBytes;
+    client.audioSamplesRelayed = (client.audioSamplesRelayed ?? 0) + audioSamples;
+    client.audioRelayInFlight = (client.audioRelayInFlight ?? 0) + 1;
+    client.maxAudioRelayInFlight = Math.max(
+      client.maxAudioRelayInFlight ?? 0,
+      client.audioRelayInFlight,
+    );
+    if (interArrivalMs !== undefined) {
+      client.maxAudioInterArrivalMs = Math.max(client.maxAudioInterArrivalMs ?? 0, interArrivalMs);
+    }
+    client.lastUserAudioAt = now;
+    client.nudgeCount = 0;
+    return { audioBytes, audioSamples, interArrivalMs };
+  }
+
   /** @internal */
   public async _handleAudioData(
     socket: WSWebSocket,
@@ -755,6 +1087,11 @@ class SignalingServer {
       data: message.data,
     });
     if (!parseResult.success) {
+      this._logAudioDiagnosticWarning(
+        correlationId,
+        'invalid-client-audio',
+        'Rejected invalid client audio payload',
+      );
       socket.send(JSON.stringify({
         type: MESSAGE_TYPE.ERROR,
         message: UI_STRINGS.signaling.errors.invalidMessageFormat,
@@ -763,27 +1100,63 @@ class SignalingServer {
     }
 
     const client = this.clients.get(socket);
-    if (!client) return;
+    if (!client) {
+      this._logAudioDiagnosticWarning(
+        correlationId,
+        'missing-client-audio',
+        'Dropped client audio without an active session',
+      );
+      return;
+    }
 
-    client.audioChunksRelayed++;
-    client.lastUserAudioAt = Date.now();
-    client.nudgeCount = 0;
+    const now = Date.now();
+    const audioBase64 = parseResult.data.data;
+    const audioBytes = Buffer.from(audioBase64, 'base64').length;
+    const audioSamples = Math.floor(audioBytes / AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE);
+    const audioMetrics = this._recordIncomingAudio(client, audioBytes, audioSamples, now);
+    const relayStartedAt = now;
+
     if (client.audioChunksRelayed === 1) {
       logger.info('First client audio chunk relayed to Gemini', {
         sessionId: client.sessionId,
         correlationId,
-        elapsedMs: Date.now() - client.startTime,
+        clientTraceId: client.clientTraceId,
+        elapsedMs: now - client.startTime,
+        audioBytes: audioMetrics.audioBytes,
+        audioSamples: audioMetrics.audioSamples,
       });
     }
-    if (client.audioChunksRelayed % 50 === 1) {
-      logger.debug('Relaying audio chunks to Gemini', { 
-        sessionId: client.sessionId, 
-        chunkCount: client.audioChunksRelayed, 
+    if (client.audioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
+      logger.debug('Relaying browser audio chunks to Gemini', {
+        sessionId: client.sessionId,
+        chunkCount: client.audioChunksRelayed,
+        audioBytes: audioMetrics.audioBytes,
+        audioSamples: audioMetrics.audioSamples,
+        interArrivalMs: audioMetrics.interArrivalMs,
+        maxInterArrivalMs: client.maxAudioInterArrivalMs,
+        inFlight: client.audioRelayInFlight,
+        socketBufferedAmount: socket.bufferedAmount,
         correlationId,
       });
     }
 
-    await geminiLiveService.sendAudio(client.sessionId, parseResult.data.data);
+    try {
+      await geminiLiveService.sendAudio(client.sessionId, audioBase64);
+    } finally {
+      client.audioRelayInFlight = Math.max(0, (client.audioRelayInFlight ?? 1) - 1);
+      const relayLatencyMs = Date.now() - relayStartedAt;
+      client.maxAudioRelayLatencyMs = Math.max(client.maxAudioRelayLatencyMs ?? 0, relayLatencyMs);
+      if (client.audioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
+        logger.debug('Client audio relay completed', {
+          sessionId: client.sessionId,
+          correlationId,
+          chunkCount: client.audioChunksRelayed,
+          relayLatencyMs,
+          maxRelayLatencyMs: client.maxAudioRelayLatencyMs,
+          inFlight: client.audioRelayInFlight,
+        });
+      }
+    }
   }
 
   /** @internal */
@@ -932,30 +1305,63 @@ class SignalingServer {
 
     const payload = media.payload as string;
     const client = this.clients.get(socket);
-    if (!client) return;
+    if (!client) {
+      this._logAudioDiagnosticWarning(
+        correlationId,
+        'missing-vobiz-audio',
+        'Dropped Vobiz audio without an active session',
+      );
+      return;
+    }
 
+    const now = Date.now();
+    const inputBytes = Buffer.from(payload, 'base64').length;
+    const inputSamples = Math.floor(inputBytes / AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE);
     client.recordingChunks?.push(Buffer.from(payload, 'base64'));
-    client.audioChunksRelayed++;
-    client.lastUserAudioAt = Date.now();
-    client.nudgeCount = 0;
+    const audioMetrics = this._recordIncomingAudio(client, inputBytes, inputSamples, now);
+    const relayStartedAt = now;
 
     if (client.audioChunksRelayed === 1) {
       logger.info('First Vobiz audio chunk relayed to Gemini', {
         sessionId: client.sessionId,
         correlationId,
+        elapsedMs: now - client.startTime,
+        inputBytes: audioMetrics.audioBytes,
+        inputSamples: audioMetrics.audioSamples,
       });
     }
-    if (client.audioChunksRelayed % 50 === 1) {
+    if (client.audioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
       logger.debug('Relaying Vobiz audio chunks', {
         sessionId: client.sessionId,
         chunkCount: client.audioChunksRelayed,
+        inputBytes: audioMetrics.audioBytes,
+        inputSamples: audioMetrics.audioSamples,
+        interArrivalMs: audioMetrics.interArrivalMs,
+        maxInterArrivalMs: client.maxAudioInterArrivalMs,
+        socketBufferedAmount: socket.bufferedAmount,
         correlationId,
       });
     }
 
-    // Payload from Vobiz is 8kHz, Gemini expects 16kHz
-    const resampledPayload = upsample8To16(payload);
-    await geminiLiveService.sendAudio(client.sessionId, resampledPayload);
+    try {
+      // Payload from Vobiz is 8kHz, Gemini expects 16kHz.
+      const resampledPayload = upsample8To16(payload);
+      await geminiLiveService.sendAudio(client.sessionId, resampledPayload);
+    } finally {
+      client.audioRelayInFlight = Math.max(0, (client.audioRelayInFlight ?? 1) - 1);
+      const relayLatencyMs = Date.now() - relayStartedAt;
+      client.maxAudioRelayLatencyMs = Math.max(client.maxAudioRelayLatencyMs ?? 0, relayLatencyMs);
+      if (client.audioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
+        logger.debug('Vobiz audio relay completed', {
+          sessionId: client.sessionId,
+          correlationId,
+          chunkCount: client.audioChunksRelayed,
+          relayLatencyMs,
+          maxRelayLatencyMs: client.maxAudioRelayLatencyMs,
+          inFlight: client.audioRelayInFlight,
+        });
+      }
+    }
   }
 
   /** @internal */

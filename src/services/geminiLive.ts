@@ -3,15 +3,17 @@ import {
   getTranscriptText,
   logGenerationComplete,
   logMessageEnvelope,
+  logModelAudioChunk,
+  logSlowModelAudioRelay,
   logTranscriptMilestone,
   logTranscriptPayload,
   logTurnComplete,
-  markFirstModelAudio,
+  recordModelAudioChunk,
   shouldLogChunkProgress,
 } from './geminiLiveLogging.js';
 import { closeGeminiSession, sendAudioToGemini, sendTextToGemini } from './geminiLiveTransport.js';
 import { AUDIO_CONFIG, LIVE_CALL } from '../types/index.js';
-import type { GeminiSession, Transcript } from '../types/index.js';
+import type { AudioChunkMetrics, GeminiSession, Transcript } from '../types/index.js';
 import type {
   CreateSessionCallbacks,
   GeminiMessage,
@@ -98,7 +100,7 @@ class GeminiLiveService {
         sessionId,
         model,
         voice,
-        systemPromptSnippet: (systemPrompt || '').substring(0, 80),
+        systemPromptChars: (systemPrompt || '').length,
         correlationId,
       });
       logger.info('Applied Gemini Live first-turn tuning', {
@@ -163,8 +165,12 @@ class GeminiLiveService {
         model,
         correlationId,
         startTime,
-        audioChunksSent: 0,
-        audioChunksReceived: 0,
+        audioChunksSent: 0, audioChunksReceived: 0,
+        audioBytesSent: 0, audioSamplesSent: 0,
+        audioBytesReceived: 0, audioSamplesReceived: 0,
+        audioSendFailures: 0, audioSendInFlight: 0,
+        maxAudioSendInFlight: 0, maxAudioSendLatencyMs: 0,
+        maxAudioInterArrivalMs: 0,
       });
       logger.debug('Gemini Live session registered', { sessionId, correlationId });
     } catch (error: unknown) {
@@ -182,7 +188,7 @@ class GeminiLiveService {
   private _handleMessage(
     sessionId: string,
     message: unknown,
-    onAudio?: (audio: string) => void,
+    onAudio?: (audio: string, metrics?: AudioChunkMetrics) => void,
     onTranscript?: (transcript: Transcript) => void,
     onTurnComplete?: () => void,
     onInterrupted?: () => void,
@@ -203,7 +209,7 @@ class GeminiLiveService {
   private _processServerContent(
     sessionId: string,
     content: GeminiServerContent,
-    onAudio?: (audio: string) => void,
+    onAudio?: (audio: string, metrics?: AudioChunkMetrics) => void,
     onTranscript?: (transcript: Transcript) => void,
     onTurnComplete?: () => void,
     onInterrupted?: () => void,
@@ -248,7 +254,7 @@ class GeminiLiveService {
   private _processModelTurnParts(
     sessionId: string,
     parts: GeminiTurnPart[],
-    onAudio?: (audio: string) => void,
+    onAudio?: (audio: string, metrics?: AudioChunkMetrics) => void,
     onTranscript?: (transcript: Transcript) => void,
     emitTextTranscript = true,
   ): void {
@@ -277,33 +283,32 @@ class GeminiLiveService {
     if (onTranscript) onTranscript({ role, text: finalMsg });
   }
 
-  private _processDirectAudio(sessionId: string, data: string, onAudio?: (audio: string) => void): void {
+  private _processDirectAudio(sessionId: string, data: string, onAudio?: (audio: string, metrics?: AudioChunkMetrics) => void): void {
     const entry = this.sessions.get(sessionId);
     const now = Date.now();
-
-    if (entry) {
-      entry.audioChunksReceived++;
-      markFirstModelAudio(sessionId, entry, now);
-      if (shouldLogChunkProgress(entry.audioChunksReceived)) {
-        logger.debug('Audio data received', {
-          sessionId,
-          totalReceived: entry.audioChunksReceived,
-          correlationId: entry.correlationId,
-        });
-      }
+    const audioMetrics = recordModelAudioChunk(sessionId, entry, data, now);
+    if (entry && shouldLogChunkProgress(entry.audioChunksReceived)) {
+      logModelAudioChunk(sessionId, entry, audioMetrics);
     }
 
-    if (onAudio) onAudio(data);
+    const callbackStartedAt = Date.now();
+    if (onAudio) onAudio(data, audioMetrics);
+    const callbackLatencyMs = Date.now() - callbackStartedAt;
+    logSlowModelAudioRelay(sessionId, entry, audioMetrics, callbackLatencyMs);
   }
 
-  async sendAudio(sessionId: string, audioBase64: string): Promise<void> {
+  async sendAudio(
+    sessionId: string,
+    audioBase64: string,
+    audioMetrics?: AudioChunkMetrics,
+  ): Promise<void> {
     const entry = this.sessions.get(sessionId);
     if (!entry) {
       logger.warn('Attempted to send audio for missing Gemini session', { sessionId });
       return;
     }
 
-    await sendAudioToGemini(sessionId, entry, audioBase64);
+    await sendAudioToGemini(sessionId, entry, audioBase64, audioMetrics);
   }
 
   async sendText(sessionId: string, text: string, reason = 'client-message'): Promise<boolean> {
