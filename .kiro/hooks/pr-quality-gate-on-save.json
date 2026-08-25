@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "PR Quality Gate on Save",
+      "trigger": "PostFileSave",
+      "description": "Runs the complete build, coverage, lint, and typecheck pipeline whenever a project source or configuration file is saved.",
+      "matcher": "\\.(js|ts|json|prisma|ya?ml|html|css)$",
+      "action": {
+        "type": "command",
+        "command": "npm run pr",
+        "timeout": 1800
+      }
+    }
+  ]
+}

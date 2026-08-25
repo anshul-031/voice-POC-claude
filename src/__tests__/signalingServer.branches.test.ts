@@ -83,7 +83,12 @@ describe('SignalingServer branch helpers', () => {
       maxInactivityNudges: 3,
       maxCallDurationSecs: 0,
     });
-    (signalingServer as any)._relayModelAudioToClient(mockWs, 'sid', 'audio-b');
+    (signalingServer as any)._relayModelAudioToClient(
+      mockWs,
+      'sid',
+      'audio-b',
+      { audioBytes: 7, audioSamples: 3 },
+    );
 
     signalingServer.clients.set(mockWs as WebSocket, {
       sessionId: 'sid2',
@@ -127,6 +132,10 @@ describe('SignalingServer branch helpers', () => {
       recordingChunks: [],
     });
     (signalingServer as any)._relayModelAudioToClient(mockWs, 'telephony-sid', 'audio-f');
+    mockWs.send.mockImplementationOnce(() => { throw new Error('telephony-send-failure'); });
+    (signalingServer as any)._relayModelAudioToClient(mockWs, 'telephony-sid', 'audio-g');
+    mockWs.send.mockImplementationOnce(() => { throw 'raw-telephony-send-failure'; });
+    (signalingServer as any)._relayModelAudioToClient(mockWs, 'telephony-sid', 'audio-h');
   });
 
   it('covers _relayTranscriptToClient model transcript branches', () => {

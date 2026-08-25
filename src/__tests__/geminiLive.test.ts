@@ -224,7 +224,11 @@ describe('GeminiLiveService', () => {
     const onAudio = vi.fn();
     // Call the private method directly since _handleMessage early-returns if session is missing
     (geminiLiveService as any)._processDirectAudio('ghost-session', 'ghost-audio', onAudio);
-    expect(onAudio).toHaveBeenCalledWith('ghost-audio');
+    expect(onAudio).toHaveBeenCalledWith('ghost-audio', {
+      audioBytes: 8,
+      audioSamples: 4,
+      interArrivalMs: undefined,
+    });
   });
 
   it('records a slow model audio relay callback', () => {
@@ -236,7 +240,11 @@ describe('GeminiLiveService', () => {
     (geminiLiveService as any)._processDirectAudio('slow-callback', 'slow-audio', onAudio);
 
     nowSpy.mockRestore();
-    expect(onAudio).toHaveBeenCalledWith('slow-audio');
+    expect(onAudio).toHaveBeenCalledWith('slow-audio', {
+      audioBytes: 7,
+      audioSamples: 3,
+      interArrivalMs: undefined,
+    });
   });
 
   it('should cover missing session on close', async () => {

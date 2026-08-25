@@ -371,13 +371,14 @@ class SignalingServer {
     audioMetrics: AudioChunkMetrics | undefined,
     now: number,
   ): ModelAudioRelayMetrics {
-    const decodedAudio = audioMetrics ? undefined : Buffer.from(audioData, 'base64');
-    const baseMetrics = audioMetrics ?? {
-      audioBytes: decodedAudio?.length ?? 0,
-      audioSamples: Math.floor(
-        (decodedAudio?.length ?? 0) / AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE,
-      ),
-    };
+    let baseMetrics = audioMetrics;
+    if (!baseMetrics) {
+      const audioBytes = Buffer.from(audioData, 'base64').length;
+      baseMetrics = {
+        audioBytes,
+        audioSamples: Math.floor(audioBytes / AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE),
+      };
+    }
     const audioDurationMs = baseMetrics.audioBytes
       / (AUDIO_CONFIG.SAMPLE_RATE_OUTPUT * AUDIO_CONFIG.PCM_BYTES_PER_SAMPLE)
       * TIME.MS_TO_SEC;
@@ -551,15 +552,19 @@ class SignalingServer {
    * Send audio back to Vobiz via their playAudio protocol.
    * Vobiz expects a JSON message with event: "playAudio" and explicit contentType/sampleRate.
    */
-  private _sendVobizPlayAudio(socket: WSWebSocket, client: SignalingClient, audioData: string): void {
+  private _sendVobizPlayAudio(
+    socket: WSWebSocket,
+    client: SignalingClient,
+    audioData: string,
+    metrics: ModelAudioRelayMetrics,
+  ): void {
     if (socket.readyState !== WebSocket.OPEN) return;
     if (!client.streamId) return;
 
     try {
       // audioData from Gemini is 24kHz. Vobiz expects 8kHz.
       const resampledData = downsample24To8(audioData);
-      const outputBytes = Buffer.from(resampledData, 'base64').length;
-      client.recordingChunks?.push(Buffer.from(resampledData, 'base64'));
+      const outputAudio = Buffer.from(resampledData, 'base64');
       socket.send(JSON.stringify({
         event: 'playAudio',
         media: {
@@ -568,13 +573,15 @@ class SignalingServer {
           payload: resampledData,
         },
       }));
+      client.recordingChunks?.push(outputAudio);
+      this._recordModelAudioMetrics(client, client.sessionId, metrics, Date.now());
       if (client.modelAudioChunksRelayed % LOGGING.THROTTLE_CHUNKS === 1) {
         logger.debug('Telephony model audio relayed', {
           sessionId: client.sessionId,
           correlationId: client.correlationId,
           modelAudioChunksRelayed: client.modelAudioChunksRelayed,
-          inputBytes: Buffer.from(audioData, 'base64').length,
-          outputBytes,
+          inputBytes: metrics.audioBytes,
+          outputBytes: outputAudio.length,
           outputSampleRate: 8000,
           bufferedAmount: socket.bufferedAmount,
         });
@@ -669,7 +676,7 @@ class SignalingServer {
     sessionId: string,
     correlationId: string,
   ): {
-    onAudio: (audioData: string) => void;
+    onAudio: (audioData: string, metrics?: AudioChunkMetrics) => void;
     onTranscript: (transcript: { role: 'user' | 'model'; text: string }) => void;
     onTurnComplete: () => void;
     onInterrupted: () => void;
@@ -677,8 +684,8 @@ class SignalingServer {
     onClose: () => void;
   } {
     return {
-      onAudio: (audioData: string): void => {
-        this._relayModelAudioToClient(socket, sessionId, audioData);
+      onAudio: (audioData: string, metrics?: AudioChunkMetrics): void => {
+        this._relayModelAudioToClient(socket, sessionId, audioData, metrics);
       },
       onTranscript: (transcript: { role: 'user' | 'model'; text: string }): void => {
         this._relayTranscriptToClient(socket, sessionId, transcript, correlationId);
@@ -1141,7 +1148,7 @@ class SignalingServer {
     }
 
     try {
-      await geminiLiveService.sendAudio(client.sessionId, audioBase64);
+      await geminiLiveService.sendAudio(client.sessionId, audioBase64, audioMetrics);
     } finally {
       client.audioRelayInFlight = Math.max(0, (client.audioRelayInFlight ?? 1) - 1);
       const relayLatencyMs = Date.now() - relayStartedAt;
