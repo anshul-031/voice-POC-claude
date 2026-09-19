@@ -137,6 +137,8 @@ export interface AudioConfig {
   MIME_TYPE: string;
   SAMPLE_RATE_INPUT: number;
   SAMPLE_RATE_OUTPUT: number;
+  EXTENDED_THINKING_MODEL_SUBSTRING?: string;
+  EXTENDED_THINKING_LEVEL?: string;
 }
 
 export interface TimeConstants {

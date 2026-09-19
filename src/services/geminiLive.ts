@@ -75,7 +75,7 @@ class GeminiLiveService {
     return AUDIO_CONFIG.DEFAULT_MODEL;
   }
 
-  private _buildConfig(voice: string, systemPrompt?: string): Record<string, unknown> {
+  private _buildConfig(voice: string, systemPrompt?: string, model?: string): Record<string, unknown> {
     const config: Record<string, unknown> = {
       responseModalities: [Modality.AUDIO],
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
@@ -91,6 +91,9 @@ class GeminiLiveService {
       outputAudioTranscription: { enabled: true },
     };
     if (systemPrompt) config.systemInstruction = systemPrompt;
+    if (model?.includes(AUDIO_CONFIG.EXTENDED_THINKING_MODEL_SUBSTRING)) {
+      config.thinkingConfig = { thinkingLevel: AUDIO_CONFIG.EXTENDED_THINKING_LEVEL };
+    }
     return config;
   }
 
@@ -117,7 +120,7 @@ class GeminiLiveService {
       const aiClient = this._getClientForKey(keySelection.key);
       const model = this._resolveModel(modelName);
       const voice = voiceName || 'Puck';
-      const config = this._buildConfig(voice, systemPrompt);
+      const config = this._buildConfig(voice, systemPrompt, model);
 
       logger.info('Creating Gemini Live session', {
         sessionId,

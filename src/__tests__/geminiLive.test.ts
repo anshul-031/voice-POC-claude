@@ -306,6 +306,28 @@ describe('GeminiLiveService', () => {
     expect(resolved).toBe('gemini-3.8-live');
   });
 
+  it('should include thinkingConfig when extended-thinking model is used', async () => {
+    await geminiLiveService.createSession('sid-thinking', {
+      modelName: 'gemini-3.8-live-extended-thinking',
+    });
+    expect(mockConnect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gemini-3.8-live-extended-thinking',
+        config: expect.objectContaining({
+          thinkingConfig: { thinkingLevel: 'LOW' },
+        }),
+      }),
+    );
+  });
+
+  it('should not include thinkingConfig when standard model is used', async () => {
+    await geminiLiveService.createSession('sid-standard', {
+      modelName: 'gemini-3.8-live',
+    });
+    const lastCall = mockConnect.mock.calls.at(-1)?.[0];
+    expect(lastCall.config.thinkingConfig).toBeUndefined();
+  });
+
   it('should throw if GEMINI_API_KEY is not defined on module initialization', async () => {
     vi.resetModules();
     vi.stubEnv('GEMINI_API_KEY', '');

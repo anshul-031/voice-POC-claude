@@ -36,6 +36,8 @@ export const AUDIO_CONFIG = {
   PCM_BYTES_PER_SAMPLE: 2,
   DEFAULT_VOICE: 'Puck',
   DEFAULT_MODEL: 'gemini-3.8-live',
+  EXTENDED_THINKING_MODEL_SUBSTRING: 'extended-thinking',
+  EXTENDED_THINKING_LEVEL: 'LOW',
 } as const;
 
 export const TIME = {
