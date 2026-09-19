@@ -37,7 +37,7 @@ model VoiceAgent {
   name                 String
   systemPrompt         String   @db.Text
   voiceName            String   @default("Puck")
-  modelName            String   @default("gemini-2.5-flash-native-audio-latest")
+  modelName            String   @default("gemini-3.8-live")
   publicPreviewEnabled Boolean  @default(false)
   vadStartSensitivity  String   @default("START_SENSITIVITY_HIGH")
   vadEndSensitivity    String   @default("END_SENSITIVITY_HIGH")

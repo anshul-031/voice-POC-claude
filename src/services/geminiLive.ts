@@ -58,6 +58,8 @@ class GeminiLiveService {
   private _resolveModel(modelName?: string): string {
     const model = modelName || AUDIO_CONFIG.DEFAULT_MODEL;
     const supportedLiveModels = [
+      'gemini-3.8-live',
+      'gemini-3.8-live-extended-thinking',
       'gemini-2.5-flash-native-audio-latest',
       'gemini-3.1-flash-live-preview',
       'gemini-2.5-flash-native-audio-preview-12-2025',

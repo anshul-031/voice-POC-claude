@@ -303,7 +303,7 @@ describe('GeminiLiveService', () => {
 
   it('should fallback to default model when an unsupported model is requested', () => {
     const resolved = (geminiLiveService as any)._resolveModel('unsupported-custom-model');
-    expect(resolved).toBe('gemini-3.1-flash-live-preview');
+    expect(resolved).toBe('gemini-3.8-live');
   });
 
   it('should throw if GEMINI_API_KEY is not defined on module initialization', async () => {
